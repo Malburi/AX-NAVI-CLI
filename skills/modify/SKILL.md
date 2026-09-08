@@ -1,5 +1,6 @@
 ---
 name: modify
+model: claude-sonnet-5
 description: 수정 작업 단축 호출(별칭). "/modify [내용]" 요청 시 ax-navi:safe-modify(사전 영향 분석→적용→사후 안전성 평가)로 위임한다. "modify로 고쳐줘" 같은 표현도 트리거.
 ---
 

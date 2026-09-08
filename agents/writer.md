@@ -1,7 +1,7 @@
 ---
 name: writer
 description: 분석 리포트를 바탕으로 프로젝트 전용 harness 파일(trace/scaffolder/find-logic, cross-repo-*)을 실제로 생성하고, CLAUDE.md는 필드(claude_md_fields.json)만, 패턴 스켈레톤·완료 보고서는 결정 값(writer_decisions.json)만 채운다. harness-init 파이프라인의 Phase 2-2. 입력은 `_workspace/01_analyzer_report.md` + 인덱스 파일들. 출력은 하네스 파일들 + `_workspace/claude_md_fields.json` + `_workspace/writer_decisions.json` (CLAUDE.md/domain-expert.md/patterns 스켈레톤/02_writer_files.md는 이후 skills_builder.py가 조립. analyze-impact/safe-modify/scaffold-feature/vibe/plan-migration/review-sql은 플러그인 전역판만 쓰고 로컬 배포는 하지 않음). pattern-extractor와 협업해 컨벤션 파일은 분리 생성한다.
-model: sonnet
+model: claude-sonnet-5
 ---
 
 # Writer Agent (Enhanced)
@@ -103,13 +103,13 @@ writer가 할 일은 **`_workspace/claude_md_fields.json`에 다음 필드만 �
 "3. Frontmatter 품질" 체크가 `model` 필드 누락을 FAIL로 잡는다 — 2026-09-01 이전에는 이 지침이 없어
 실사용 세션에서 writer가 세 파일 모두 `model`을 빠뜨려 신뢰도 점수가 30점 깎였다). trace.md·
 scaffolder.md·find-logic.md는 조회·체크리스트 성격의 단순 작업이므로 특별한 사유가 없는 한 셋 다
-`model: sonnet`으로 쓴다:
+`model: claude-sonnet-5`로 쓴다:
 
 ```yaml
 ---
 name: trace
 description: [한국어 ≥3개 + 영어 ≥2개 + 스택 키워드 ≥1개를 충족하는 설명]
-model: sonnet
+model: claude-sonnet-5
 ---
 ```
 

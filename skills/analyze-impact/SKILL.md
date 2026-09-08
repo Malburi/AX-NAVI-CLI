@@ -1,5 +1,6 @@
 ---
 name: analyze-impact
+model: claude-sonnet-5
 description: 변경 대상(파일/함수/클래스/SQL/엔드포인트/DB 컬럼)의 직간접 영향과 위험도를 분석한다. "영향도 분석", "이거 수정하면 어디 영향?", "이 함수 수정해도 돼?", "이 SQL 바꾸면 어디 영향?", "이 컬럼 추가했을 때 영향", "impact analysis", "이 API 변경 영향", "분석해줘 영향", "이거 건드려도 돼?", "어디서 쓰이고 있어?", "이 메서드 호출처" 요청 시 트리거. 축약 호출 "영향도 [대상]", "임팩트 [대상]"도 트리거. 인덱스가 없으면 analyzer를 feature-scoped 모드로 먼저 호출.
 ---
 
@@ -8,6 +9,8 @@ description: 변경 대상(파일/함수/클래스/SQL/엔드포인트/DB 컬럼
 변경 대상이 주어지면 `impact-analyzer` 에이전트를 호출해 직간접 영향과 위험도를 평가한다.
 
 수정·개발·마이그레이션 작업의 *시작점*으로, 다른 작업 스킬(`safe-modify`, `scaffold-feature`, `plan-migration`)도 내부적으로 이 스킬을 호출한다.
+
+**모델 고정:** 영향 분석, 인덱스 부재 시 feature-scoped analyzer, general-purpose 폴백과 재시도 모두 `claude-sonnet-5`를 사용한다. Opus로 자동 승격하지 않는다. 모델 미지원·권한 거부·다른 모델 대체가 확인되면 중단하고 알린다. 모델 선택을 확인할 수 없으면 실제 Sonnet 5 실행을 검증했다고 보고하지 않는다. 정적 추적의 누락 가능성과 추가 확인 항목은 기존대로 보고하며, 모델 변경을 이유로 분석 범위를 줄이지 않는다.
 
 ---
 
@@ -60,7 +63,7 @@ Agent(
   subagent_type="ax-navi:impact-analyzer",
   description="변경 영향도 분석",
   prompt="<변경 대상: [정규화된 식별자]. 프로젝트 루트: [절대경로]. 출력: _workspace/reports/impact_<slug>.md>",
-  model="opus"
+  model="claude-sonnet-5"
 )
 ```
 

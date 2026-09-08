@@ -45,7 +45,26 @@ export async function test(register, assert) {
     assert.equal(new Set(skillNames).size, skills.length);
     assert.ok(agentNames.every(Boolean), "에이전트 name 누락");
     assert.ok(skillNames.every(Boolean), "스킬 name 누락");
-    assert.ok(agents.every(({ text }) => ["sonnet", "opus"].includes(field(text, "model"))), "에이전트 model 누락·오류");
+    assert.ok(agents.every(({ text }) => ["sonnet", "opus", "claude-sonnet-5"].includes(field(text, "model"))), "에이전트 model 누락·오류");
+  });
+
+  register("초기화와 modify의 메인·위임·재시도 모델은 Sonnet 5로 고정된다", () => {
+    const pinned = "claude-sonnet-5";
+    for (const name of ["harness-init", "safe-modify", "analyze-impact", "modify"]) {
+      const text = read(join(root, "skills", name, "SKILL.md"));
+      assert.equal(field(text, "model"), pinned, `${name} 스킬 모델`);
+      const calls = [...text.matchAll(/model="([^"]+)"/g)].map(m => m[1]);
+      if (name !== "modify") assert.ok(calls.length > 0, `${name} 호출 모델 누락`);
+      assert.ok(calls.every(m => m === pinned), `${name} 호출/재시도 모델 override`);
+    }
+    for (const name of ["analyzer", "impact-analyzer", "writer"]) {
+      assert.equal(field(read(join(root, "agents", `${name}.md`)), "model"), pinned, `${name} 기본 모델`);
+    }
+    assert.ok(read(join(root, "skills", "modify", "SKILL.md")).includes('Skill(skill="ax-navi:safe-modify"'), "modify 위임 유지");
+    const init = read(join(root, "skills", "harness-init", "SKILL.md"));
+    assert.ok(/\| Full \| `init` \(A \+ B 전체\) \| claude-sonnet-5 \|/.test(init), "Full 분석 범위 유지");
+    const writer = read(join(root, "agents", "writer.md"));
+    assert.ok([...writer.matchAll(/^model: (.+)$/gm)].every(m => m[1].trim() === pinned), "생성 에이전트 모델 고정");
   });
 
   register("매니페스트의 에이전트·스킬 수가 실제 파일 수와 일치한다", () => {

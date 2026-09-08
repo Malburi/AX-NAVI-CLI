@@ -2,6 +2,14 @@
 
 스킬은 사용자 요청을 받아 순서·게이트·후속 작업을 지휘하는 오케스트레이터다. 에이전트는 분석·판정·생성처럼 경계가 분명한 전문 작업을 수행한다. 파일 변환·인덱싱·wiki 생성처럼 판단이 필요 없는 작업은 Python/Node 도구가 담당한다.
 
+## 초기화·수정 모델 정책
+
+`harness-init`과 `/modify` → `safe-modify` → `analyze-impact` 경로는 메인 스킬·위임 호출·재시도를 `claude-sonnet-5`로 고정한다. Standard/Full은 분석 범위만 다르며 Full 분석과 변경 안전성 게이트는 유지한다. `analyzer`·`impact-analyzer`·`writer` 기본 모델과 writer가 새로 만드는 프로젝트 에이전트도 Sonnet 5다. 독립적인 마이그레이션·레거시 해석 등 다른 경로의 기존 모델 정책은 이번 변경 범위가 아니다.
+
+공식 모델 ID는 `claude-sonnet-5`이며 별칭 `sonnet`에 맡기지 않는다. [Sonnet 5 모델 문서](https://platform.claude.com/docs/en/models/sonnet-5/whats-new-sonnet-5), [Claude Code 모델 선택 우선순위](https://code.claude.com/docs/en/sub-agents#choose-a-model)를 참조한다. 호스트 버전·조직 allowlist·클라우드 제공자 설정에 따라 실제 선택이 달라질 수 있으므로 실행 모델을 확인할 수 없으면 고정 실행을 검증했다고 보고하지 않는다. 미지원이나 다른 모델 대체가 확인되면 알리고 중단하며 Opus로 자동 폴백하지 않는다. 전역 설정과 기존 프로젝트에 배포된 에이전트 사본은 자동 수정하지 않는다.
+
+스킬 frontmatter의 메인 모델 지정은 해당 턴에 적용된다. 다음 사용자 메시지에서는 세션 모델이 복원될 수 있다. 여러 턴의 메인 작업까지 계속 Sonnet 5를 쓰려면 사용자가 세션에서 `/model claude-sonnet-5`를 선택한다. 플러그인이 지정한 Agent 호출 모델과 전역/세션 모델은 구분한다.
+
 ## 사용자 요청별 스킬
 
 | 목적 | 스킬 | 책임 | 주요 에이전트·도구 |
