@@ -72,6 +72,17 @@ claude plugin install ax-navi@ax-navi --scope user
 
 이미 `ax-navi` 마켓플레이스를 등록했다면 첫 줄은 건너뛰고 두 번째 줄만 실행하면 됩니다. 설치 후 새 Claude Code 세션을 시작하거나 `/reload-plugins`를 실행하세요.
 
+기존 `ax-navi` 마켓플레이스가 구 저장소 `Malburi/AX-NAVI`를 가리키는 경우에는 V2로 전환합니다.
+
+```bash
+claude plugin uninstall ax-navi@ax-navi --scope user
+claude plugin marketplace remove ax-navi
+claude plugin marketplace add Malburi/AX-NAVI-V2
+claude plugin install ax-navi@ax-navi --scope user
+```
+
+기존 마켓플레이스의 출처가 이미 `AX-NAVI-V2`라면 제거하지 말고 `claude plugin marketplace update ax-navi` 후 설치 명령만 실행하세요.
+
 ### 1단계 — 마켓플레이스 등록 (최초 1회)
 
 Claude Code 어느 프로젝트에서나 실행합니다.

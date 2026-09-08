@@ -85,6 +85,15 @@ claude plugin install ax-navi@ax-navi --scope user
 claude plugin details ax-navi@ax-navi
 ```
 
+기존 `ax-navi` 등록이 구 저장소 `Malburi/AX-NAVI`를 가리키면 다음 순서로 V2로 전환한다.
+
+```bash
+claude plugin uninstall ax-navi@ax-navi --scope user
+claude plugin marketplace remove ax-navi
+claude plugin marketplace add Malburi/AX-NAVI-V2
+claude plugin install ax-navi@ax-navi --scope user
+```
+
 ---
 
 ## 3. 첫 번째 harness 만들기

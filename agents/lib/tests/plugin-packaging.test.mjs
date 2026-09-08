@@ -57,6 +57,7 @@ export async function test(register, assert) {
       const text = read(join(root, relative));
       assert.ok(text.includes("claude plugin marketplace add Malburi/AX-NAVI-V2"), `${relative} marketplace 주소`);
       assert.ok(text.includes("claude plugin install ax-navi@ax-navi --scope user"), `${relative} install 명령`);
+      assert.ok(text.includes("claude plugin marketplace remove ax-navi"), `${relative} 구 저장소 전환 절차`);
       assert.ok(!text.includes("claude plugin marketplace add Malburi/AX-NAVI\n"), `${relative} 구 저장소 명령`);
     }
   });
