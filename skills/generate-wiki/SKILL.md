@@ -66,6 +66,14 @@ wiki 본문은 zero-LLM이 원칙이고 이 페이지만 유일한 예외다(약
 
 ## Phase 3: 결과 보고
 
+`business-flows.md`에서 API별 실제 호출 관계·SQL·읽기/쓰기 테이블과 미확인 규칙을 제공한다.
+`coverage.md`와 `_workspace/wiki_quality.json`의 연결 수·설명 수·깊이 제한을 함께 보고한다.
+`PARTIAL`은 페이지 생성 실패가 아니라 분석 누락이 있음을 뜻한다. 누락 목록을 근거로
+필요한 업무만 추가 분석하며 전체 harness-init을 자동 재실행하지 않는다.
+`domain.md`는 analyzer의 업무 개요·업무별 흐름·업무 규칙을 우선 사용하고 구형 리포트는
+기술 개요 폴백임을 표시한다. 정적 도달 목록을 실제 실행 순서로 설명하지 않는다.
+
+
 `_workspace/07_wiki_build.md`를 읽어 요약 보고:
 
 ```

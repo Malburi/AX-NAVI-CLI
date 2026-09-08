@@ -19,6 +19,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const INDEX_SCHEMAS = [
   "symbols", "call_graph", "sql_usage", "transactions", "external_io",
@@ -32,7 +33,7 @@ function readJson(path, fallback = null) {
 function parseArgs(argv) {
   const args = {
     root: process.cwd(),
-    pluginRoot: resolve(dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, "$1")), ".."),
+    pluginRoot: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
     out: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -113,7 +114,13 @@ export function validateHarness({ root, pluginRoot, tier: requestedTier }) {
   const schemaCache = new Map();
   const loadSchema = (name) => {
     const normalized = name.replace(/^\.\//, "");
-    if (!schemaCache.has(normalized)) schemaCache.set(normalized, readJson(join(schemaDir, normalized), {}));
+    if (!schemaCache.has(normalized)) {
+      const schema = readJson(join(schemaDir, normalized));
+      if (!schema || typeof schema !== "object" || !Object.keys(schema).length) {
+        add(checks, "FAIL", "SCHEMA_LOAD", `스키마를 읽을 수 없습니다: ${join(schemaDir, normalized)}`);
+      }
+      schemaCache.set(normalized, schema || {});
+    }
     return schemaCache.get(normalized);
   };
   if (meta) {
@@ -185,5 +192,5 @@ function main() {
   }
 }
 
-const isMain = process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, "$1"));
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) main();

@@ -14,6 +14,18 @@
           "id": { "type": "string" },
           "endpoint_id": { "type": "string" },
           "method_chain": { "type": "array", "items": { "type": "string" } },
+          "root_methods": { "type": "array", "items": { "type": "string" } },
+          "call_edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["from", "to"],
+              "properties": { "from": { "type": "string" }, "to": { "type": "string" } }
+            }
+          },
+          "traversal": { "type": "string", "enum": ["reachable_calls"] },
+          "max_depth": { "type": "integer", "minimum": 0 },
+          "truncated": { "type": "boolean" },
           "sql_ids": { "type": "array", "items": { "type": "string" } },
           "tables_read": { "type": "array", "items": { "type": "string" } },
           "tables_written": { "type": "array", "items": { "type": "string" } },

@@ -14,6 +14,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function parseArgs(argv) {
   const args = { command: argv[0] || "status", root: process.cwd(), kind: "initial", initial: 2, retries: 1 };
@@ -192,5 +193,5 @@ function main() {
   }
 }
 
-const isMain = process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, "$1"));
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) main();

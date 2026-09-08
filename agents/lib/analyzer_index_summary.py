@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import argparse
+import re
 from collections import Counter
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -197,10 +198,24 @@ def build_summary(root):
     return "\n".join(sections)
 
 
+def assemble_report(report, summary):
+    """AI가 쓴 해석은 보존하고 기계 요약 영역만 멱등 교체한다."""
+    begin, end = "<!-- INDEX_SUMMARY_BEGIN -->", "<!-- INDEX_SUMMARY_END -->"
+    block = f"{begin}\n{summary.strip()}\n{end}"
+    if begin in report and end in report:
+        return re.sub(re.escape(begin) + r".*?" + re.escape(end), lambda _: block, report, count=1, flags=re.S)
+    marker = "[SECTION_B_INDEX_SUMMARY_INSERT]"
+    if marker in report:
+        return report.replace(marker, block, 1)
+    # 구형 리포트는 중복 추가하지 않는다. 새 마커를 가진 리포트만 조립 대상이다.
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description="analyzer 리포트 Section B/D 기계 생성기 (인덱스 JSON 재진술, LLM 미사용)")
     parser.add_argument("--root", required=True, help="프로젝트 루트 절대 경로")
     parser.add_argument("--out", default=None, help="출력 경로 (기본: [root]/_workspace/01b_index_summary.md)")
+    parser.add_argument("--assemble-report", action="store_true", help="분석 리포트의 요약 마커를 기계 조립")
     args = parser.parse_args()
 
     out_path = args.out or os.path.join(args.root, "_workspace", "01b_index_summary.md")
@@ -214,6 +229,17 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(summary)
     print(f"생성 완료: {out_path}")
+    if args.assemble_report:
+        report_path = os.path.join(args.root, "_workspace", "01_analyzer_report.md")
+        with open(report_path, encoding="utf-8-sig") as f:
+            report = f.read()
+        assembled = assemble_report(report, summary)
+        if assembled == report and "<!-- INDEX_SUMMARY_BEGIN -->" not in report:
+            print("WARN: 조립 마커 없는 구형 리포트 — 원문 보존", file=sys.stderr)
+        else:
+            with open(report_path, "w", encoding="utf-8") as f:
+                f.write(assembled)
+            print(f"리포트 조립 완료: {report_path}")
 
 
 if __name__ == "__main__":

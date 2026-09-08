@@ -1,7 +1,9 @@
 import html
+import re
+from urllib.parse import urlsplit
 
 # 정적 빌드(wiki_generator.py)가 쓰는 최소 HTML 렌더러.
-# render_markdown_page()는 외부 CDN 의존 없이 markdown을 이스케이프 후 <pre>로 보여준다 —
+# render_markdown_page()는 외부 CDN 의존 없이 기본 Markdown을 안전한 HTML로 표시한다 —
 # 폐쇄망 환경에서도, file:// 로 직접 열어도 동작해야 하기 때문. (_html/ 정적 렌더 사본에서 사용)
 # render_index()는 [2026-07-15]부터 Docsify 기반이라 예외 — 외부 CDN 필요, file://는 미지원(serve.bat으로 로컬 서버 실행 필요).
 # 별도 프로젝트 wiki-hub(중앙 허브)는 이 파일과 무관 — 자체 렌더러(CDN 미사용)를 갖는다.
@@ -11,6 +13,10 @@ body { font-family: -apple-system, Segoe UI, sans-serif; max-width: 900px; margi
 pre { white-space: pre-wrap; word-break: break-word; background: #f6f8fa; padding: 16px; border-radius: 6px; }
 a { color: #1a5fa8; }
 .nav { margin-bottom: 16px; }
+table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; overflow-wrap: anywhere; }
+blockquote { border-left: 3px solid #aaa; margin-left: 0; padding-left: 14px; color: #555; }
+code { overflow-wrap: anywhere; }
 """
 
 INDEX_STYLE = """
@@ -20,9 +26,82 @@ h3 { margin-top: 32px; color: #666; }
 """
 
 
+def _inline(text):
+    parts, position = [], 0
+    pattern = r"`([^`]+)`|\[([^\]]+)\]\(([^\s)]+)\)|\*\*([^*]+)\*\*"
+    for match in re.finditer(pattern, text):
+        parts.append(html.escape(text[position:match.start()]))
+        code, label, target, bold = match.groups()
+        try:
+            scheme = urlsplit(target).scheme.lower() if target is not None else ""
+        except ValueError:
+            scheme = "invalid"
+        if code is not None:
+            parts.append(f"<code>{html.escape(code)}</code>")
+        elif bold is not None:
+            parts.append(f"<strong>{html.escape(bold)}</strong>")
+        elif scheme in ("", "http", "https", "mailto") and not target.startswith(("//", "\\\\")):
+            if not scheme:
+                target = re.sub(r"\.md(?=#|$)", ".html", target)
+                if target.startswith("call-graph.html"):
+                    target = "../" + target
+            parts.append(f'<a href="{html.escape(target, quote=True)}">{html.escape(label)}</a>')
+        else:
+            parts.append(html.escape(label or ""))
+        position = match.end()
+    parts.append(html.escape(text[position:]))
+    return "".join(parts)
+
+
+def render_markdown(content):
+    """헤딩·표·목록·인용·코드·링크 지원. 원본 HTML은 실행하지 않는다."""
+    lines = content.splitlines()
+    blocks, i = [], 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("```"):
+            code = []
+            i += 1
+            while i < len(lines) and not lines[i].startswith("```"):
+                code.append(lines[i])
+                i += 1
+            blocks.append("<pre><code>" + html.escape("\n".join(code)) + "</code></pre>")
+        elif re.match(r"^#{1,6} ", line):
+            heading, text = line.split(" ", 1)
+            anchor = re.sub(r"[^\w\- ]", "", text.lower()).replace(" ", "-")
+            blocks.append(f'<h{len(heading)} id="{html.escape(anchor)}">{_inline(text)}</h{len(heading)}>')
+        elif i + 1 < len(lines) and "|" in line and re.fullmatch(r"[\s|:\-]+", lines[i + 1]) and "-" in lines[i + 1]:
+            row = lambda text, tag: "<tr>" + "".join(f"<{tag}>{_inline(c.strip())}</{tag}>" for c in text.strip().strip("|").split("|")) + "</tr>"
+            table = ["<table><thead>", row(line, "th"), "</thead><tbody>"]
+            i += 2
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                table.append(row(lines[i], "td"))
+                i += 1
+            blocks.append("".join(table) + "</tbody></table>")
+            continue
+        elif re.match(r"^\s*(?:[-*] |\d+\. )", line):
+            items = []
+            ordered = bool(re.match(r"^\s*\d+\. ", line))
+            item_pattern = r"^\s*\d+\. " if ordered else r"^\s*[-*] "
+            while i < len(lines) and re.match(item_pattern, lines[i]):
+                items.append("<li>" + _inline(re.sub(r"^\s*(?:[-*] |\d+\. )", "", lines[i])) + "</li>")
+                i += 1
+            tag = "ol" if ordered else "ul"
+            blocks.append(f"<{tag}>" + "".join(items) + f"</{tag}>")
+            continue
+        elif line.startswith("> "):
+            blocks.append("<blockquote>" + _inline(line[2:]) + "</blockquote>")
+        elif line.strip() == "---":
+            blocks.append("<hr>")
+        elif line.strip():
+            blocks.append("<p>" + _inline(line) + "</p>")
+        i += 1
+    return "\n".join(blocks)
+
+
 def render_markdown_page(title, page_path, content, index_href="index.html"):
-    """markdown 텍스트 1개를 안전하게 이스케이프해 <pre>로 보여주는 HTML 문서."""
-    escaped = html.escape(content)
+    """기본 Markdown을 오프라인에서도 표·링크·목록으로 읽을 수 있게 렌더한다."""
+    rendered = render_markdown(content)
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <title>{html.escape(page_path)} - {html.escape(title)}</title>
@@ -30,7 +109,7 @@ def render_markdown_page(title, page_path, content, index_href="index.html"):
 <body>
 <div class="nav"><a href="{html.escape(index_href)}">← 전체 페이지 목록</a></div>
 <h2>{html.escape(page_path)}</h2>
-<pre>{escaped}</pre>
+{rendered}
 </body></html>"""
 
 

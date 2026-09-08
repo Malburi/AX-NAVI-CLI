@@ -154,7 +154,7 @@ FROM/JOIN 절의 `ROWNUM`·`DUAL`·`SYSDATE`·`LEVEL` 같은 의사테이블은 
   "_meta": { "generated_at": "...", "generator": "deterministic-indexer", "group_count": 185, "decidable_raw_count": 2380, "total_occurrences": 2380 },
   "groups": [
     {
-      "group_id": "g0001",
+      "group_id": "g-0123456789abcdef01234567",
       "kind": "ambiguous_call",
       "key_field": "user.getUserNo(...)",
       "candidates": ["eduport.common.login.model.StudySession.getUserNo", "eduport.common.login.model.UserSession.getUserNo"],
@@ -167,7 +167,9 @@ FROM/JOIN 절의 `ROWNUM`·`DUAL`·`SYSDATE`·`LEVEL` 같은 의사테이블은 
 }
 ```
 
-`key_field`는 `kind`에 따라 `expression`(`ambiguous_call`) · `handler_name`(`unresolved_trigger`) · `target_name`(`ambiguous_injection`/`ambiguous_inherit`) 중 해당 값을 그대로 옮긴 것이다. `occurrences[]`는 그룹에 속한 모든 발생 위치를 담으며, 그룹 수가 상한(2000개)을 넘는 극단적인 경우에만 `occurrences_omitted: true`로 생략된다(실측 규모 대비 이 상한은 훨씬 넉넉하다). analyzer는 그룹당 `occurrences[0]`만 열어 판정하고 나머지 occurrence에는 같은 판정을 그대로 적용한다 — 상세 계약은 `agents/analyzer.md` Step 8 참조.
+`key_field`는 `kind`에 따라 `expression`(`ambiguous_call`) · `handler_name`(`unresolved_trigger`) · `target_name`(`ambiguous_injection`/`ambiguous_inherit`) 중 해당 값이다. `group_id`는 kind·key_field·정렬된 후보 집합의 해시로, 다른 그룹의 추가나 정렬 변경에도 유지된다. ID를 직접 계산하지 않고 현재 파일의 값을 사용한다.
+
+`occurrences[]`는 전체 발생 위치이며, 상한(2000개 그룹) 밖의 대상은 `occurrences_omitted: true`로 생략될 수 있다. analyzer는 대표 근거로 일관된 판정이 가능하면 `{"op":"resolve_group","group_id":"<id>","to":"<후보 id>","type":"call","evidence":"<근거>"}` 한 건만 제출한다. 인덱서가 현재 그룹의 모든 좌표로 확장한다. 없는 그룹·불완전한 좌표·후보 밖 대상은 거부한다. 문맥별로 판정이 달라지면 개별 `add_edge`를 사용한다. 설명 패치도 의미가 같은 대상에 한해 `id` 대신 `ids`와 공통 설명을 제출할 수 있다. 상세 계약은 `agents/analyzer.md` Step 8을 참조한다.
 
 ---
 
@@ -545,6 +547,8 @@ OWASP Top 10 (2021) 카테고리별 매핑. 정적 분석 증거 기반 — 증�
 ```
 
 각 체인은 엔드포인트(`api_contract`) → 호출 경로(`call_graph`) → SQL(`sql_usage`) → 읽은/쓴 테이블을 조인해 결정론적으로 도출한다. 인덱서가 이미 메모리에 있는 그래프를 조인하며 LLM은 개입하지 않는다.
+
+DB 호출이 없는 엔드포인트도 체인을 생성한다. `method_chain`은 도달 가능한 메서드의 탐색 순서이며 실제 실행 순서가 아니다. 신규 체인은 `root_methods`, 실제 관계인 `call_edges: [{from, to}]`, `traversal: "reachable_calls"`, `max_depth`, `truncated`를 포함한다. 깊이 제한은 누락 가능성으로 위키에 표시한다. AI 호출 엣지 적용 후 체인을 재계산하며, incremental 재인덱싱에도 저장된 설명·흐름 note·클라이언트 해설 패치를 다시 적용한다.
 
 `note`는 선택 필드다 — 인덱서는 채우지 않고, analyzer가 `_ai_patch.json`의 `set_flow_note`로 DTO/컬럼 의미·불일치를 보강한다. 없어도 정상이다.
 

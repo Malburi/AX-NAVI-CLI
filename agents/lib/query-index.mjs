@@ -17,8 +17,9 @@
  * - 응답에 상한을 걸고 `truncated`로 잘린 수를 밝힌다. 조용히 자르지 않는다.
  * - 없는 인덱스를 물으면 빈 결과가 아니라 사유를 돌려준다 — "결과 0건"과 "인덱스 없음"은 다르다.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
@@ -196,7 +197,7 @@ const COMMANDS = {
     const sizes = {};
     for (const name of meta.indexes || []) {
       const path = indexPath(root, name);
-      if (existsSync(path)) sizes[name] = `${(readFileSync(path).length / 1048576).toFixed(1)}MB`;
+      if (existsSync(path)) sizes[name] = `${(statSync(path).size / 1048576).toFixed(1)}MB`;
     }
     return {
       tier: meta.tier,
@@ -247,5 +248,5 @@ function main() {
 
 export { COMMANDS, loadIndex };
 
-const isMain = process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, "$1"));
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) process.exit(main());

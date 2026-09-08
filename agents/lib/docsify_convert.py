@@ -29,6 +29,8 @@ PAGE_META = {
     # 파일이 없으면 사이드바에서 자동 제외되므로 zero-LLM 실행에는 영향 없다.
     "overview":         ("시스템 해설 (AI)", "시스템 개요"),
     "domain":           ("도메인 개요", "시스템 개요"),
+    "business-flows":   ("업무 처리 흐름", "시스템 개요"),
+    "coverage":         ("분석 범위·미확인 항목", "분석 리포트"),
     "architecture":     ("아키텍처", "시스템 개요"),
     "workflows":        ("AI 워크플로우 스킬", "AI 도구"),
     "support-status":   ("유지보수 지원 현황", "AI 도구"),

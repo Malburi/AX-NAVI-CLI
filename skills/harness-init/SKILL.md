@@ -252,16 +252,17 @@ QA(`T-Q`)와 wiki(`T-WIKI`)는 Tier와 무관하게 이 초기 작업 그래프�
 
 ## Phase 2: 팀원 실행
 
-### 오케스트레이터는 스크립트를 직접 실행하지 않는다
+### 반복 스크립트 블록은 pipeline-runner에 위임한다
 
 `agents/lib/*` 스크립트 블록은 전부 `pipeline-runner`에 위임한다 (2-0.5 `index`, 2-2.3 `assemble`, 2-3.5 `verify`, 3.7 `wiki`). 이 블록들은 정상 경로에서도 실행 확인·설정 작성·폴백·재시도·산출물 확인으로 수 회씩 왕복하는데, 오케스트레이터가 직접 하면 그 왕복마다 200~350K 컨텍스트를 다시 읽는다. 위임하면 왕복은 버려지는 서브에이전트 컨텍스트에서 일어나고 메인은 요약 한 덩어리만 받는다.
 
-메인 스레드에 남는 스크립트 호출은 **단발 명령 2종뿐**이다. 위임해도 에이전트 스폰 비용이 절감분보다 커서 그대로 둔다.
+메인 스레드에는 아래 단발 명령과 제어 게이트만 남긴다. 이 호출만을 위해 새 에이전트를 만들지 않는다.
 
 | 남는 호출 | 위치 | 남기는 이유 |
 |---|---|---|
 | `build-index.mjs --apply-ai-patch` | 2-1.5 | 1회 호출, analyzer와 writer 사이에 끼어 있어 다른 블록과 묶이지 않음 |
-| `ai-budget.mjs claim` | 2-1 / 2-2 / 2-3 / Phase 4 | 결과(exit 0/1)로 그 다음 `Agent()` 호출 여부를 결정하는 제어 게이트라 위임 불가 |
+| `analyzer_index_summary.py --assemble-report` | 2-1.6 / Phase 4 갱신 후 | 최신 인덱스 요약을 리포트에 삽입하는 단발 호출. 패치 적용과 같은 도구 호출에서 순차 실행 가능 |
+| `ai-budget.mjs estimate / claim / record` | 견적 / 에이전트 호출 전후 / Phase 4 | 다음 호출 여부를 결정하고 실제 소비를 기록하는 제어 게이트 |
 
 > **스크립트 경로 규칙 (위 잔여 호출과 `pipeline-runner`에 넘기는 `plugin_root` 공통)**: 스크립트는 대상 프로젝트가 아니라 *플러그인 설치 루트*에 있다. PowerShell은 `$env:CLAUDE_PLUGIN_ROOT`, bash는 `$CLAUDE_PLUGIN_ROOT`로 참조한다. 환경변수가 비어 있으면 이 SKILL.md가 위치한 플러그인 디렉터리(예: `~/.claude/plugins/cache/ax-navi/...`)의 절대경로로 대체한다. cwd 기준 상대경로 `agents/lib/...`는 개발 저장소에서만 동작하므로 금지.
 > **파이썬 인터프리터 규칙**: `.py` 스크립트를 부를 때 `python` 또는 `python3` **어느 쪽도 하드코딩하지 않는다.** 윈도우(공식 설치판·Store판)에는 `python`만 있고, 다수 리눅스 배포판·Homebrew에는 `python3`만 있다 — ITO 현장은 윈도우가 기본이고 CI는 리눅스라 양쪽을 다 밟는다. 먼저 `python3 --version`을 시도해 성공하면 `python3`, 실패하면 `python`을 쓴다(둘 다 실패하면 "파이썬 없음"을 WARN으로 보고하고 그 블록만 건너뛴다 — 조용히 넘어가지 않는다). 아래 예시는 `python`으로 적혀 있으나 실제 호출 시 이 규칙으로 결정한 이름을 쓴다.
@@ -378,7 +379,19 @@ node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[절대경로]
 
 기존 노드 사이의 엣지만 추가되고, 없는 노드를 참조하는 operation은 사유와 함께 거부된다. 전부 거부되면 비정상 종료하므로 **WARN으로 보고하고 계속 진행**한다(인덱스 자체는 유효하고 보강만 안 된 상태다). 병합 결과는 `_meta.json`의 `ai_enrichment`에 남는다.
 
-analyzer가 `call_graph.json`을 직접 고치지 않고 patch로 내는 이유는 재인덱싱 때문이다. `--mode incremental`은 캐시에서 그래프를 다시 만들므로, 손으로 덧붙인 엣지는 다음 "인덱스만 갱신" 실행에서 **에러 없이 사라진다**. patch는 파일을 쓰기 전에 다시 병합되고 데드 코드도 그에 맞춰 재계산된다.
+analyzer가 `call_graph.json`을 직접 고치지 않고 patch로 내는 이유는 재인덱싱 때문이다. `--mode incremental`은 소스에서 그래프를 다시 만들므로, 손으로 덧붙인 엣지는 다음 "인덱스만 갱신" 실행에서 **에러 없이 사라진다**. patch는 파일을 쓰기 전에 다시 병합되고 데드 코드도 그에 맞춰 재계산된다.
+
+### 2-1.6. 분석 리포트 기계 조립
+
+AI 패치 병합 뒤, writer가 리포트를 읽기 전에 다음 단발 명령을 실행한다.
+analyzer가 남긴 `[SECTION_B_INDEX_SUMMARY_INSERT]`를 최신 인덱스 요약으로 교체한다.
+출력 리포트를 메인에서 다시 읽거나 복사하지 않는다. 실패 시 미조립 WARN을 기록한다.
+
+```powershell
+python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/analyzer_index_summary.py" --root "[절대경로]" --assemble-report
+```
+
+Phase 4에서 패치 또는 인덱스를 변경한 경우에도 이 명령으로 기계 요약을 갱신한다.
 
 ### 2-2. writer 호출
 

@@ -648,12 +648,13 @@
       return ids.map(eid => {
         const f = FLOWS[eid];
         if (!f) return '';
-        const chain = (f.methods || []).map((nid, i) => {
+        const chain = (f.methods || []).map((nid) => {
           const inner = nodeById.has(nid)
             ? `<a class="node-link" data-goto="${esc(nid)}">${esc(shortMethod(nid))}</a>`
             : `<span style="opacity:.5">${esc(shortMethod(nid))}</span>`;
-          return `<li><span class="step">${i + 1}</span>${inner}</li>`;
+          return `<li>${inner}</li>`;
         }).join('');
+        const relations = (f.links || []).map(e => `<li>${esc(shortMethod(e.from))} → ${esc(shortMethod(e.to))}</li>`).join('');
         const chips = (arr, cls, icon) => (arr || []).map(t => {
           const tid = 'db_table:' + t;
           return nodeById.has(tid)
@@ -662,9 +663,11 @@
         }).join(' ');
         const rd = chips(f.tr, 'r', '읽기'), wr = chips(f.tw, 'w', '쓰기');
         return `<div class="detail-card">
-          <div class="label">처리 흐름${f.conf ? ' · 신뢰도 ' + esc(f.conf) : ''}</div>
+          <div class="label">정적 호출 관계${f.conf ? ' · 신뢰도 ' + esc(f.conf) : ''}</div>
+          <div class="sub">분기별 호출 관계이며 실행 순서를 보장하지 않습니다.${f.depth_limited ? ' 탐색 깊이 상한으로 일부 경로 미확인.' : ''}</div>
           ${f.note ? `<div class="value desc" style="margin-bottom:8px">${esc(f.note)}</div>` : ''}
-          ${chain ? `<div class="sub">메서드 ${f.nm}개${f.nm > (f.methods || []).length ? ` (앞 ${f.methods.length}개만)` : ''}</div><ol class="chain">${chain}</ol>` : ''}
+          ${relations ? `<ul class="chain">${relations}</ul>${f.link_count > f.links.length ? `<div class="sub">전체 ${f.link_count}개 중 ${f.links.length}개 표시</div>` : ''}` : ''}
+          ${chain ? `<div class="sub">도달 가능한 메서드 ${f.nm}개${f.nm > (f.methods || []).length ? ` (앞 ${f.methods.length}개만)` : ''}</div><ul class="chain">${chain}</ul>` : ''}
           ${f.nq ? `<div class="kv"><span>SQL</span><span class="mono">${esc((f.sqls || []).join(', '))}${f.nq > (f.sqls || []).length ? ' … 외 ' + (f.nq - f.sqls.length) + '개' : ''}</span></div>` : ''}
           ${rd ? `<div class="kv"><span>테이블</span><span>${rd}</span></div>` : ''}
           ${wr ? `<div class="kv"><span></span><span>${wr}</span></div>` : ''}

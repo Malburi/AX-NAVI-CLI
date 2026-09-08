@@ -72,22 +72,22 @@ def build_architecture(own_report_text, partner_report_text=None,
 
 
 def _extract_domain_sections(report_text):
-    """01_analyzer_report.md에서 "## A. ..." 섹션(프로젝트 기본 정보·아키텍처 레이어·요청 흐름·
-    코드 컨벤션·데이터 접근 패턴·클라이언트 자원·빌드/실행 명령)만 순서대로 뽑는다.
-    이 헤딩 집합은 agents/analyzer.md '출력: 분석 리포트' 템플릿에 고정돼 있어 정규식으로
-    안전하게 분리할 수 있다 — "## B."·"탐지 신뢰도" 등 더 기술적인 나머지는 architecture.md에만
-    남기고, 도메인/업무 흐름 이해에 필요한 부분만 빠르게 찾을 수 있는 별도 페이지로 분리한다."""
+    """업무 해설을 우선 추출하고, 구버전 리포트는 제한된 기술 개요와 미작성 안내로 대체한다."""
     if not report_text:
         return ""
-    blocks = [p.strip() for p in re.split(r"\n(?=## )", report_text) if p.strip().startswith("## A.")]
-    return "\n\n".join(blocks)
+    sections = [p.strip() for p in re.split(r"\n(?=## )", report_text)]
+    business = [p for p in sections if p.startswith(("## 업무 개요", "## 업무별 흐름", "## 업무 규칙", "## 분석 미확인"))]
+    if business:
+        return "\n\n".join(business)
+    blocks = [p for p in sections if p.startswith(("## A. 프로젝트 기본 정보", "## A. 아키텍처 레이어", "## A. 요청 흐름", "## A. 데이터 접근 패턴"))]
+    return "> 업무 해설 미작성 — 기존 기술 개요를 표시합니다. API별 근거는 [업무 처리 흐름](business-flows.md)을 참고하세요.\n\n" + "\n\n".join(blocks) if blocks else ""
 
 
 def build_domain_overview(own_report_text, partner_report_text=None,
                            own_label="이 저장소", partner_label=None, partners=None):
     own = _extract_domain_sections(own_report_text)
     if not own:
-        own = ("도메인 개요 섹션(`## A.`)을 찾지 못했습니다 — `_workspace/01_analyzer_report.md`가 "
+        own = ("업무 해설 또는 기술 개요 섹션을 찾지 못했습니다 — `_workspace/01_analyzer_report.md`가 "
                "없거나 예상 형식이 아닙니다. 전체 분석 리포트는 architecture.md를 참고하세요.\n")
     parts = ["# 도메인 개요\n", _section(own_label, own)]
     partner_domain = _extract_domain_sections(partner_report_text)
@@ -98,6 +98,88 @@ def build_domain_overview(own_report_text, partner_report_text=None,
         if block:
             parts.append(_section(f"파트너 ({p.get('label') or '연동 저장소'})", block))
     return "\n".join(p for p in parts if p)
+
+
+def flow_coverage(contract, data_flow):
+    endpoints = (contract or {}).get("endpoints") or []
+    flows = {c.get("endpoint_id"): c for c in (data_flow or {}).get("chains", [])}
+    missing = [e.get("id") for e in endpoints if e.get("id") not in flows]
+    undescribed = [e.get("id") for e in endpoints if not (e.get("description") or "").strip()]
+    truncated = [eid for eid, c in flows.items() if c.get("truncated")]
+    return {"status": "PARTIAL" if not endpoints or missing or undescribed or truncated else "PASS",
+            "endpoints": len(endpoints), "with_flow": len(endpoints) - len(missing),
+            "with_description": len(endpoints) - len(undescribed),
+            "missing_flow": missing, "missing_description": undescribed, "depth_limited": truncated}
+
+
+def build_business_flows(contract, data_flow):
+    """분기 관계와 분석 범위를 그대로 표시한다. 방문 순서를 실행 순서로 재해석하지 않는다."""
+    endpoints = (contract or {}).get("endpoints") or []
+    flows = {c.get("endpoint_id"): c for c in (data_flow or {}).get("chains", [])}
+    parts = ["# 업무 처리 흐름\n",
+             "> 정적 호출 관계입니다. 실행 순서·조건·예외 경로는 코드 근거 없이 확정하지 않습니다. 업무 목적과 규칙은 [도메인 개요](domain.md)를 함께 보세요.\n"]
+    if not endpoints:
+        parts.append("엔드포인트 미탐지 — 화면·배치 등 비 API 업무가 없다는 뜻은 아닙니다. 해당 진입점은 도메인 개요와 호출 그래프에서 확인하세요.\n")
+    for endpoint in endpoints:
+        eid = endpoint.get("id")
+        flow = flows.get(eid)
+        parts.extend([f"## {endpoint.get('method', '')} {endpoint.get('path', endpoint.get('path_pattern', eid))}\n",
+                      endpoint.get("description") or "업무 설명 미작성.",
+                      f"\n- 근거: `{endpoint.get('file', '미확인')}:{endpoint.get('line', '?')}`",
+                      f"- 핸들러: `{endpoint.get('handler', '미확인')}`"])
+        if not flow:
+            parts.append("- 처리 흐름 미분석 — 호출이 없거나 DB를 사용하지 않는다고 판단하지 않습니다.\n")
+            continue
+        parts.append(f"- 신뢰도: {flow.get('confidence', '미확인')} · 탐색 깊이: {flow.get('max_depth', '구버전 미기록')}")
+        parts.append("- 업무 규칙·예외: " + (flow.get("note") or "미확인 — 호출 관계만으로 추론하지 않습니다."))
+        if flow.get("truncated"):
+            parts.append("- 일부 호출은 탐색 깊이 상한으로 미확인입니다.")
+        if flow.get("call_edges"):
+            parts.extend(["\n### 호출 관계\n", "| 호출자 | 호출 대상 |", "|---|---|"])
+            parts.extend(f"| `{e['from']}` | `{e['to']}` |" for e in flow["call_edges"])
+        else:
+            parts.append("\n### 도달 가능한 메서드 (실행 순서 아님)\n")
+            parts.extend(f"- `{m}`" for m in flow.get("method_chain", []))
+        parts.append("\n- 읽기 테이블: " + (", ".join(f"`{t}`" for t in flow.get("tables_read", [])) or "탐색 범위에서 탐지되지 않음"))
+        parts.append("- 쓰기 테이블: " + (", ".join(f"`{t}`" for t in flow.get("tables_written", [])) or "탐색 범위에서 탐지되지 않음"))
+        parts.append("- SQL: " + (", ".join(f"`{s}`" for s in flow.get("sql_ids", [])) or "탐지되지 않음"))
+    return "\n".join(parts) + "\n"
+
+
+def build_flow_coverage(coverage):
+    return ("# 위키 분석 범위\n\n"
+            "> PASS는 아래 항목의 채움 상태이며 업무 정확성·전체 코드 커버리지를 보증하지 않습니다.\n\n"
+            f"- 상태: {coverage['status']}\n"
+            f"- 탐지 API: {coverage['endpoints']}개\n"
+            f"- 처리 흐름 연결: {coverage['with_flow']}/{coverage['endpoints']}\n"
+            f"- API 설명 작성: {coverage['with_description']}/{coverage['endpoints']}\n"
+            f"- 탐색 깊이 제한: {len(coverage['depth_limited'])}개\n\n"
+            "미연결 API와 미작성 설명은 아래 전체 목록으로 확인하세요.\n\n"
+            + "\n".join(f"- 흐름 미연결: `{eid}`" for eid in coverage["missing_flow"])
+            + "\n" + "\n".join(f"- 설명 미작성: `{eid}`" for eid in coverage["missing_description"])
+            + "\n" + "\n".join(f"- 탐색 깊이 제한: `{eid}`" for eid in coverage["depth_limited"]))
+
+
+def build_flow_pages(sources):
+    """저장소별 ID 공간을 분리해 흐름과 채움 상태를 합친다."""
+    flow_parts, coverage_parts, repositories = [], [], []
+    for source in sources:
+        label = source["label"]
+        contract, flow = source.get("contract_json"), source.get("flow_json")
+        coverage = flow_coverage(contract, flow)
+        repositories.append({"label": label, **coverage})
+        # 페이지 내부 제목을 한 단계 내려 저장소 경계를 유지한다.
+        demote = lambda text: re.sub(r"(?m)^(#{1,5}) ", r"\1# ", text)
+        flow_parts.append(f"## {label}\n\n" + demote(build_business_flows(contract, flow).split("\n", 1)[1]))
+        coverage_parts.append(f"## {label}\n\n" + demote(build_flow_coverage(coverage).split("\n", 1)[1]))
+    combined = {"status": "PASS" if repositories and all(r["status"] == "PASS" for r in repositories) else "PARTIAL"}
+    for key in ("endpoints", "with_flow", "with_description"):
+        combined[key] = sum(r[key] for r in repositories)
+    for key in ("missing_flow", "missing_description", "depth_limited"):
+        combined[key] = [f"{r['label']}::{eid}" for r in repositories for eid in r[key]]
+    combined["repositories"] = repositories
+    return ("# 업무 처리 흐름\n\n" + "\n\n".join(flow_parts),
+            "# 위키 분석 범위\n\n" + "\n\n".join(coverage_parts), combined)
 
 
 def _read_dir_pages(dir_path):

@@ -9,6 +9,7 @@ import { test as registerPluginPackagingTests } from "./plugin-packaging.test.mj
 import { test as registerQueryIndexTests } from "./query-index.test.mjs";
 import { test as registerPortabilityTests } from "./portability.test.mjs";
 import { test as registerVerifyTargetTests } from "./verify-target.test.mjs";
+import { test as registerAnalysisWikiTests } from "./analysis-wiki.test.mjs";
 
 const tests = [];
 function test(name, fn) {
@@ -34,6 +35,7 @@ await registerPluginPackagingTests(test, assert);
 await registerQueryIndexTests(test, assert);
 await registerPortabilityTests(test, assert);
 await registerVerifyTargetTests(test, assert);
+await registerAnalysisWikiTests(test, assert);
 
 let passed = 0,
   failed = 0;

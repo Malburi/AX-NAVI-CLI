@@ -214,7 +214,7 @@ pair_linked = true이면 분석 리포트 헤더에 기록: 1:1이면 "파트너
 2. **판정할 것** — `_workspace/index/_unresolved_groups.json`. **`_unresolved.jsonl`을 줄 단위로 순회하지 않는다** — 이 판정은 `groups[]` 배열 단위로 한다.
    - **왜 그룹 단위인가**: 같은 애매함(같은 표현식/대상 + 같은 candidates 조합)이 코드베이스 곳곳에서 반복되는 경우가 흔하다. 레거시 Java 프로젝트 실측에서 판정 대상 발생 위치 2,380건이 실제로는 고유 패턴 185개뿐이었다(한 패턴이 872곳에서 반복) — 발생 위치마다 파일을 열어 매번 같은 판정을 반복하면 완전히 같은 결론에 12배 넘는 비용을 쓰는 셈이다. 그룹 하나당 판정은 한 번만 하고, 그 판정을 그룹에 속한 모든 발생 위치에 기계적으로 적용한다.
    - 각 그룹은 `{group_id, kind, key_field, candidates, occurrences: [{from, file, line, workspace}, ...], occurrence_count}` 형태다. **대표 사례로 `occurrences[0]`의 `file`·`line`만 열어서** `candidates` 중 무엇이 맞는지 판단한다 — 나머지 `occurrences[1..]`는 열지 않는다.
-   - 판정이 끝나면 그 그룹의 `occurrences[]` **전체**에 대해 하나씩 `add_edge`를 낸다 — `from`은 각 occurrence의 `from` 값을, `to`는 대표 사례에서 결정한 후보를, `file`·`line`도 각 occurrence 값을 그대로 쓴다(같은 판정, 다른 좌표). 근거(`evidence`)는 대표 사례에서 확인한 내용을 그대로 재사용해도 된다 — occurrence마다 새로 근거를 만들 필요는 없다.
+   - 판정이 일관되면 `{"op":"resolve_group","group_id":"<group_id>","to":"<후보 id>","type":"call|inject|inherit|reflect","evidence":"<확인한 근거>"}` **한 건만** 낸다. 인덱서가 실제 그룹의 발생 위치로 엣지를 확장하고 후보·근거를 검증한다. `occurrences[]`를 출력에 복제하지 않는다. 문맥별 판정이 다른 그룹은 `resolve_group`을 쓰지 않고 확인한 위치별 `add_edge`로 제출한다.
    - **예외 — 문맥에 따라 판정이 갈릴 수 있는 그룹**: 변수 선언 타입이 호출부 클래스마다 다를 수 있는 경우처럼, 하나의 판정이 모든 occurrence에 안전하게 적용되지 않는다고 판단되면 대표 사례 외 2~3곳을 더 표본으로 확인한다. 그래도 일관되지 않으면 그 그룹만 occurrence별로 나눠 개별 판정한다(그룹핑은 기본 전략이지 강제가 아니다) — 이 경우 왜 나눴는지 `note`에 남긴다.
    - **`no_candidates: true`인 `_unresolved.jsonl` 레코드는 애초에 그룹에 없다.** 후보가 0~1개라 고를 것이 없다 — 모호한 게 아니라 대상이 인덱스에 아예 없다는 뜻이고, 소스를 열어도 `candidates` 중에서 고르는 판정은 성립하지 않는다. (2026-08-16 이전에는 이 레코드들이 "후보 수 오름차순" 정렬 때문에 **맨 앞**에 와서 판정 예산 2000건을 통째로 소진했다. 실측 픽스처에서 처리 대상 2000건이 전부 후보 0개였다.)
    - `_analysis_input.json`의 `analyzer_contract.process_all_unresolved`가 `true`면 `groups[]`를 `unresolved_batch_size`(200, **그룹 단위**)씩 끝까지 처리한다.
@@ -234,9 +234,9 @@ pair_linked = true이면 분석 리포트 헤더에 기록: 1:1이면 "파트너
 ]}
 ```
 
-- `from`/`to`는 **반드시 `call_graph.json`의 `nodes`에 이미 있는 id**여야 한다. 노드는 새로 만들 수 없고, 없는 id는 `unknown_from_node`/`unknown_to_node`로 거부된다.
+- `from`/`to`는 기존 그래프 노드여야 한다. 없는 노드는 패치가 거부하며 추측 생성하지 않는다.
 - 미해결 목록에 없더라도 리플렉션·동적 프록시·문자열 기반 DI처럼 정규식이 잡을 수 없는 관계를 발견하면 같은 방식으로 operation을 추가한다.
-- `call_graph.json`을 직접 편집하지 않는 이유 — 재인덱싱(`--mode incremental`)이 그래프를 캐시에서 다시 만들기 때문에 직접 덧붙인 엣지는 다음 갱신에서 **에러 없이 사라진다**. patch는 쓰기 직전에 다시 병합된다.
+- `call_graph.json`을 직접 편집하지 않는 이유 — 재인덱싱(`--mode incremental`)이 그래프를 소스에서 다시 만들기 때문에 직접 덧붙인 엣지는 다음 갱신에서 **에러 없이 사라진다**. patch는 쓰기 직전에 다시 병합된다.
 - `set_endpoint_description`/`set_communication_description`도 같은 이유로 `api_contract.json`/`external_io.json`을 직접 편집하지 않고 이 패치로만 보강한다 — 상세 지침은 Step 11·Step 15.5 참조. `id`가 대상 파일에 없으면 `unknown_id`로 거부된다.
 - `set_node_note`/`set_edge_note` — call_graph의 노드·엣지에 "이게 왜 존재하는지·무엇을 하는지"를 1줄로 보강한다. **범위를 제한할 것**: 노드는 Controller·Service·DAO/Repository·허브 노드(`_analysis_input.json`의 `hubs`)처럼 의미 있는 단위만 대상으로 하고, 단순 getter/setter·유틸리티 함수처럼 이름만으로 역할이 자명한 노드는 건너뛴다(전수 주석 작업이 아니다 — 토큰 비용 상한을 위한 제약). 엣지도 이름만으로 호출 목적이 분명하지 않은 관계(예: 여러 단계를 건너뛰는 호출, 조건부 위임, 리플렉션/동적 디스패치로 추가한 엣지)에만 `note`를 붙이고, `orderService.cancel()`처럼 이름이 곧 설명인 평범한 호출에는 붙이지 않는다. `set_edge_note`의 `from`/`to`/`type`은 대상 엣지를 정확히 식별해야 하며(존재하지 않으면 `unknown_edge`로 거부), 같은 패치의 `add_edge`로 방금 추가한 엣지에도 붙일 수 있다.
 4. **확인만 하고 보고할 것** — 아래 "작성 후 자체 검증" 항목은 이때 읽기 전용 점검이다. dangling·`_meta`는 인덱서가 구조적으로 보장하므로, Spring인데 `inject`가 0개인 식의 **비개연성**만 리포트에 적는다(직접 고치지 않는다).
@@ -576,20 +576,21 @@ DB 접속 불가 시:
 
 **파일 경로:** `_workspace/01_analyzer_report.md`
 
-Section B/D 중 "의존성 그래프 요약"·"트랜잭션 경계"·"외부 통신"·"환경 분기"·"데드 코드 후보"·
-"OWASP Top 10 매핑"·"DB 스키마"는 이미 `_workspace/index/*.json`에 있는 카운트를 재진술하는 것뿐이므로 직접 쓰지 않는다.
-Phase C에서 인덱스 JSON을 다 쓴 뒤 다음을 실행:
+Section B/D의 기계 집계는 LLM이 읽어 복사하지 않는다. 아래 리포트 템플릿의
+`[SECTION_B_INDEX_SUMMARY_INSERT]`를 그대로 남겨 작성한다. 오케스트레이터가 AI 패치 적용 후
+`analyzer_index_summary.py --root "[root]" --assemble-report`로 최신 인덱스를 조립한다.
+독립 호출에서는 리포트 작성 후 같은 명령을 한 번 실행한다. 스크립트 실패 시 미조립임을 보고하고
+큰 JSON이나 집계표를 대신 작성하지 않는다.
 
-```
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/analyzer_index_summary.py" --root "[프로젝트 루트 절대 경로]"
-```
+스크립트는 플러그인 설치 루트의 `agents/lib/analyzer_index_summary.py`다. PowerShell은
+`$env:CLAUDE_PLUGIN_ROOT`, bash는 `$CLAUDE_PLUGIN_ROOT`를 쓰고, 비어 있으면 이 에이전트가
+설치된 플러그인 절대경로로 대체한다. 대상 프로젝트 cwd의 상대경로로 실행하지 않는다.
+Python은 `python3 --version` 성공 시 `python3`, 아니면 `python`을 사용한다.
 
-(스크립트는 대상 프로젝트가 아니라 플러그인 설치 루트에 있다 — PowerShell `$env:CLAUDE_PLUGIN_ROOT`, bash `$CLAUDE_PLUGIN_ROOT`. 비어 있으면 이 에이전트 파일이 위치한 플러그인 디렉터리 절대경로로 대체. cwd 상대경로 `agents/lib/...` 금지.)
-
-생성된 `_workspace/01b_index_summary.md`를 읽어 아래 템플릿의 `[SECTION_B_INDEX_SUMMARY_INSERT]` 자리에
-그대로 삽입한다 (내용을 다시 요약·재작성하지 않는다). 폴백 2가지를 구분한다:
-- 스크립트가 WARN만 내고 아무것도 못 만든 경우 (인덱스 파일이 전혀 없음 — Phase C 미완료 등): 해당 자리는 비워두거나 "인덱스 없음 — 재분석 필요"로 대체.
-- 스크립트 실행 자체가 실패했지만 (python 미설치 등) 인덱스 JSON은 존재하는 경우: 해당 섹션을 인덱스 JSON의 카운트 기반으로 직접 작성한다 (기계화 이전 방식으로 폴백).
+업무 목적·사용자·핵심 규칙·분기·예외는 분석 중 확인한 근거로 아래 업무 섹션에 한 번만 쓴다.
+공통 모듈 설명을 API마다 반복하지 않는다. API와 외부 통신의 역할이 실제로 같은 항목들은
+설명 패치의 `id` 대신 `ids: ["id1", "id2"]`와 공통 `description` 한 개로 제출할 수 있다.
+서로 다른 권한·부작용·업무 규칙은 묶지 않으며, 근거 없는 업무 의미는 미확인으로 남긴다.
 
 `비동기/스케줄/이벤트`·`인증/인가 경로`는 대응하는 JSON 인덱스가 없어 기계화 대상이 아니다 —
 지금처럼 Step 12/14 탐지 결과를 직접 프로즈로 작성한다.
@@ -601,6 +602,19 @@ Write 도구로 다음 형식의 리포트를 작성한다. 반환 메시지는 
 
 생성 시각: [YYYY-MM-DD HH:MM]
 실행 모드: [init / incremental / feature-scoped]
+
+## 업무 개요
+[시스템의 목적·사용자·주요 업무 모듈. 코드에서 확인된 사실과 추론을 구분.]
+
+## 업무별 흐름
+[업무별 진입점 → 처리 역할 → 결과. 분기·예외·DB·외부 연동과 근거 파일:라인을 연결.
+상세 API 목록·메서드 목록·SQL 목록은 다시 쓰지 않고 해당 인덱스 id를 참조.]
+
+## 업무 규칙
+[코드에서 확인된 상태 전이·검증·권한·실패 처리. 공통 규칙은 한 번만 작성.]
+
+## 분석 미확인
+[정적 추적이 끊긴 경로·확인되지 않은 규칙·추가 확인할 파일.]
 
 ## A. 프로젝트 기본 정보
 - 이름·스택·언어·빌드 도구·DB

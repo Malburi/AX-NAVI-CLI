@@ -26,6 +26,7 @@ import {
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   ADAPTER_DISCOVERY_ONLY_EXTENSIONS,
@@ -35,7 +36,7 @@ import {
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
 
-export const INDEXER_VERSION = "1.10.0"; // 1.10.0: _unresolved_groups.json 신설(판정 대상을 패턴 단위로 그룹핑) + _unresolved.jsonl에 group_id 부여 — 기존 인덱스가 --check-stale에서 stale 판정되어 재인덱싱되도록 상향
+export const INDEXER_VERSION = "1.11.0"; // AI 패치 보존·파생 흐름 갱신·안정적인 그룹 판정 ID.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
 const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
@@ -2156,6 +2157,9 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   const clientIndex = deriveClientIndex(facts, nodes, options.root);
   if (clientIndex) output.client_index = { _meta: common, ...clientIndex };
   const beanClassById = new Map(facts.flatMap((item) => item.springBeans || []).map((item) => [item.id, item.className]));
+  for (const endpoint of endpoints) {
+    if (beanClassById.has(endpoint.dispatch_bean)) endpoint.dispatch_class = beanClassById.get(endpoint.dispatch_bean);
+  }
   const dataFlow = deriveDataFlow(endpoints, uniqueEdges, sqls, usages, nodes, beanClassById);
   if (dataFlow) output.data_flow = { _meta: common, ...dataFlow };
   globalMeta.indexes = Object.keys(output);
@@ -2269,7 +2273,7 @@ function deriveClientIndex(facts, nodes, root) {
  */
 const DATA_FLOW_MAX_DEPTH = 6;
 function deriveDataFlow(endpoints, edges, sqls, usages, nodes, beanClassById) {
-  if (!endpoints.length || (!sqls.length && !usages.length)) return null;
+  if (!endpoints.length) return null;
   const sqlById = new Map(sqls.map((item) => [item.id, item]));
   const sqlIdsByMethod = new Map();
   for (const usage of usages) {
@@ -2300,8 +2304,9 @@ function deriveDataFlow(endpoints, edges, sqls, usages, nodes, beanClassById) {
     }
   }
   const seedsFor = (endpoint) => {
-    if (endpoint.dispatch_bean && beanClassById.has(endpoint.dispatch_bean)) {
-      const methods = methodsByClass.get(beanClassById.get(endpoint.dispatch_bean));
+    const dispatchClass = endpoint.dispatch_class || beanClassById.get(endpoint.dispatch_bean);
+    if (dispatchClass) {
+      const methods = methodsByClass.get(dispatchClass);
       if (methods?.length) return { ids: methods, confidence: "LOW" };
     }
     if (endpoint.handler && methodIds.has(endpoint.handler)) return { ids: [endpoint.handler], confidence: "MEDIUM" };
@@ -2327,24 +2332,30 @@ function deriveDataFlow(endpoints, edges, sqls, usages, nodes, beanClassById) {
     const queue = seed.ids.map((id) => ({ id, depth: 0 }));
     const methodChain = [...seed.ids];
     const sqlIds = new Set();
+    const callEdges = [];
+    let truncated = false;
     while (queue.length) {
       const { id, depth } = queue.shift();
       for (const sqlId of sqlIdsByMethod.get(id) || []) sqlIds.add(sqlId);
-      if (depth >= DATA_FLOW_MAX_DEPTH) continue;
+      if (depth >= DATA_FLOW_MAX_DEPTH) {
+        if ((calleesOf.get(id) || []).some((callee) => !visited.has(callee))) truncated = true;
+        continue;
+      }
       for (const callee of calleesOf.get(id) || []) {
+        callEdges.push({ from: id, to: callee });
         if (visited.has(callee)) continue;
         visited.add(callee);
         methodChain.push(callee);
         queue.push({ id: callee, depth: depth + 1 });
       }
     }
-    if (!sqlIds.size) continue;
     const touchedSqls = [...sqlIds].map((id) => sqlById.get(id)).filter(Boolean);
     const tablesRead = [...new Set(touchedSqls.filter((item) => item.type === "select").flatMap((item) => item.tables || []))].sort(byCodeUnit);
     const tablesWritten = [...new Set(touchedSqls.filter((item) => item.type !== "select").flatMap((item) => item.tables || []))].sort(byCodeUnit);
-    if (!tablesRead.length && !tablesWritten.length) continue;
     chains.push({
       id: `dataflow:${endpoint.id}`, endpoint_id: endpoint.id, method_chain: methodChain,
+      root_methods: seed.ids, call_edges: callEdges, traversal: "reachable_calls",
+      max_depth: DATA_FLOW_MAX_DEPTH, truncated,
       sql_ids: [...sqlIds].sort(byCodeUnit), tables_read: tablesRead, tables_written: tablesWritten,
       confidence: seed.confidence,
     });
@@ -2602,7 +2613,7 @@ function groupUnresolvedDecidable(decidableItems) {
   }
   return [...groups.values()]
     .sort((a, b) => (a.candidates.length - b.candidates.length) || (b.occurrences.length - a.occurrences.length))
-    .map((group, index) => ({ group_id: `g${String(index + 1).padStart(4, "0")}`, ...group, occurrence_count: group.occurrences.length }));
+    .map((group) => ({ group_id: `g-${createHash("sha256").update(JSON.stringify([group.kind, group.key_field, group.candidates])).digest("hex").slice(0, 24)}`, ...group, occurrence_count: group.occurrences.length }));
 }
 
 function buildAnalysisInput(output, globalMeta, unresolved, decidableCount, decidableGroupCount, fileSizes = new Map()) {
@@ -2724,8 +2735,8 @@ function buildAnalysisInput(output, globalMeta, unresolved, decidableCount, deci
       /*
        * 판정 대상은 _unresolved_groups.json의 groups[]다 — _unresolved.jsonl을 줄 단위로
        * 순회하지 않는다. 그룹마다 대표 발생 위치(occurrences[0]) 하나만 읽어 판정하고,
-       * 그 그룹의 occurrences[] 전체에 같은 판정을 적용해 add_edge를 occurrence 수만큼
-       * 낸다(나머지 위치는 다시 열지 않는다). 같은 표현식이라도 클래스/모듈에 따라 다르게
+       * resolve_group 한 건을 제출하면 인덱서가 occurrences[] 전체의 엣지를
+       * 확장한다(나머지 위치는 다시 열거나 출력하지 않는다). 같은 표현식이라도 클래스/모듈에 따라 다르게
        * 해석될 수 있다고 판단되면(예: 변수 선언 타입이 호출부마다 다름) 그 그룹은
        * 대표 사례 외 2~3곳을 더 확인하거나, 정말 문맥 의존적이면 occurrences를 나눠
        * 개별 판정으로 되돌린다 — 이 계약은 병합을 "강제"하지 않고 기본 전략만 제시한다.
@@ -2813,9 +2824,8 @@ export function buildIndex(options) {
    */
   if (preservePatch) {
     try {
-      const merged = mergeAiPatchEdges(output.call_graph, readJson(stalePatch));
-      output.call_graph._meta.edge_count = output.call_graph.edges.length;
-      reconcileDeadCode(output);
+      const groups = groupUnresolvedDecidable(unresolved.filter((item) => (item.candidates || []).length >= 2));
+      const merged = mergeAiPatchOutput(output, readJson(stalePatch), groups, generatedAt);
       globalMeta.indexes = Object.keys(output);
       globalMeta.ai_enrichment = { applied_at: generatedAt, ...merged, patch: slash(relative(root, stalePatch)) };
       if (!merged.applied && merged.rejected) {
@@ -2985,7 +2995,7 @@ function mergeDescriptionPatch(items, ops, field = "description") {
     reasons.set(reason, (reasons.get(reason) || 0) + 1);
     if (samples.length < 20) samples.push({ reason, ...detail });
   };
-  for (const op of ops) {
+  for (const op of ops.flatMap((op) => Array.isArray(op?.ids) ? op.ids.map((id) => ({ ...op, id })) : [op])) {
     const id = op && typeof op === "object" ? op.id : undefined;
     const text = op && typeof op === "object" ? op[field] : undefined;
     if (!id) { reject("missing_id", { op: op?.op ?? null }); continue; }
@@ -3080,124 +3090,123 @@ function mergeCombinedResults(parts) {
   return { applied, rejected, duplicates, rejected_reasons, rejected_samples: rejected_samples.slice(0, 20) };
 }
 
+/* 그룹 판정만 AI가 작성하고, 근거 좌표 복제와 파생 인덱스 갱신은 기계가 처리한다. */
+function mergeAiPatchOutput(output, patch, groups, appliedAt, changed = new Set()) {
+  if (!patch || patch.version !== 1 || !Array.isArray(patch.operations)) throw new Error("AI patch는 version: 1과 operations[]가 필요합니다.");
+  const parts = [];
+  const reject = (reason, op) => parts.push({ rejected: 1, rejected_reasons: { [reason]: 1 }, rejected_samples: [{ reason, op: op?.op, group_id: op?.group_id }] });
+  const byGroup = new Map(groups.map((g) => [g.group_id, g]));
+  const operations = [];
+  for (const op of patch.operations) {
+    if (op?.op !== "resolve_group") { operations.push(op); continue; }
+    const group = byGroup.get(op.group_id);
+    if (!group || !group.occurrences?.length || group.occurrences_omitted) { reject("unknown_or_incomplete_group", op); continue; }
+    if (!group.candidates.includes(op.to)) { reject("not_a_group_candidate", op); continue; }
+    if (!AI_PATCH_EDGE_TYPES.has(op.type)) { reject("invalid_edge_type", op); continue; }
+    if (typeof op.evidence !== "string" || !op.evidence.trim()) { reject("missing_evidence", op); continue; }
+    if (group.occurrences.some((o) => !o.from || !o.file || !Number.isInteger(o.line))) { reject("missing_group_evidence", op); continue; }
+    for (const occurrence of group.occurrences) operations.push({
+      op: "add_edge", ...occurrence, to: op.to, type: op.type, evidence: op.evidence, confidence: op.confidence,
+    });
+  }
+  const known = ["add_edge", "set_node_note", "set_edge_note", "set_endpoint_description", "set_communication_description", "set_client_index_narrative", "set_flow_note"];
+  const buckets = Object.fromEntries(known.map((name) => [name, []]));
+  for (const op of operations) {
+    if (known.includes(op?.op)) buckets[op.op].push(op);
+    else reject("unsupported_op", op);
+  }
+  const graph = output.call_graph;
+  if (buckets.add_edge.length) {
+    const edges = mergeAiPatchEdges(graph, { version: 1, operations: buckets.add_edge });
+    parts.push(edges);
+    if (edges.applied) {
+      changed.add("call_graph");
+      if (output.api_contract) {
+        const previous = new Map((output.data_flow?.chains || []).map((c) => [c.id, c.note]));
+        const derived = deriveDataFlow(output.api_contract.endpoints || [], graph.edges,
+          output.sql_usage?.sqls || [], output.sql_usage?.usages || [], graph.nodes, new Map());
+        if (derived) {
+          for (const chain of derived.chains) if (previous.has(chain.id)) chain.note = previous.get(chain.id);
+          output.data_flow = { _meta: { ...graph._meta, generated_at: appliedAt }, ...derived };
+          changed.add("data_flow");
+        }
+      }
+      if (output.dead_code) { reconcileDeadCode(output); changed.add("dead_code"); }
+    }
+  }
+  const targets = [
+    ["set_node_note", "call_graph", () => graph?.nodes, "note"],
+    ["set_endpoint_description", "api_contract", () => [...(output.api_contract?.endpoints || []), ...(output.api_contract?.consumers || [])], "description"],
+    ["set_communication_description", "external_io", () => output.external_io?.communications, "description"],
+    ["set_flow_note", "data_flow", () => output.data_flow?.chains, "note"],
+  ];
+  for (const [kind, name, items, field] of targets) {
+    const ops = buckets[kind];
+    if (!ops.length) continue;
+    if (!output[name]) { for (const op of ops) reject(`no_${name}`, op); continue; }
+    const result = mergeDescriptionPatch(items(), ops, field);
+    parts.push(result);
+    if (result.applied) changed.add(name);
+  }
+  if (buckets.set_edge_note.length) {
+    const result = mergeEdgeNotes(graph?.edges, buckets.set_edge_note);
+    parts.push(result);
+    if (result.applied) changed.add("call_graph");
+  }
+  if (buckets.set_client_index_narrative.length) {
+    if (!output.client_index) {
+      for (const op of buckets.set_client_index_narrative) reject("no_client_index", op);
+    } else {
+      const result = mergeClientIndexNarrative(output.client_index, buckets.set_client_index_narrative);
+      parts.push(result);
+      if (result.applied) changed.add("client_index");
+    }
+  }
+  const result = mergeCombinedResults(parts);
+  if (changed.has("call_graph")) {
+    graph._meta.edge_count = graph.edges.length;
+    graph._meta.ai_enriched_at = appliedAt;
+  }
+  return result;
+}
+
 export function applyAiPatch(rootArg, patchArg) {
   const root = resolve(rootArg);
   const patchPath = isAbsolute(patchArg) ? patchArg : join(root, patchArg);
-  const patch = readJson(patchPath);
-  if (!patch || patch.version !== 1 || !Array.isArray(patch.operations)) throw new Error("AI patch는 version: 1과 operations[]가 필요합니다.");
   const indexDir = join(root, "_workspace", "index");
+  const patch = readJson(patchPath);
+  const names = ["call_graph", "api_contract", "sql_usage", "external_io", "client_index", "data_flow", "dead_code"];
+  const output = {};
+  for (const name of names) {
+    const value = readJson(join(indexDir, `${name}.json`));
+    if (value) output[name] = value;
+  }
+  const groups = readJson(join(indexDir, "_unresolved_groups.json"), {})?.groups || [];
+  const changed = new Set();
   const appliedAt = kstIso();
-
-  /* op 종류별로 먼저 나눠서 각 대상 파일 병합이 서로의 거부 사유를 오염시키지 않게 한다.
-   * add_edge/set_node_note/set_edge_note는 셋 다 call_graph.json이 대상이라 파일을 한 번만
-   * 읽고 순서대로(엣지 추가 → 노드 설명 → 엣지 설명) 적용한 뒤 한 번만 쓴다. */
-  const CALL_GRAPH_OPS = ["add_edge", "set_node_note", "set_edge_note"];
-  const KNOWN_OPS = new Set([...CALL_GRAPH_OPS, "set_endpoint_description", "set_communication_description", "set_client_index_narrative", "set_flow_note"]);
-  const buckets = { add_edge: [], set_node_note: [], set_edge_note: [], set_endpoint_description: [], set_communication_description: [], set_client_index_narrative: [], set_flow_note: [] };
-  let unsupported = 0;
-  const unsupportedSamples = [];
-  for (const op of patch.operations) {
-    const kind = op && typeof op === "object" ? op.op : undefined;
-    if (kind && KNOWN_OPS.has(kind)) buckets[kind].push(op);
-    else { unsupported += 1; if (unsupportedSamples.length < 20) unsupportedSamples.push({ reason: "unsupported_op", op: kind ?? null }); }
+  const result = mergeAiPatchOutput(output, patch, groups, appliedAt, changed);
+  for (const name of changed) {
+    const path = join(indexDir, `${name}.json`);
+    if (output[name]) atomicJson(path, output[name]);
+    else if (existsSync(path)) rmSync(path);
   }
-
-  let edgeResult = { applied: 0, rejected: 0, duplicates: 0, rejected_reasons: {}, rejected_samples: [] };
-  let nodeNoteResult = { applied: 0, rejected: 0, rejected_reasons: {}, rejected_samples: [] };
-  let edgeNoteResult = { applied: 0, rejected: 0, rejected_reasons: {}, rejected_samples: [] };
-  let edgeCount = null;
-  const hasCallGraphOps = CALL_GRAPH_OPS.some((kind) => buckets[kind].length);
-  if (hasCallGraphOps) {
-    const graphPath = join(indexDir, "call_graph.json");
-    const graph = readJson(graphPath);
-    if (buckets.add_edge.length) {
-      edgeResult = mergeAiPatchEdges(graph, { version: 1, operations: buckets.add_edge });
-    }
-    if (buckets.set_node_note.length) {
-      nodeNoteResult = mergeDescriptionPatch(graph.nodes, buckets.set_node_note, "note");
-    }
-    if (buckets.set_edge_note.length) {
-      edgeNoteResult = mergeEdgeNotes(graph.edges, buckets.set_edge_note);
-    }
-    graph._meta.edge_count = graph.edges.length;
-    graph._meta.ai_enriched_at = appliedAt;
-    graph._meta.ai_patch_applied = edgeResult.applied + nodeNoteResult.applied + edgeNoteResult.applied;
-    atomicJson(graphPath, graph);
-    edgeCount = graph.edges.length;
-
-    /*
-     * digest는 호출 그래프에서 파생되므로 보강된 엣지를 반영해야 한다(add_edge가 있었을 때만
-     * 의미 있음 — note류는 그래프 구조에 영향 없으므로 digest 재계산 대상 아님).
-     * 그러지 않으면 writer와 위키가 AI 판정 이전의 허브·진입점을 계속 본다.
-     */
-    if (edgeResult.applied) {
-      const analysisInputPath = join(indexDir, "_analysis_input.json");
-      const analysisInput = readJson(analysisInputPath);
-      if (analysisInput?.digest) {
-        Object.assign(analysisInput.digest, graphDigest(graph.nodes, graph.edges));
-        if (analysisInput.counts) analysisInput.counts.graph_edges = graph.edges.length;
-        atomicJson(analysisInputPath, analysisInput);
-      }
-    }
+  const analysisInputPath = join(indexDir, "_analysis_input.json");
+  const analysisInput = readJson(analysisInputPath);
+  if (changed.has("call_graph") && analysisInput?.digest) {
+    Object.assign(analysisInput.digest, graphDigest(output.call_graph.nodes, output.call_graph.edges));
+    if (analysisInput.counts) analysisInput.counts.graph_edges = output.call_graph.edges.length;
+    atomicJson(analysisInputPath, analysisInput);
   }
-
-  let endpointResult = { applied: 0, rejected: 0, rejected_reasons: {}, rejected_samples: [] };
-  if (buckets.set_endpoint_description.length) {
-    const contractPath = join(indexDir, "api_contract.json");
-    const contract = existsSync(contractPath) ? readJson(contractPath) : null;
-    if (!contract) {
-      endpointResult = { applied: 0, rejected: buckets.set_endpoint_description.length, rejected_reasons: { no_api_contract: buckets.set_endpoint_description.length }, rejected_samples: [{ reason: "no_api_contract" }] };
-    } else {
-      endpointResult = mergeDescriptionPatch([...(contract.endpoints || []), ...(contract.consumers || [])], buckets.set_endpoint_description);
-      if (endpointResult.applied) atomicJson(contractPath, contract);
-    }
-  }
-
-  let commResult = { applied: 0, rejected: 0, rejected_reasons: {}, rejected_samples: [] };
-  if (buckets.set_communication_description.length) {
-    const ioPath = join(indexDir, "external_io.json");
-    const io = existsSync(ioPath) ? readJson(ioPath) : null;
-    if (!io) {
-      commResult = { applied: 0, rejected: buckets.set_communication_description.length, rejected_reasons: { no_external_io: buckets.set_communication_description.length }, rejected_samples: [{ reason: "no_external_io" }] };
-    } else {
-      commResult = mergeDescriptionPatch(io.communications || [], buckets.set_communication_description);
-      if (commResult.applied) atomicJson(ioPath, io);
-    }
-  }
-
-  let clientIndexResult = { applied: 0, rejected: 0, rejected_reasons: {}, rejected_samples: [] };
-  if (buckets.set_client_index_narrative.length) {
-    const clientIndexPath = join(indexDir, "client_index.json");
-    const clientIndexDoc = existsSync(clientIndexPath) ? readJson(clientIndexPath) : null;
-    if (!clientIndexDoc) {
-      clientIndexResult = { applied: 0, rejected: buckets.set_client_index_narrative.length, rejected_reasons: { no_client_index: buckets.set_client_index_narrative.length }, rejected_samples: [{ reason: "no_client_index" }] };
-    } else {
-      clientIndexResult = mergeClientIndexNarrative(clientIndexDoc, buckets.set_client_index_narrative);
-      if (clientIndexResult.applied) atomicJson(clientIndexPath, clientIndexDoc);
-    }
-  }
-
-  let flowNoteResult = { applied: 0, rejected: 0, rejected_reasons: {}, rejected_samples: [] };
-  if (buckets.set_flow_note.length) {
-    const dataFlowPath = join(indexDir, "data_flow.json");
-    const dataFlowDoc = existsSync(dataFlowPath) ? readJson(dataFlowPath) : null;
-    if (!dataFlowDoc) {
-      flowNoteResult = { applied: 0, rejected: buckets.set_flow_note.length, rejected_reasons: { no_data_flow: buckets.set_flow_note.length }, rejected_samples: [{ reason: "no_data_flow" }] };
-    } else {
-      flowNoteResult = mergeDescriptionPatch(dataFlowDoc.chains, buckets.set_flow_note, "note");
-      if (flowNoteResult.applied) atomicJson(dataFlowPath, dataFlowDoc);
-    }
-  }
-
-  const unsupportedResult = { applied: 0, rejected: unsupported, rejected_reasons: unsupported ? { unsupported_op: unsupported } : {}, rejected_samples: unsupportedSamples };
-  const result = mergeCombinedResults([edgeResult, nodeNoteResult, edgeNoteResult, endpointResult, commResult, clientIndexResult, flowNoteResult, unsupportedResult]);
-
-  const enrichment = { applied_at: appliedAt, ...result, patch: slash(relative(root, patchPath)) };
   const metaPath = join(indexDir, "_meta.json");
   const meta = readJson(metaPath, {});
-  meta.ai_enrichment = enrichment;
+  const indexes = new Set(meta.indexes || []);
+  for (const name of changed) {
+    if (output[name]) indexes.add(name); else indexes.delete(name);
+  }
+  meta.indexes = [...indexes];
+  meta.ai_enrichment = { applied_at: appliedAt, ...result, patch: slash(relative(root, patchPath)) };
   atomicJson(metaPath, meta);
-  return edgeCount === null ? { ...result } : { ...result, edges: edgeCount };
+  return output.call_graph ? { ...result, edges: output.call_graph.edges.length } : result;
 }
 
 function printHelp() {
@@ -3236,5 +3245,5 @@ function main() {
   }
 }
 
-const isMain = process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, "$1"));
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) process.exit(main());

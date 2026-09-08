@@ -439,6 +439,7 @@ def _partner_paths(pair_cfg):
         "schema": os.path.join(ws, "index", "schema.json"),
         "sql_usage": os.path.join(ws, "index", "sql_usage.json"),
         "external_io": os.path.join(ws, "index", "external_io.json"),
+        "data_flow": os.path.join(ws, "index", "data_flow.json"),
     }
 
 
@@ -706,6 +707,9 @@ def build_endpoint_flows(data_flow_json):
             # (실측 method_chain 5,937/5,937이 call_graph 노드 id와 정확히 일치).
             # 화면 표시용 축약은 템플릿의 shortMethod()가 렌더 시점에 한다.
             "methods": mc[:FLOW_METHOD_CAP],
+            "links": (c.get("call_edges") or [])[:12],
+            "link_count": len(c.get("call_edges") or []),
+            "depth_limited": bool(c.get("truncated")),
             "nm": len(mc),
             "sqls": sq[:FLOW_METHOD_CAP],
             "nq": len(sq),
@@ -1268,6 +1272,7 @@ def main():
             "schema_json": load_json(paths["schema"]),
             "sql_usage_json": load_json(paths["sql_usage"]),
             "io_json": load_json(paths["external_io"]),
+            "flow_json": load_json(paths["data_flow"]),
         })
 
     # ---- own-side 원본 로드 ----
@@ -1282,6 +1287,7 @@ def main():
     own_sql_usage_json = load_json(os.path.join(project_root, "_workspace", "index", "sql_usage.json"))
     own_external_io_json = load_json(os.path.join(project_root, "_workspace", "index", "external_io.json"))
     own_index_meta_json = load_json(os.path.join(project_root, "_workspace", "index", "_meta.json"))
+    own_data_flow_json = load_json(os.path.join(project_root, "_workspace", "index", "data_flow.json"))
     skills_dir = os.path.join(project_root, ".claude", "skills")
     patterns_dir = os.path.join(project_root, ".claude", "patterns")
 
@@ -1311,7 +1317,7 @@ def main():
     render_and_track(wiki_dir, page_entries, project_name, "Home.md", home_content, "Home (프로젝트 개요)")
     print("Generated Home.md")
 
-    # 2. domain.md ← 01_analyzer_report.md의 "## A." 섹션만 (+ 파트너 병합)
+    # 2. domain.md ← 업무 해설 우선, 구버전 기술 개요 폴백 (+ 파트너 병합)
     # architecture.md(전체 리포트)에 도메인/업무 흐름이 묻혀서 wiki로는 찾을 방법이 없다는
     # 지적으로 추가 — 같은 원본에서 도메인 개요만 뽑아 먼저 보이는 별도 페이지로 분리한다.
     domain_content = wiki_content.build_domain_overview(
@@ -1320,6 +1326,20 @@ def main():
     write_file(os.path.join(wiki_dir, "domain.md"), domain_content)
     render_and_track(wiki_dir, page_entries, project_name, "domain.md", domain_content, "Domain (도메인 개요)")
     print("Generated domain.md")
+
+    flow_sources = [{"label": own_label, "contract_json": own_api_contract_json, "flow_json": own_data_flow_json}]
+    if partner:
+        flow_sources.append({"label": f"파트너 ({partner_label})", "contract_json": partner_api_contract_json,
+                             "flow_json": load_json(partner["data_flow"])})
+    flow_sources.extend({**p, "label": f"파트너 ({p['label']})"} for p in partners_data)
+    flow_content, coverage_content, coverage = wiki_content.build_flow_pages(flow_sources)
+    for filename, content, label in [
+        ("business-flows.md", flow_content, "업무 처리 흐름"),
+        ("coverage.md", coverage_content, "위키 분석 범위"),
+    ]:
+        write_file(os.path.join(wiki_dir, filename), content)
+        render_and_track(wiki_dir, page_entries, project_name, filename, content, label)
+    write_file(os.path.join(project_root, "_workspace", "wiki_quality.json"), json.dumps(coverage, ensure_ascii=False, indent=2))
 
     # 3. architecture.md ← 01_analyzer_report.md (+ 파트너 병합)
     arch_content = wiki_content.build_architecture(
@@ -1447,8 +1467,7 @@ def main():
 
         # 아래는 그래프 위상을 바꾸지 않는 메타데이터 전용이므로 순서 자유 —
         # degree/레이아웃/모듈 집계에 일절 영향이 없다.
-        endpoint_flows = build_endpoint_flows(
-            load_json(os.path.join(project_root, "_workspace", "index", "data_flow.json")))
+        endpoint_flows = build_endpoint_flows(own_data_flow_json)
         io_badges = build_io_badges(
             own_external_io_json, {n.get("id") for n in raw_graph.get("nodes", [])})
 
@@ -1968,6 +1987,9 @@ def main():
 출력 경로: wiki/
 
 생성된 파일:
+- wiki/business-flows.md    ✅ (API별 호출 관계·SQL·테이블·미확인 범위)
+- wiki/coverage.md          ✅ (흐름 연결·설명 작성 범위)
+- _workspace/wiki_quality.json (기계 집계: {coverage['status']}, 흐름 {coverage['with_flow']}/{coverage['endpoints']})
 - wiki/Home.md              ✅ (원본: CLAUDE.md)
 - wiki/domain.md             ✅ (원본: _workspace/01_analyzer_report.md의 "## A." 섹션만)
 - wiki/architecture.md      ✅ (원본: _workspace/01_analyzer_report.md 전체)

@@ -1,10 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { validateHarness } from "../validate-harness.mjs";
 
 // 이 파일 = agents/lib/tests/validate-harness.test.mjs -> dirname 4회(tests->lib->agents->루트)
-const THIS_FILE = new URL(import.meta.url).pathname.replace(/^\/(\w:)/, "$1");
+const THIS_FILE = fileURLToPath(import.meta.url);
 const PLUGIN_ROOT = dirname(dirname(dirname(dirname(THIS_FILE))));
 
 function write(root, rel, content) {

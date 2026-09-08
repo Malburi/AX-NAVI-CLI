@@ -1292,6 +1292,13 @@ class OrderDao {
       /* 구조 필드는 이 오퍼레이션으로 건드릴 수 없다 — 여전히 인덱서 값 그대로. */
       assert.equal(clientIndex.js_count, 105);
       assert.equal(json(root, "data_flow.json").chains[0].note, "ORDERS.STATUS 갱신만 하고 감사 로그를 남기지 않음");
+      buildIndex({ root, mode: "incremental", tier: "Standard", config: null });
+      const rebuilt = json(root, "client_index.json");
+      assert.equal(rebuilt.ajax_contract, clientIndex.ajax_contract);
+      assert.equal(JSON.stringify(rebuilt.naming_convention), JSON.stringify(clientIndex.naming_convention));
+      assert.equal(JSON.stringify(rebuilt.anti_patterns), JSON.stringify(clientIndex.anti_patterns));
+      assert.equal(rebuilt.js_count, 105);
+      assert.equal(json(root, "data_flow.json").chains[0].note, "ORDERS.STATUS 갱신만 하고 감사 로그를 남기지 않음");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
