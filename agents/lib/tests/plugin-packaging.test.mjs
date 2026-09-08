@@ -29,6 +29,9 @@ export async function test(register, assert) {
 
     assert.equal(plugin.name, "ax-navi");
     assert.ok(/^\d+\.\d+\.\d+$/.test(plugin.version), "플러그인 버전은 semver여야 함");
+    assert.equal(plugin.version, "0.2.0");
+    assert.equal(plugin.homepage, "https://github.com/Malburi/AX-NAVI-V2");
+    assert.equal(plugin.repository, "https://github.com/Malburi/AX-NAVI-V2");
     assert.ok(!Object.hasOwn(plugin, "skills"), "기본 skills 경로는 자동 탐색하므로 중복 선언하지 않음");
     assert.ok(!Object.hasOwn(plugin, "agents"), "기본 agents 경로는 자동 탐색하므로 중복 선언하지 않음");
     assert.ok(existsSync(join(root, "skills")), "기본 skills 경로가 없음");
@@ -45,7 +48,17 @@ export async function test(register, assert) {
     assert.equal(marketplace.renames["total-ito"], "ax-navi", "직전 이름 total-ito에서 자동 승계돼야 함");
     assert.equal(marketplace.plugins[0].name, "ax-navi");
     assert.equal(marketplace.plugins[0].source, ".");
+    assert.equal(marketplace.plugins[0].homepage, "https://github.com/Malburi/AX-NAVI-V2");
     assert.ok(existsSync(join(root, marketplace.plugins[0].source, ".claude-plugin", "plugin.json")));
+  });
+
+  register("README와 사용자 가이드가 AX-NAVI-V2의 즉시 설치 명령을 안내한다", () => {
+    for (const relative of ["README.md", "docs/user-guide.md"]) {
+      const text = read(join(root, relative));
+      assert.ok(text.includes("claude plugin marketplace add Malburi/AX-NAVI-V2"), `${relative} marketplace 주소`);
+      assert.ok(text.includes("claude plugin install ax-navi@ax-navi --scope user"), `${relative} install 명령`);
+      assert.ok(!text.includes("claude plugin marketplace add Malburi/AX-NAVI\n"), `${relative} 구 저장소 명령`);
+    }
   });
 
   register("설치되는 모든 스킬과 에이전트의 이름이 경로와 일치한다", () => {

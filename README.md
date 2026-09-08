@@ -59,14 +59,25 @@ Java/Spring, JavaScript/TypeScript(Vue·React), Python, Go, C#/.NET의 결정적
 
 ## 📦 설치 방법
 
-최신 Claude Code에서 아래 두 명령을 실행하면 GitHub 저장소를 마켓플레이스로 등록하고 플러그인을 사용자 범위에 설치할 수 있습니다.
+최신 Claude Code에서 아래 두 명령을 실행하면 `AX-NAVI-V2` GitHub 저장소를 마켓플레이스로 등록하고 플러그인을 사용자 범위에 설치할 수 있습니다. 마켓플레이스 등록은 최초 1회만 필요합니다.
+
+### 가장 빠른 설치 (터미널)
+
+PowerShell·macOS·Linux에서 아래 두 줄을 그대로 실행하세요.
+
+```bash
+claude plugin marketplace add Malburi/AX-NAVI-V2
+claude plugin install ax-navi@ax-navi --scope user
+```
+
+이미 `ax-navi` 마켓플레이스를 등록했다면 첫 줄은 건너뛰고 두 번째 줄만 실행하면 됩니다. 설치 후 새 Claude Code 세션을 시작하거나 `/reload-plugins`를 실행하세요.
 
 ### 1단계 — 마켓플레이스 등록 (최초 1회)
 
 Claude Code 어느 프로젝트에서나 실행합니다.
 
 ```
-/plugin marketplace add Malburi/AX-NAVI
+/plugin marketplace add Malburi/AX-NAVI-V2
 ```
 
 ### 2단계 — 플러그인 설치
@@ -106,7 +117,7 @@ Claude Code 어느 프로젝트에서나 실행합니다.
 터미널에서 비대화형으로 설치하려면 다음 명령도 사용할 수 있습니다.
 
 ```bash
-claude plugin marketplace add Malburi/AX-NAVI
+claude plugin marketplace add Malburi/AX-NAVI-V2
 claude plugin install ax-navi@ax-navi --scope user
 claude plugin details ax-navi@ax-navi
 ```
