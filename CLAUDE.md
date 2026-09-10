@@ -3,7 +3,7 @@
 > 💡 **토큰 비용 절감 꿀팁 (바이브 코딩 시 필수)**
 > - **코드 수정 후 전체 재분석 금지**: 전체 재초기화 대신 `"인덱스만 갱신해줘"`라고 요청하면 LLM 전체 분석 없이 기계 인덱스를 갱신하고 기존 AI 보강을 다시 적용합니다(소스 추출 자체는 전수 실행).
 > - **부분 단계 실행**: 특정 요소만 갱신할 때는 `"스킬만 다시 생성"`, `"패턴만 다시"`, `"validator만 실행"` 등으로 필요한 단계만 핀포인트 요청하세요.
-> - **경량 분석 모드 (Standard)**: 토큰 소비를 줄이려면 하네스 초기화 시 `"빠르게 하네스 구축해줘"` 문구를 포함하면 Standard Tier로 실행합니다 (기본은 Full, Lite Tier는 폐지됨).
+> - **경량 분석 모드 (Standard)**: 토큰 소비를 줄이려면 하네스 초기화 시 `"빠르게 하네스 구축해줘"` 문구를 포함하면 Standard Tier로 실행합니다 (기본은 Full).
 
 ## 보편 에이전트 행동 원칙
 
@@ -91,7 +91,7 @@ config / template / requirements 파일은 헤더 생략.
 **에이전트 팀** — `TaskCreate` 의존성 + `_workspace/` 파일 기반 산출물 전달
 
 **팀 구성:**
-- 분석/생성 파이프라인: `analyzer` → `writer` → `pattern-extractor` + 구조화 프로필 검증 → `validator` → `qa`
+- 분석/생성 파이프라인: `analyzer` → `writer` → `pattern-extractor` + 구조화 프로필 검증 → `validator` → `qa` (Phase 3.7 온디맨드, Boundary 1~7 경계면 교차 비교)
 - 스크립트 실행 위임: `pipeline-runner` (harness-init의 결정론적 블록 index/assemble/verify/wiki — 오케스트레이터는 `agents/lib/*` 스크립트를 직접 실행하지 않는다)
 - 품질 루프: `spec-clarifier` (Phase -1, 사전 명세화) + `harness-evaluator` (Phase 4, 사후 eval)
 - 작업용 에이전트: `impact-analyzer`, `pattern-conformance`, `change-safety`, `migration-planner`, `test-generator`, `sql-reviewer`, `legacy-decoder`, `doc-syncer`, `logic-tracer`, `feature-finder`, `api-bridge`
@@ -99,56 +99,18 @@ config / template / requirements 파일은 헤더 생략.
 
 ## 파일 구조
 
-플러그인 표준 레이아웃 — `agents/`는 flat, `skills/`는 폴더/`SKILL.md`.
+플러그인 표준 레이아웃 — `agents/`는 flat, `skills/`는 폴더/`SKILL.md`. 각 파일의 역할은 그 파일 자신의 frontmatter `description`에 있다 (`agents/*.md`, `skills/*/SKILL.md`) — 아래 표는 frontmatter가 없는 파일(`agents/lib/*`, 매니페스트)만 다룬다.
 
 | 경로 | 역할 |
 |------|------|
 | `.claude-plugin/marketplace.json` | 마켓플레이스 카탈로그 (단일 저장소 = 단일 플러그인) |
 | `.claude-plugin/plugin.json` | 플러그인 매니페스트 |
-| `skills/harness-init/SKILL.md` | 메인 오케스트레이터 (분석 → 생성 → 검증 → QA → 패턴) |
-| `skills/harness-init/references/split-repo.md` | 분리 저장소(paired-roots·hub-roots) 전용 절차 — 파트너 정보 수집·레인 상태·2-레인 작업 그래프·P-BARRIER/P-PAIR/P-REFRESH. `init_layout`이 분리 저장소일 때만 읽는다(단일·모노레포 초기화의 상주 컨텍스트에서 제외하기 위한 분리) |
-| `skills/analyze-impact/SKILL.md` | 영향도 분석 워크플로우 |
-| `skills/safe-modify/SKILL.md` | 안전 변경 워크플로우 (사전 영향 + 사후 안전성) |
-| `skills/scaffold-feature/SKILL.md` | 컨벤션 기반 신규 기능 스캐폴딩 |
-| `skills/vibe/SKILL.md` | 빠른 알아서 모드 (영향·안전 에이전트는 생략하되 패턴·최소 실행 검증 유지, 위험 시 safe-modify 승격) |
-| `skills/plan-migration/SKILL.md` | 마이그레이션 계획 워크플로우 |
-| `skills/review-sql/SKILL.md` | SQL 종합 리뷰 워크플로우 |
-| `skills/spec-gate/SKILL.md` | 작업 전 소크라테스식 명세 명확화 워크플로우 (Ouroboros 영감) |
-| `skills/harness-clean/SKILL.md` | harness 전체 제거 워크플로우 (확인 후 안전 삭제) |
-| `skills/trace-logic/SKILL.md` | 기능·API·화면 처리 흐름 추적 워크플로우 |
-| `skills/find-feature/SKILL.md` | 기능명·키워드로 관련 코드 위치 탐색 워크플로우 |
-| `skills/generate-wiki/SKILL.md` | harness 산출물 → wiki 페이지 세트 생성 (call_graph.json → vis-network 인터랙티브 HTML) |
-| `skills/pair-init/SKILL.md` | 별도 저장소 백엔드·프론트엔드 연동 (pair_config.md 생성 + API 계약 추출 + 드리프트 검증) |
-| `skills/cross-repo-scaffold/SKILL.md` | 전체 스택 기능 동시 스캐폴딩 (백엔드 레이어 + 프론트엔드 서비스·컴포넌트·라우트) |
-| `skills/cross-repo-modify/SKILL.md` | 페어 연동된 양쪽 저장소에 기존 기능 개선/수정 동시 반영 (safe-modify + 파트너 영향 확인·반영 게이트) |
-| `skills/publish-wiki/SKILL.md` | 폴더 wiki를 별도 프로젝트 wiki-hub(중앙 DB, 시스템·컴포넌트·버전관리)에 발행 — `wiki-hub-publish` 콘솔 명령 호출 |
-| `skills/wiki-hub/SKILL.md` | 별도 프로젝트 wiki-hub 실행 — 여러 시스템 wiki 통합 열람·검색·버전 이력·되돌리기 (`wiki-hub-serve` 콘솔 명령 호출) |
-| `skills/{modify,impact,scaffold,find,flow,sql,wiki}/SKILL.md` | 단축 별칭 7종 — `/modify`·`/impact`·`/scaffold`·`/find`·`/flow`·`/sql`·`/wiki` 입력을 각각 safe-modify·analyze-impact·scaffold-feature·find-feature·trace-logic·review-sql·generate-wiki 본편으로 위임한다. 절차를 재정의하지 않는 얇은 위임층 |
-| `agents/spec-clarifier.md` | Phase -1: 소크라테스 인터뷰 + 모호성 점수화 + 명세 리포트 생성 |
-| `agents/harness-evaluator.md` | Phase 4: 4차원 품질 평가 (커버리지·정확도·실행가능성·컨텍스트) + fix_targets 반환 |
-| `agents/analyzer.md` | Phase 2-1: 심층 분석 (스택 + 의존성 그래프 + 데이터 흐름 + 트랜잭션 + 외부 통신 + 인덱스 생성) |
-| `agents/writer.md` | Phase 2-2: 하네스 파일 + 워크플로우 스킬 생성 |
-| `agents/pattern-extractor.md` | Phase 2-2.5: 컨벤션 추출 (writer 직후) |
-| `agents/pattern-conformance.md` | 선택된 프로필·실제 기준 파일과 변경 코드의 적합성 판정 (CONFORM/HOLD/FAIL) |
-| `agents/validator.md` | Phase 2-3: 구조 검증 + 인덱스 무결성 |
-| `agents/qa.md` | Phase 3.7 온디맨드: 경계면 교차 비교 (Boundary 1~7) |
-| `agents/impact-analyzer.md` | 변경 영향도 분석 |
-| `agents/change-safety.md` | 변경 안전성 평가 (GO/HOLD/STOP) |
-| `agents/migration-planner.md` | 스택 마이그레이션 계획 |
-| `agents/test-generator.md` | 회귀 테스트 골격 생성 |
-| `agents/sql-reviewer.md` | SQL 다각도 리뷰 |
-| `agents/legacy-decoder.md` | 레거시 코드 역공학 |
-| `agents/doc-syncer.md` | 코드 ↔ 문서 동기화 점검 |
-| `agents/logic-tracer.md` | 기능·API·화면 처리 흐름을 진입점 → Controller → Service → DB까지 추적 |
-| `agents/feature-finder.md` | 기능명·키워드로 관련 파일·클래스·메서드·SQL 위치 탐색 |
-| `agents/api-bridge.md` | REST API 계약 추출(extract)·드리프트 검증(validate)·프론트 스텁 생성(generate-stub)·파트너 영향 확인(check-impact) |
-| `agents/pipeline-runner.md` | harness-init의 결정론적 스크립트 블록(index·assemble·verify·wiki)을 대신 실행하고 요약만 반환 — 메인 컨텍스트에서 스크립트 왕복을 걷어내기 위한 토큰 절감 계층 |
 | `agents/lib/wiki_generator.py` + `agents/lib/wiki_content.py` | harness 산출물을 그대로 wiki 페이지로 변환(zero-LLM) + call_graph.json → vis-network 인터랙티브 HTML |
 | `agents/lib/wikihub_db/` (models/store/config/index_extract/publish.py) | wiki DB 발행(쓰기) — 별도 프로젝트 wiki-hub의 스키마·저장 로직을 그대로 옮긴 사본(view 전용 server/ui/render는 제외). wiki-hub 설치 없이 harness가 직접 DB에 씀 |
 | `agents/lib/build-index.mjs` | 결정론적 전수 인덱서(Node 18+, npm 의존성 0, 소스 인코딩 자동 판정, 벤더·미니파이 제외, DDL 없을 때 SQL에서 스키마 유도) — `_workspace/index/`의 symbols·call_graph·sql_usage·transactions·external_io·env_branches·schema·api_contract·dead_code + `_meta`·`_analysis_input`·`_unresolved`를 LLM 없이 생성. upstream AX-Harness에서 이식 후 이 저장소 계약에 맞게 패치 |
 | `agents/lib/ai-budget.mjs` | harness-init Phase 2(analyzer/writer/pattern-extractor)의 AI 호출을 role당 initial 1회로 스크립트가 강제하는 예산 게이트. upstream 이식, 거의 무수정 |
 | `agents/lib/validate-harness.mjs` | `_workspace/index/*.json`을 `docs/index-schema/*.json` 대조 JSON 스키마로 검증(형태 검증) — `validator_checks.py`의 check7/7b(내용 정확성)와 병행. upstream 이식 후 analyzer.md 섹션 체계와 안 맞는 마크다운 프로즈 검사는 제거 |
-| `agents/lib/tests/` | 결정론적 인덱스·AI 예산·하네스 검증·패턴 프로필·역할 계약 회귀 테스트 38종 + 무의존 러너 (`node agents/lib/tests/run.js`) |
+| `agents/lib/tests/` | 결정론적 인덱스·AI 예산·하네스 검증·패턴 프로필·역할 계약 회귀 테스트 + 무의존 러너 (`node agents/lib/tests/run.js`) |
 | `agents/lib/pattern_profile.py` | 구조화 패턴 프로필의 실제 근거 파일·scope·상태를 검증하고 작업 경로·모듈·레이어별 preferred 프로필 선택 |
 | `agents/lib/analyzer_index_summary.py` | analyzer 리포트 Section B/D(의존성그래프·트랜잭션·외부통신·환경분기·데드코드·DB스키마)를 인덱스 JSON에서 기계 생성(zero-LLM) |
 | `agents/lib/pattern_tally.py` | pattern-extractor의 `05_patterns_extracted.md` 집계 표(샘플수·신뢰도·안티패턴 수)를 개별 패턴 파일에서 기계 취합(zero-LLM) |
@@ -186,19 +148,9 @@ config / template / requirements 파일은 헤더 생략.
 자주 쓰는 7종은 슬래시 단축 별칭으로도 호출한다 — `/modify`·`/impact`·`/scaffold`·`/find`·`/flow`·`/sql`·`/wiki`.
 `trace-logic`의 별칭이 `/trace`가 아니라 `/flow`인 이유는 하네스가 대상 프로젝트마다 로컬 `trace` 스킬을 배포하기 때문이다(이름 충돌 방지).
 
-## 에이전트 수정
+## 에이전트·스킬 수정
 
-에이전트 개선은 `agents/[name].md` 파일을 직접 수정한다.  
-변경사항은 `docs/changelog.md`의 변경 이력 테이블에 기록한다 (Malburi/harness-ito Phase 5-4 템플릿).
-
-새 에이전트 추가:
-1. `agents/[name].md` 작성 (frontmatter + 본문)
-2. 호출하는 오케스트레이터 스킬(`skills/<name>/SKILL.md`)에 등록
-3. `docs/changelog.md`의 변경 이력 테이블에 기록
-
-새 스킬 추가:
-1. `skills/[name]/SKILL.md` 폴더 + 파일 생성 (frontmatter 필수)
-2. `docs/changelog.md`의 변경 이력 테이블에 기록
+새 에이전트/스킬 추가 및 기존 에이전트 수정 절차는 `.claude/skills/add-agent-or-skill/SKILL.md` 참고.
 
 ## 변경 이력
 
