@@ -14,7 +14,6 @@ HTML을 생성하게 됐을 때 기존 wiki를 Docsify로 변환하기 위해 �
 """
 
 import argparse
-import html as html_mod
 import os
 import re
 import sys
@@ -44,91 +43,8 @@ PAGE_META = {
 SECTION_ORDER = ["시스템 개요", "AI 도구", "데이터", "API 레퍼런스", "코드 컨벤션", "분석 리포트"]
 
 
-def render_index(project_name: str) -> str:
-    safe = html_mod.escape(project_name)
-    return f"""<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <title>{safe}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify-themeable@0/dist/css/theme-simple.css">
-  <style>
-    :root {{
-      --theme-color: #2563eb;
-      --base-font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --base-font-size: 15px;
-      --sidebar-width: 280px;
-      --content-max-width: 960px;
-      --heading-font-weight: 700;
-      --sidebar-background: #0f172a;
-      --sidebar-name-color: #ffffff;
-      --sidebar-nav-link-color: #cbd5e1;
-      --sidebar-nav-link-color--active: #38bdf8;
-      --sidebar-nav-link-color--hover: #ffffff;
-      --base-line-height: 1.7;
-      --heading-h1-color: #0f172a;
-      --heading-h2-color: #1e293b;
-      --heading-h3-color: #334155;
-      --blockquote-border-color: #3b82f6;
-      --blockquote-background: #eff6ff;
-    }}
-    .sidebar-nav > ul > li > p {{
-      font-size: 11px; text-transform: uppercase;
-      letter-spacing: 0.6px; color: #64748b;
-      margin: 16px 0 4px 12px;
-    }}
-    table {{ border-collapse: separate; border-spacing: 0; border-radius: 8px; overflow: hidden; }}
-    th {{ background: #f8fafc; }}
-    td, th {{ padding: 10px 14px; }}
-    blockquote {{ border-radius: 0 8px 8px 0; }}
-  </style>
-</head>
-<body>
-  <div id="app">로딩 중...</div>
-  <script>
-    window.$docsify = {{
-      name: '📋 {safe}',
-      repo: '',
-      homepage: 'Home.md',
-      loadSidebar: true,
-      loadNavbar: true,
-      subMaxLevel: 3,
-      auto2top: true,
-      executeScript: false,
-      search: {{
-        maxAge: 86400000,
-        paths: 'auto',
-        placeholder: '문서 검색...',
-        noData: '검색 결과가 없습니다.',
-        depth: 6,
-        hideOtherSidebarContent: false
-      }},
-      pagination: {{
-        previousText: '← 이전',
-        nextText: '다음 →',
-        crossChapter: true,
-      }},
-      copyCode: {{
-        buttonText: '복사',
-        errorText: '오류',
-        successText: '복사됨 ✓'
-      }},
-      themeColor: '#2563eb',
-    }}
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/docsify.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/docsify-copy-code@2/dist/docsify-copy-code.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/docsify-pagination/dist/docsify-pagination.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-python.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-javascript.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-sql.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-json.min.js"></script>
-</body>
-</html>"""
+# index.html 렌더러는 wiki_render.render_index 단일 구현을 공유한다(과거 동일 본문이 두 곳에 있었다).
+from wiki_render import render_index  # noqa: E402,F401
 
 
 _SLUGIFY_PUNCT_RE = re.compile(r"[()\[\]{}'\"!#$%&*+,./:;<=>?@\^`|~]")
