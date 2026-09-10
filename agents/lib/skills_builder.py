@@ -607,17 +607,6 @@ def main():
     if deploy_agents_md(args.root):
         print("배포 완료: AGENTS.md (정적 경량 진입점)")
 
-    try:
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from guard_hook import deploy as deploy_guard
-        guard = deploy_guard(args.root)
-        if guard["deployed"]:
-            print(f"배포 완료: .claude/hooks/ax-navi-guard.py (보호 파일 {guard['protected']}개, settings.json PreToolUse 병합)")
-        else:
-            print("가드 훅: 보호 대상 파일 없음 — 미배포")
-    except Exception as e:
-        print(f"WARN: 가드 훅 배포 실패 — {e}", file=sys.stderr)
-
     ito_decisions = decisions
 
     if decisions:

@@ -15,7 +15,6 @@ python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/skills_builder.py" --root "[root]"
 - `_workspace/01_analyzer_report.md`를 그대로 복사해 `.claude/agents/domain-expert.md` 생성.
 - `writer_decisions.json`의 `pattern_files` 목록(+ "LegacyStaticJS" 탐지 시 `client_pattern.md` 자동 추가)으로 `.claude/patterns/*.md` 스켈레톤 생성. 이미 pattern-extractor가 채운 파일은 덮어쓰지 않는다.
 - `ito_guide.md.template` + 배포 스킬 frontmatter + 위 JSON 값으로 `.claude/ito-guide.md` 조립.
-- `guard_hook.py`로 운영 프로파일 설정·DB 접속 설정·키/인증서 파일을 파일명 규칙과 `env_branches.json`에서 골라 `.claude/hooks/ax-navi-guard.{py,json}`을 배포하고 `.claude/settings.json`의 PreToolUse에 멱등 병합. 보호 대상이 없으면 배포하지 않는다.
 - 위 결과 전부를 조합해 `_workspace/02_writer_files.md` 조립.
 
 실패 시(python 미설치, `claude_md_fields.json`/`writer_decisions.json` 누락 등) 1회만 재시도한다. 스크립트가 항목별로 독립 처리하므로 부분 성공이 가능하다 — 재실패해도 중단하지 않고, 아래 항목별 존재 확인 결과를 그대로 반환한다.
@@ -30,7 +29,6 @@ CLAUDE.md: 생성 | 누락
 .claude/agents/domain-expert.md: 생성 | 누락
 .claude/patterns/: [생성된 파일 수]개 ([파일명 목록])
 .claude/ito-guide.md: 생성 | 누락
-.claude/hooks/ax-navi-guard.py: 배포([N]개 보호) | 대상 없음
 _workspace/02_writer_files.md: 생성 | 누락
 retry: 0 | 1
 WARN: [없으면 "없음", 있으면 사유 한 줄씩]
