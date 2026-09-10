@@ -734,4 +734,4 @@ harness-init이 생성하는 프로젝트 전용 가이드. Claude가 매 대화
 
 ---
 
-*AX Navi v0.2.1 · [GitHub](https://github.com/Malburi/AX-NAVI-V2)*
+*AX Navi v0.2.2 · [GitHub](https://github.com/Malburi/AX-NAVI-V2)*

@@ -29,7 +29,7 @@ export async function test(register, assert) {
 
     assert.equal(plugin.name, "ax-navi");
     assert.ok(/^\d+\.\d+\.\d+$/.test(plugin.version), "플러그인 버전은 semver여야 함");
-    assert.equal(plugin.version, "0.2.1");
+    assert.equal(plugin.version, "0.2.2");
     assert.equal(plugin.homepage, "https://github.com/Malburi/AX-NAVI-V2");
     assert.equal(plugin.repository, "https://github.com/Malburi/AX-NAVI-V2");
     assert.ok(!Object.hasOwn(plugin, "skills"), "기본 skills 경로는 자동 탐색하므로 중복 선언하지 않음");

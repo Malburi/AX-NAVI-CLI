@@ -105,7 +105,7 @@ config / template / requirements 파일은 헤더 생략.
 |------|------|
 | `.claude-plugin/marketplace.json` | 마켓플레이스 카탈로그 (단일 저장소 = 단일 플러그인) |
 | `.claude-plugin/plugin.json` | 플러그인 매니페스트 |
-| `agents/lib/wiki_generator.py` + `agents/lib/wiki_content.py` | harness 산출물을 그대로 wiki 페이지로 변환(zero-LLM) + call_graph.json → vis-network 인터랙티브 HTML |
+| `agents/lib/wiki_generator.py` + `agents/lib/wiki_content.py` + `agents/lib/wiki_mermaid.py` | harness 산출물을 그대로 wiki 페이지로 변환(zero-LLM) + call_graph.json → vis-network 인터랙티브 HTML + schema·data_flow·external_io → 붙여넣기용 Mermaid 마크업(diagrams.md) |
 | `agents/lib/wikihub_db/` (models/store/config/index_extract/publish.py) | wiki DB 발행(쓰기) — 별도 프로젝트 wiki-hub의 스키마·저장 로직을 그대로 옮긴 사본(view 전용 server/ui/render는 제외). wiki-hub 설치 없이 harness가 직접 DB에 씀 |
 | `agents/lib/build-index.mjs` | 결정론적 전수 인덱서(Node 18+, npm 의존성 0, 소스 인코딩 자동 판정, 벤더·미니파이 제외, DDL 없을 때 SQL에서 스키마 유도) — `_workspace/index/`의 symbols·call_graph·sql_usage·transactions·external_io·env_branches·schema·api_contract·dead_code + `_meta`·`_analysis_input`·`_unresolved`를 LLM 없이 생성. upstream AX-Harness에서 이식 후 이 저장소 계약에 맞게 패치 |
 | `agents/lib/ai-budget.mjs` | harness-init Phase 2(analyzer/writer/pattern-extractor)의 AI 호출을 role당 initial 1회로 스크립트가 강제하는 예산 게이트. upstream 이식, 거의 무수정 |
