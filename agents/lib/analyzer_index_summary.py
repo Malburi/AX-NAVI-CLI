@@ -116,6 +116,42 @@ def _section_env_branches(data):
     )
 
 
+DEPLOY_GROUP_LABELS = {
+    "containers": "컨테이너", "ci": "CI 파이프라인", "iac": "IaC·오케스트레이션",
+    "app_servers": "앱 서버·런타임 설정", "build_scripts": "빌드·배포 스크립트",
+}
+
+
+def _section_test_deploy(data):
+    inv = ((data or {}).get("evidence") or {}).get("test_deploy_inventory")
+    if not inv:
+        return None
+    fw = ", ".join(f"{f['name']} ({f['evidence_file']})" for f in inv.get("test_frameworks") or []) or "(매니페스트에서 미검출)"
+    cov = ", ".join(f"{c['name']} ({c['evidence_file']})" for c in inv.get("coverage_tools") or []) or "(미검출)"
+    dirs = inv.get("test_dirs") or {}
+    dir_line = ", ".join(dirs.get("items") or []) or "(없음)"
+    if dirs.get("truncated"):
+        dir_line += f" 외 {dirs['truncated']}곳"
+    lines = [
+        "## B. 테스트·배포 모델",
+        f"- 테스트 프레임워크: {fw}",
+        f"- 커버리지 도구: {cov}",
+        f"- 테스트 파일: {inv.get('test_file_count', 0)}개 (인덱스 제외 사유 test-path·test-filename 집계) — 위치: {dir_line}",
+    ]
+    deploy = inv.get("deploy") or {}
+    for group, label in DEPLOY_GROUP_LABELS.items():
+        entry = deploy.get(group) or {}
+        items = entry.get("items") or []
+        if not items:
+            continue
+        extra = f" 외 {entry['truncated']}개" if entry.get("truncated") else ""
+        lines.append(f"- {label}: {', '.join(items)}{extra}")
+    if not inv.get("deploy_file_count"):
+        lines.append("- 배포 관련 파일: (컨테이너·CI·IaC·앱서버 설정 미검출 — 저장소 밖에서 배포되는지 확인 필요)")
+    lines.append(f"- 근거: _workspace/index/_analysis_input.json evidence.test_deploy_inventory ({inv.get('note', '')})")
+    return "\n".join(lines) + "\n"
+
+
 def _section_dead_code(data):
     if not data:
         return None
@@ -188,6 +224,7 @@ def build_summary(root):
         ("dead_code.json", _section_dead_code),
         ("owasp_top10.json", _section_owasp),
         ("schema.json", _section_schema),
+        ("_analysis_input.json", _section_test_deploy),
     ]
     sections = []
     for filename, builder in builders:

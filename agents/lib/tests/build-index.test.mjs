@@ -79,6 +79,35 @@ class Repository { public void remove() {} }
     }
   });
 
+  register("테스트·배포 인벤토리를 파일명·매니페스트에서 집계해 _analysis_input에 싣는다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-inventory-"));
+    try {
+      write(root, "pom.xml", "<project><dependencies><dependency><artifactId>junit-jupiter</artifactId></dependency><dependency><artifactId>mockito-core</artifactId></dependency></dependencies><build><plugins><plugin><artifactId>jacoco-maven-plugin</artifactId></plugin></plugins></build></project>");
+      write(root, "src/main/java/com/acme/App.java", "package com.acme; public class App { public void run() {} }");
+      write(root, "src/test/java/com/acme/AppTest.java", "package com.acme; public class AppTest { void t() {} }");
+      write(root, "Dockerfile", "FROM eclipse-temurin:17");
+      write(root, ".github/workflows/ci.yml", "on: push");
+      write(root, "deploy/k8s/deployment.yaml", "kind: Deployment");
+      write(root, "src/main/webapp/WEB-INF/web.xml", "<web-app/>");
+      write(root, "build.sh", "mvn package");
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const inv = json(root, "_analysis_input.json").evidence.test_deploy_inventory;
+      assert.equal(JSON.stringify(inv.test_frameworks.map((f) => f.name)), JSON.stringify(["JUnit", "Mockito"]));
+      assert.equal(inv.test_frameworks[0].evidence_file, "pom.xml");
+      assert.equal(inv.coverage_tools[0].name, "JaCoCo");
+      assert.equal(inv.test_file_count, 1);
+      assert.equal(inv.test_dirs.items[0], "src/test");
+      assert.equal(inv.deploy.containers.items[0], "Dockerfile");
+      assert.equal(inv.deploy.ci.items[0], ".github/workflows/ci.yml");
+      assert.equal(inv.deploy.iac.items[0], "deploy/k8s/deployment.yaml");
+      assert.equal(inv.deploy.app_servers.items[0], "src/main/webapp/WEB-INF/web.xml");
+      assert.equal(inv.deploy.build_scripts.items[0], "build.sh");
+      assert.equal(inv.deploy_file_count, 5);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("Standard도 AI 없이 기본 기계 인덱스를 생성한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-standard-"));
     try {

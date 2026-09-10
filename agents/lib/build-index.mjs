@@ -2615,7 +2615,103 @@ function groupUnresolvedDecidable(decidableItems) {
     .map((group) => ({ group_id: `g-${createHash("sha256").update(JSON.stringify([group.kind, group.key_field, group.candidates])).digest("hex").slice(0, 24)}`, ...group, occurrence_count: group.occurrences.length }));
 }
 
-function buildAnalysisInput(output, globalMeta, unresolved, decidableCount, decidableGroupCount, fileSizes = new Map()) {
+/*
+ * 테스트·배포 모델 인벤토리 — analyzer가 "테스트 프레임워크가 무엇이고, 어디에 테스트가 있고,
+ * 어떻게 빌드·배포되는가"를 소스 재순회 없이 알 수 있게 파일명·매니페스트만 보고 만든다.
+ * test-generator는 기존 테스트 관행을 따라야 하고 plan-migration은 배포 모델(컨테이너·CI·앱서버)을
+ * 회귀 기준선으로 삼아야 하는데, 지금까지 그 인벤토리를 만드는 단계가 없었다.
+ * 내용 판단은 하지 않는다 — 매니페스트에서 의존성 이름을 정규식으로 찾고 배포 파일은 이름으로만 잡는다.
+ */
+const TEST_FRAMEWORK_SIGNATURES = [
+  ["JUnit", /\bjunit\b/i], ["TestNG", /\btestng\b/i], ["Mockito", /\bmockito\b/i], ["Spock", /spock-core/i],
+  ["pytest", /\bpytest\b/i], ["Jest", /"jest"|\bjest\b/i], ["Mocha", /"mocha"/i], ["Vitest", /\bvitest\b/i],
+  ["Jasmine", /\bjasmine\b/i], ["Karma", /"karma"/i], ["Cypress", /\bcypress\b/i], ["Playwright", /@playwright\/test|\bplaywright\b/i],
+  ["xUnit", /\bxunit\b/i], ["NUnit", /\bnunit\b/i], ["MSTest", /MSTest|Microsoft\.NET\.Test\.Sdk/i], ["RSpec", /\brspec\b/i],
+];
+const COVERAGE_TOOL_SIGNATURES = [
+  ["JaCoCo", /\bjacoco\b/i], ["Istanbul/nyc", /"nyc"|\bistanbul\b|@vitest\/coverage|coverage-v8|coverage-istanbul/i],
+  ["coverage.py", /\bpytest-cov\b/i], ["coverlet", /\bcoverlet\b/i], ["SimpleCov", /\bsimplecov\b/i],
+];
+const TEST_MANIFEST_FILE = /^(?:pom\.xml|build\.gradle(?:\.kts)?|package\.json|requirements(?:[-_.][\w.-]+)?\.txt|pyproject\.toml|setup\.(?:py|cfg)|tox\.ini|Gemfile|go\.mod|.*\.csproj|packages\.config|Directory\.Packages\.props)$/i;
+const DEPLOY_SIGNATURES = [
+  ["containers", /(?:^|\/)(?:Dockerfile(?:\.[\w.-]+)?|docker-compose(?:[.-][\w.-]+)?\.ya?ml|compose\.ya?ml|\.dockerignore)$/i],
+  ["ci", /(?:^|\/)(?:\.github\/workflows\/[^/]+\.ya?ml|\.gitlab-ci\.ya?ml|Jenkinsfile(?:\.[\w.-]+)?|azure-pipelines(?:[.-][\w.-]+)?\.ya?ml|bitbucket-pipelines\.ya?ml|\.circleci\/config\.ya?ml|\.travis\.ya?ml|appveyor\.ya?ml|buildspec(?:[.-][\w.-]+)?\.ya?ml)$/i],
+  ["iac", /(?:^|\/)(?:[^/]+\.tf|Chart\.ya?ml|kustomization\.ya?ml|serverless\.ya?ml|cloudformation[^/]*\.(?:ya?ml|json)|Vagrantfile|ansible\.cfg|playbook[^/]*\.ya?ml)$|(?:^|\/)(?:k8s|kubernetes|manifests|helm|charts|terraform)\/[^/]+\.(?:ya?ml|tf)$/i],
+  ["app_servers", /(?:^|\/)(?:WEB-INF\/web\.xml|server\.xml|context\.xml|jboss-web\.xml|weblogic\.xml|standalone[^/]*\.xml|Web\.config|appsettings(?:\.[\w-]+)?\.json|Procfile|appspec\.ya?ml)$/i],
+  ["build_scripts", /(?:^|\/)(?:build\.xml|Makefile|makefile|build\.(?:sh|bat|cmd|ps1)|deploy[^/]*\.(?:sh|bat|cmd|ps1)|release[^/]*\.(?:sh|bat|cmd|ps1)|gradlew|mvnw)$/i],
+];
+const INVENTORY_LIST_CAP = 20;
+const INVENTORY_MANIFEST_MAX_BYTES = 512 * 1024;
+const INVENTORY_FILE_LIMIT = 200000;
+
+function detectTestDeployInventory(root, includePaths, excludedSources) {
+  const frameworks = new Map();
+  const coverageTools = new Map();
+  const deploy = {};
+  for (const [group] of DEPLOY_SIGNATURES) deploy[group] = [];
+  const manifests = [];
+  let fileCount = 0;
+  function walk(dir, relDir) {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        /* .github 등 CI 디렉터리는 소스 인덱싱 제외 대상과 무관하게 배포 모델 근거이므로 걷는다. */
+        if (EXCLUDED_DIRS.has(entry.name) && entry.name !== "build") continue;
+        if (fileCount > INVENTORY_FILE_LIMIT) return;
+        walk(join(dir, entry.name), rel);
+        continue;
+      }
+      fileCount += 1;
+      if (relDir && !isIncluded(rel, includePaths) && !/^\.(?:github|gitlab|circleci)\//.test(rel)) continue;
+      for (const [group, regex] of DEPLOY_SIGNATURES) {
+        if (regex.test(rel)) { deploy[group].push(rel); break; }
+      }
+      if (TEST_MANIFEST_FILE.test(entry.name)) manifests.push({ rel, full: join(dir, entry.name) });
+    }
+  }
+  walk(root, "");
+  for (const manifest of manifests.sort((a, b) => byCodeUnit(a.rel, b.rel))) {
+    let text;
+    try {
+      if (statSync(manifest.full).size > INVENTORY_MANIFEST_MAX_BYTES) continue;
+      text = readFileSync(manifest.full, "utf8");
+    } catch { continue; }
+    for (const [name, regex] of TEST_FRAMEWORK_SIGNATURES) {
+      if (regex.test(text) && !frameworks.has(name)) frameworks.set(name, manifest.rel);
+    }
+    for (const [name, regex] of COVERAGE_TOOL_SIGNATURES) {
+      if (regex.test(text) && !coverageTools.has(name)) coverageTools.set(name, manifest.rel);
+    }
+  }
+  let testFileCount = 0;
+  const testDirs = new Set();
+  for (const item of excludedSources || []) {
+    if (!/^test-/.test(item.reason)) continue;
+    testFileCount += 1;
+    const segments = item.file.split("/");
+    const idx = segments.findIndex((segment) => /^(?:test|tests|__tests__|spec|specs)$/i.test(segment));
+    if (idx >= 0) testDirs.add(segments.slice(0, idx + 1).join("/"));
+    else if (segments.length > 1) testDirs.add(segments.slice(0, -1).join("/"));
+  }
+  const cap = (list) => ({ items: list.sort(byCodeUnit).slice(0, INVENTORY_LIST_CAP), truncated: Math.max(0, list.length - INVENTORY_LIST_CAP) });
+  const deployOut = {};
+  let deployTotal = 0;
+  for (const [group, list] of Object.entries(deploy)) { deployOut[group] = cap(list); deployTotal += list.length; }
+  return {
+    test_frameworks: [...frameworks].map(([name, evidence_file]) => ({ name, evidence_file })),
+    coverage_tools: [...coverageTools].map(([name, evidence_file]) => ({ name, evidence_file })),
+    test_file_count: testFileCount,
+    test_dirs: cap([...testDirs]),
+    deploy: deployOut,
+    deploy_file_count: deployTotal,
+    manifests_scanned: manifests.length,
+    note: "파일명·매니페스트 의존성 이름만 본 인벤토리다. 테스트 실행 여부·CI 통과 여부·배포 경로의 실제 동작은 판정하지 않는다.",
+  };
+}
+
+function buildAnalysisInput(output, globalMeta, unresolved, decidableCount, decidableGroupCount, fileSizes = new Map(), testDeployInventory = null) {
   const count = (name, key) => Array.isArray(output[name]?.[key]) ? output[name][key].length : 0;
   const evidenceFiles = new Set();
   const collectFiles = (name, key) => {
@@ -2698,6 +2794,8 @@ function buildAnalysisInput(output, globalMeta, unresolved, decidableCount, deci
        * 직접 열 수밖에 없었다. */
       query_tool: "agents/lib/query-index.mjs",
       query_tool_hint: "node $CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs summary --root <프로젝트>",
+      /* 테스트 프레임워크·테스트 위치·배포 모델(컨테이너·CI·IaC·앱서버·빌드 스크립트). 파일명·매니페스트만 본다. */
+      test_deploy_inventory: testDeployInventory,
     },
     analyzer_contract: {
       full_source_rescan: false,
@@ -2908,7 +3006,7 @@ export function buildIndex(options) {
     return { ...item, candidates: candidates.slice(0, MAX_UNRESOLVED_CANDIDATES), candidates_truncated: candidates.length - MAX_UNRESOLVED_CANDIDATES, group_id };
   });
   atomicJson(join(indexDir, "_meta.json"), globalMeta);
-  atomicJson(join(indexDir, "_analysis_input.json"), buildAnalysisInput(output, globalMeta, unresolved, decidableCount, decidableGroupCount, new Map(files.map((item) => [item.rel, item.stats.size]))));
+  atomicJson(join(indexDir, "_analysis_input.json"), buildAnalysisInput(output, globalMeta, unresolved, decidableCount, decidableGroupCount, new Map(files.map((item) => [item.rel, item.stats.size])), detectTestDeployInventory(root, config.include_paths, excludedSources)));
   writeFileSync(join(indexDir, "_unresolved.jsonl"), cappedUnresolved.map((item) => JSON.stringify(item)).join("\n") + (unresolved.length ? "\n" : ""), "utf8");
   atomicJson(join(indexDir, "_unresolved_groups.json"), {
     _meta: { generated_at: generatedAt, generator: "deterministic-indexer", group_count: groups.length, decidable_raw_count: decidableCount, total_occurrences: decidableItems.length },

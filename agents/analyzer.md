@@ -655,6 +655,7 @@ Write 도구로 다음 형식의 리포트를 작성한다. 반환 메시지는 
 - 공개 엔드포인트: N개
 
 [SECTION_B_INDEX_SUMMARY_INSERT]
+<!-- 위 마커에는 의존성 그래프·트랜잭션·외부 통신·환경 분기·데드코드·OWASP·DB 스키마와 함께 "테스트·배포 모델"(테스트 프레임워크·테스트 위치·컨테이너·CI·IaC·앱서버·빌드 스크립트, _analysis_input.json evidence.test_deploy_inventory)이 기계 삽입된다. test-generator·plan-migration이 이 절을 기존 테스트 관행·회귀 기준선의 근거로 읽는다. -->
 
 ## 탐지 신뢰도
 - 스택 탐지: [HIGH/MEDIUM/LOW]
