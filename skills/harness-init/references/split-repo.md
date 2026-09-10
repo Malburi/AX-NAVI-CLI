@@ -31,7 +31,7 @@
 입력받은 정보를 `partner_info = { role, path, api_url }` 변수에 저장.  
 경로 유효성 확인 및 파트너 하네스 존재 여부는 pair-init Phase 1에서 수행.
 
-> 수집한 `partner_info`는 Phase 3.5에서 pair-init 자동 실행 시 컨텍스트로 전달된다.
+> 수집한 `partner_info`(허브형은 아래 `partner_list`)는 Phase 3.5에서 pair-init 자동 실행 시 컨텍스트로 전달된다.
 
 ### 허브형(`hub-roots`) 파트너 목록 수집 (N개)
 
@@ -57,8 +57,6 @@
 수집한 정보를 `partner_list = [{ role_label, path, api_url, stack }, ...]` (N개 항목)에 저장.  
 경로 유효성 확인 및 각 파트너 하네스 존재 여부는 pair-init Phase 1에서 (파트너별로 순회하며) 수행.
 
-> 수집한 `partner_list`는 Phase 3.5에서 pair-init 자동 실행 시 컨텍스트로 전달된다.
-
 ---
 
 ## Phase -1: 레인 상태 초기화
@@ -82,8 +80,6 @@
 - **이미 있으면 그대로 재사용** — `self_status`/각 `partner`의 `status`가 `done`인 레인은 Phase 1의 작업 그래프에서 완전히 제외하고(재분석 안 함), `failed`인 레인만 `last_stage` 다음 단계부터 포함한다. 전부 `done`이고 `pair_state: complete`면 Phase 1의 분리 저장소 그래프 자체를 스킵하고 곧장 Phase 3.6으로(파트너 연동은 이미 끝난 상태).
 
 이 파일은 `_workspace/pair_config.md`(pair-init이 만드는 연동 설정)와 다른 파일이다 — `pair_config.md`를 읽는 기존 스크립트(`wiki_generator.py`/`skills_builder.py`)는 이 파일을 몰라도 되고, 건드리지 않는다.
-
-**자기쪽 Phase 0~2~4 실행 방식 자체는 바뀌지 않는다** — 단일/모노레포와 동일한 2-0.5/2-1/2-2/2-3/2-4/2-5 절차를 그대로 쓴다. 달라지는 것은 "그 절차를 자기 자신뿐 아니라 파트너 경로에도 병렬로 적용하고, 끝나면 barrier로 합류한다"는 오케스트레이션 층위뿐이다.
 
 ---
 
@@ -111,7 +107,7 @@ B-V + 모든 C*-V 완료 → P-BARRIER (blockedBy: B-V, C1-V, ..., CM-V)
 
 ## Phase 2: 레인 실행
 
-`SKILL.md`의 2-0.5~2-5는 **레인 한 개(자기 자신)를 대상으로 한 절차**로 서술돼 있다. 분리 저장소는 그 절차 자체를 바꾸지 않고, 레인 수만큼(B 1개 + C 1~M개) **같은 단계를 같은 메시지에서 병렬 실행**한다:
+`SKILL.md`의 2-0.5~2-5를 레인 수만큼(B 1개 + C 1~M개) **같은 단계를 같은 메시지에서 병렬 실행**한다.
 
 - **I 단계**: 2-0.5의 `pipeline-runner` `block: index` 호출을 자기 루트로 1회, 그리고 아직 `status: done`이 아닌 각 파트너 루트로 1회씩 — `root`만 그 레인의 대상으로 바꿔 **전부 같은 메시지에서** 발행한다(2026-08-16부터 스크립트 다중 도구 호출이 아니라 Agent 병렬이다). 전부 반환된 뒤 각 레인 `last_stage: I`로 갱신.
 - **A/W/P/V 단계**: 2-1/2-2/2-3/2-4의 `Agent()` 템플릿을 그대로 쓰되, "프로젝트 루트: [절대경로]"만 그 레인의 대상(자기 자신 또는 해당 파트너 절대경로)으로 바꾼다. `description`도 레인 ID로 바꾼다(`T-A`→`B-A`/`C1-A` 등, 표시 이름 규칙은 Phase 1 참조). 같은 단계에 해당하는 레인들의 `Agent()` 호출을 **전부 같은 메시지에서** 발행하고, 전부 반환된 뒤 다음 단계로 넘어간다(자연스러운 barrier — 별도 폴링 불필요).

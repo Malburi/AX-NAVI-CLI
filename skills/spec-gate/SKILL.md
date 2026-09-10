@@ -110,7 +110,7 @@ Agent(
 
 다음 단계:
   harness 초기화를 진행하려면 → "하네스 초기화"
-  (spec 컨텍스트가 _workspace/00_spec_report.md에 저장되어 analyzer에 자동 전달됩니다)
+  (spec 컨텍스트가 _workspace/00_spec_report.md에 저장되어 harness-init Phase 4의 harness-evaluator가 품질 평가에 반영합니다)
 ```
 
 ---

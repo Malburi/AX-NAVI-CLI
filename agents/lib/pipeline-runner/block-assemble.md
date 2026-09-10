@@ -1,4 +1,4 @@
-# block: assemble — 하네스 파일 조립 (Phase 2-2.3 / 2-2.5)
+# block: assemble — 하네스 파일 조립 (Phase 2-2.3)
 
 `pipeline-runner` 에이전트의 `block: assemble` 절차 상세다. 공통 규칙(스크립트 경로·`--out`/`--summary` 생략·에러 원칙·반환 원칙)은 `agents/pipeline-runner.md` 헤더에 있으며 여기서 반복하지 않는다.
 

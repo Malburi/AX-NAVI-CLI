@@ -109,7 +109,7 @@ PowerShell: `Test-Path "[파트너 경로]"` 또는 bash: `[ -d "[파트너 경�
 Agent(
   subagent_type="general-purpose",
   description="파트너 하네스 자동 생성 ([파트너 경로])",
-  prompt="skills/harness-init/SKILL.md 파일을 읽고 그 지침을 그대로 따라 harness-init을 수행하라.
+  prompt="$CLAUDE_PLUGIN_ROOT/skills/harness-init/SKILL.md 파일을 읽고 그 지침을 그대로 따라 harness-init을 수행하라(환경변수가 비어 있으면 이 스킬이 위치한 플러그인 설치 루트의 절대경로로 대체. cwd 상대경로 금지).
   프로젝트 루트: [파트너 절대경로] (cwd 아님 — 이 경로 기준으로 모든 파일 읽기/쓰기 수행).
   init_layout: 'paired-roots' (멀티레포 확정 상태 — Phase -1 구성 확인 재질문 불필요, source: explicit-request로 기록).
   partner_info: { role: '[현재 프로젝트 역할과 반대]', path: '[현재 프로젝트 절대경로]', api_url: '[api_base_url]' }.
@@ -117,7 +117,7 @@ Agent(
   Phase 0 Step 2.5(Tier 확인) 질문도 이 호출에는 응답할 사용자가 없으므로 묻지 말고 override 키워드 '심층'과 동일하게 처리해 Full로 확정하고 진행(기존 harness-init 로직의 무응답 시 기본값과 동일).
   Phase 3.5(pair-init)는 이미 호출 중인 pair-init 상위 흐름과 중복이므로 스킵한다. Phase 3.6의 선택 작업 메뉴는 사용자가 없으므로 '3. 지금 안 함'으로 처리한다 — wiki도 QA도 실행하지 않고 Phase 4로 진행한다(파트너 wiki가 필요하면 연동 완료 후 그 저장소에서 generate-wiki를 따로 실행한다).
   완료 후 결과를 [파트너 절대경로]/_workspace/06_eval_report.md 및 CLAUDE.md 존재 여부로 보고하라.",
-  model="opus"
+  model="sonnet"
 )
 ```
 

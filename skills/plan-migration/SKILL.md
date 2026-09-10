@@ -54,7 +54,7 @@ Agent(
   subagent_type="ax-navi:migration-planner",
   description="마이그레이션 계획 수립",
   prompt="<컨텍스트: _workspace/migration/00_context.md. 소스: [...]. 타겟: [...]. 범위: [...]. 출력: _workspace/migration/00~05_*.md + checkpoints/>",
-  model="opus"
+  model="sonnet"
 )
 ```
 
