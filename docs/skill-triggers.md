@@ -1,4 +1,4 @@
-# 스킬 트리거 체계 상세 (2026-08-15 기준)
+# 스킬 트리거 체계 상세
 
 스킬이 자연어 요청에 어떻게 매칭되는지, 축약 호출·범용 문구·vibe(알아서) 모드가 어떻게 설계됐는지, 그리고 추후 트리거/정적 스킬을 추가할 때 건드려야 하는 파일 전체를 기록한다.
 
@@ -33,6 +33,12 @@ harness가 설치된 대상 프로젝트에서 개선/개발 요청은 배포된
 - 두 메커니즘 모두 **LLM 판단 기반 확률 매칭**이다. 등록 문구와 정확히 일치하지 않는 표현은 스킬을 안 탈 수 있다.
 - `settings.json`의 PreToolUse/PostToolUse hooks로는 스킬 트리거를 강제할 수 없다 — `agents/writer.md`의 "금지: 의미 없는 hooks 생성" 절에 명시된 확립 원칙. hooks는 빌드 검증 결과 저장, 위험 파일 수정 차단(exit 1)에만 쓴다.
 - **보장 경로는 슬래시 직접 호출뿐**: `/ax-navi:safe-modify` 등.
+
+### 2-4. 세션 진입 규약 AGENTS.md
+
+harness-init은 `agents/lib/agents.md.template`을 대상 프로젝트 루트에 `AGENTS.md`로 그대로 복사한다(`agents/lib/skills_builder.py`의 `deploy_agents_md()`). 필드 치환이 없어 모든 프로젝트에서 내용이 동일하며, 세션 진입 시 먼저 읽는 초경량 규약으로 인덱스·위키를 통째로 로드하지 않게 한다.
+내용은 4개 원칙이다 — ① 대형 인덱스는 `query-index.mjs`로 필요한 줄만 조회, ② 기존 패턴 확인은 파일 원문 대신 `symbol` 조회로 스켈레톤만, ③ 검증은 `verify-target.mjs`로 로컬 먼저 실행해 `overall`·`fail_lines`만 확인, ④ 수정은 `safe-modify`, 신규 기능은 `scaffold-feature`, 빠른 처리는 `vibe`로 스킬 게이트를 탄다.
+④가 트리거 체계와 맞닿는 지점이다. description 매칭·CLAUDE.md 표와 별개로 세션 시작 시점에 게이트 경로를 한 번 더 상기시킨다.
 
 ---
 
@@ -154,7 +160,7 @@ writer가 프로젝트별로 직접 작성하는 스킬(trace / find-logic / sca
 | 5 | `agents/lib/ito_guide.md.template` | `<!-- SKILL:<name> -->` 블록 추가 (용도 + 트리거 예시 3개, 완전 정적 텍스트). **블록이 없으면 ITO_SKILL_ORDER에 있어도 조용히 스킵됨** (`_parse_ito_template()` → `if name not in blocks: continue`) |
 | 6 | `agents/lib/claude_md.md.template` | 자동 워크플로우 표에 행 추가 (대상 프로젝트 CLAUDE.md에 반영됨) |
 | 7 | `agents/validator.md` + `agents/lib/validator_checks.py`의 `check2_skill_registration()` | CLAUDE.md 표 등록 여부 검사 목록에 추가 |
-| 8 | 루트 `CLAUDE.md` + `docs/changelog.md` | CLAUDE.md의 파일 구조 표 + 자동 워크플로우 표, `docs/changelog.md`의 변경 이력 |
+| 8 | 루트 `CLAUDE.md` + `docs/changelog.md` | CLAUDE.md 팀 구성·자동 워크플로우 표, `docs/changelog.md`의 변경 이력 |
 | 9 | `.claude-plugin/plugin.json` | 버전 bump + description 스킬 수 갱신 |
 | 10 | `agents/lib/tests/plugin-packaging.test.mjs` | 플러그인·마켓플레이스 매니페스트와 구성 요소 경로 계약 확인 |
 

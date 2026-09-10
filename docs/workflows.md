@@ -26,12 +26,12 @@
 상황: 처음 보는 코드베이스에 투입됨.
 
 ```
-1. cd /path/to/project
-2. cp -r [ax-navi]/.claude ./
-3. cp [ax-navi]/CLAUDE.md ./
+1. claude plugin marketplace add Malburi/AX-NAVI-V2   (최초 1회)
+2. claude plugin install ax-navi@ax-navi --scope user
+3. cd /path/to/project
 4. claude
 5. "하네스 초기화해줘"
-   → harness-init 실행 (15~30분, 프로젝트 크기에 따라)
+   → harness-init 실행 (Standard 3~5분 · Full 10분 내외, 프로젝트 크기에 따라)
 6. 결과 검토:
    - validator 신뢰도 점수 확인 (80+ 즉시 사용 가능)
    - pattern-extractor 신뢰도 확인
@@ -121,7 +121,8 @@
    → plan-migration:
       - 컨텍스트 수집 대화 (소스/타겟/범위/외부 조율)
       - migration-planner 실행
-      - 7개 문서 생성 (inventory, mapping, phased plan, risks, tests, rollback, checkpoints)
+      - 문서 생성 (00_context, 00_inventory, 01_mapping_table, 02_phased_plan,
+        03_risk_register, 04_test_strategy, 05_rollback_plan, checkpoints/phase1~4)
 2. 사용자 결정:
    - 데드 코드 제외 대상 사인오프
    - DB 마이그레이션 전략 결정 (병행)

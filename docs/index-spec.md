@@ -133,7 +133,7 @@ FROM/JOIN 절의 `ROWNUM`·`DUAL`·`SYSDATE`·`LEVEL` 같은 의사테이블은 
 - `reflect` — 리플렉션 가능성 (heuristic, 신뢰도 낮음). 인덱서는 만들지 않고 analyzer가 `_ai_patch.json`으로만 추가한다
 - `ui_event` · `markup_event` · `scheduler` · `process_entry` — 진입점에서 핸들러로 가는 관계. 출발점은 `trigger:<파일>#<트리거>` 형태의 합성 노드다
 
-모든 레코드에는 `origin`(`deterministic-indexer` | `ai-enrichment` | `analyzer`)과 `confidence`(`HIGH`/`MEDIUM`/`LOW`)가 붙는다 — 어디서 온 사실인지 구분하기 위한 것이다.
+모든 레코드에는 `origin`(`deterministic-indexer` | `ai-enrichment` | `analyzer-fallback`)과 `confidence`(`HIGH`/`MEDIUM`/`LOW`)가 붙는다 — 어디서 온 사실인지 구분하기 위한 것이다.
 
 `note`는 노드·엣지 모두 선택 필드다 — 인덱서는 채우지 않고, analyzer가 `_ai_patch.json`의 `set_node_note`/`set_edge_note`로 "이게 무엇을 하는지·왜 호출하는지"를 보강한다(위 "생성 주체" 표 참조). Controller·Service·DAO 같은 의미 있는 노드와, 이름만으로 목적이 분명하지 않은 엣지에만 선택적으로 붙는다 — 모든 노드/엣지에 다 있어야 하는 필드가 아니다. call-graph.html은 이 값을 노드 상세 패널과 연결 목록에 그대로 표시한다.
 

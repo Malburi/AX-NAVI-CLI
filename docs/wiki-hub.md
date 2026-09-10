@@ -25,7 +25,7 @@ harness 프로젝트가 쓴 같은 DB를 한 사이트에서 통합해서 보여
 떠 있는 서버"의 역할이라 harness 플러그인 구조와 안 맞기 때문이다.
 
 ```
-harness 플러그인 (여러 프로젝트에 각각 설치)          wiki-hub (별도 서버, 운영 계획 수립 중)
+harness 플러그인 (여러 프로젝트에 각각 설치)          wiki-hub (별도 서버)
 ──────────────────────────────────                ─────────────────────────
 generate-wiki                                      wiki-hub-serve  (열람·검색·버전관리, view 전용)
   → _workspace/wiki/ 폴더 생성 (zero-LLM)                ▲
@@ -58,7 +58,7 @@ harness-init 재실행 비용(토큰)을 아끼기 위한 용도다.
 |---|---|---|
 | 만드는 명령 | `generate-wiki` (harness) | `generate-wiki` 다음 `publish-wiki` (harness 내장, wiki-hub 설치 불필요) |
 | 저장 위치 | 이 프로젝트의 `_workspace/wiki/` 폴더 | 조직 공용 DB(`wikihub_*` 테이블) |
-| 보는 명령 | `_workspace/wiki/serve.bat` → `:3501` | `wiki-hub-serve`(별도 서버, 운영 계획 수립 중) → 서버 배포 시 URL 안내 예정 |
+| 보는 명령 | `_workspace/wiki/serve.bat` → `:3501` | `wiki-hub-serve`(별도 서버) → 서버 배포 시 URL 안내 예정 |
 | 범위 | 이 프로젝트 하나 | 발행된 모든 시스템(시스템·컴포넌트로 구조화) |
 | 버전 이력 | 없음 | 있음 (비교·되돌리기 — 서버 배포 후 조회 가능, 저장 자체는 지금도 됨) |
 
@@ -152,7 +152,7 @@ wiki-hub-serve(조회 서버)는 별도 배포 대상이라 이 문서 범위 �
 1. `generate-wiki` — 폴더 wiki 생성 (항상 실행, 기본값)
 2. 완료 후 "중앙 DB에도 발행할까요?" 질문에 Y → `publish-wiki` 스킬 →
    `agents/lib/wikihub_db/publish.py` 직접 실행(내장, wiki-hub 설치 불필요)
-3. 여러 시스템을 한 곳에서 보고 싶을 때 → wiki-hub-serve 배포 후 그 서버로 접속(운영 계획 수립 중)
+3. 여러 시스템을 한 곳에서 보고 싶을 때 → wiki-hub-serve 배포 후 그 서버로 접속
 
 백엔드·프론트엔드가 별도 저장소면 **양쪽에서 각각 발행**한다 — 같은 `--system-key`,
 다른 `--component-type`을 쓰면 나중에 조회 화면에서 한 시스템 아래 두 레이어로 묶인다.
