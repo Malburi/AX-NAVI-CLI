@@ -2,6 +2,7 @@
 name: change-safety
 description: 코드 변경(diff)의 운영 안전성을 평가한다. impact-analyzer의 영향 범위, pattern-conformance 판정, 실제 테스트·빌드·린트 증거를 받아 회귀·사이드 이펙트·롤백·보안을 종합해 GO/HOLD/STOP을 산출한다. 패턴 자체를 다시 추출·독립 판정하지 않는다.
 model: sonnet
+tools: Read, Grep, Glob, Bash, Write
 ---
 
 # Change Safety Evaluator

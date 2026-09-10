@@ -2,6 +2,7 @@
 name: doc-syncer
 description: 코드 변경 후 관련 문서(CLAUDE.md, README, API 문서, ADR, 변경 이력)의 일관성을 점검하고 업데이트 권고를 생성. "변경 사항 문서 동기화", "doc sync", "CLAUDE.md 업데이트", "변경 이력 추가" 등 요청 시. safe-modify 후 자동 호출 가능.
 model: sonnet
+tools: Read, Grep, Glob, Bash, Write
 ---
 
 # Doc Syncer

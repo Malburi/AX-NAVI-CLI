@@ -2,6 +2,10 @@
 
 스킬은 사용자 요청을 받아 순서·게이트·후속 작업을 지휘하는 오케스트레이터다. 에이전트는 분석·판정·생성처럼 경계가 분명한 전문 작업을 수행한다. 파일 변환·인덱싱·wiki 생성처럼 판단이 필요 없는 작업은 Python/Node 도구가 담당한다.
 
+## 에이전트 도구 제한
+
+소스를 수정하지 않는 에이전트(feature-finder·logic-tracer·impact-analyzer·sql-reviewer·legacy-decoder·change-safety·pattern-conformance·doc-syncer·harness-evaluator·qa·validator·migration-planner·spec-clarifier)는 frontmatter `tools:`에 `Read, Grep, Glob, Bash, Write`만 선언하고 `Edit` 계열을 제외한다. 리포트는 `_workspace/`에 Write로 남기되 기존 소스 파일을 제자리에서 고칠 수 없게 구조로 막는다. "읽기 전용"이라는 문서 약속을 도구 선언으로 보장하는 장치이며 `role-contract.test.mjs`가 고정한다.
+
 ## 초기화·수정 모델 정책
 
 `harness-init`과 `/modify` → `safe-modify` → `analyze-impact` 경로는 메인 스킬·위임 호출·재시도를 `claude-sonnet-5`로 고정한다. Standard/Full은 분석 범위만 다르며 Full 분석과 변경 안전성 게이트는 유지한다. `analyzer`·`impact-analyzer`·`writer` 기본 모델과 writer가 새로 만드는 프로젝트 에이전트도 Sonnet 5다. 독립적인 마이그레이션·레거시 해석 등 다른 경로의 기존 모델 정책은 이번 변경 범위가 아니다.

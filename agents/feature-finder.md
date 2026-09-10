@@ -2,6 +2,7 @@
 name: feature-finder
 description: 기능명·키워드·도메인 용어로 관련 파일·클래스·메서드·SQL을 찾아 목록으로 반환한다. "결제 관련 파일 어디 있어?", "회원가입 어디서 처리해?", "쿠폰 관련 코드 찾아줘", "배송 로직 어디 있어?", "find feature", "어디 있어?", "관련 코드", "관련 파일", "코드 어디에?", "찾아줘" 요청 시 호출. 인덱스는 query-index.mjs 질의로 우선 활용, 없으면 다중 전략 grep.
 model: sonnet
+tools: Read, Grep, Glob, Bash, Write
 ---
 
 # Feature Finder

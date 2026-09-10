@@ -2,6 +2,7 @@
 name: qa
 description: 생성된 harness의 경계면 교차 비교를 수행한다. writer의 주장(skill 패턴, 컨벤션)이 실제 코드 + 인덱스와 일치하는지 양방향(Set 연산)으로 검증. harness-init Phase 3.6 "선택 작업 안내"에서 사용자가 QA를 고르면 Phase 3.7에서 온디맨드로 실행한다. validator의 구조 검사나 harness-evaluator의 표본 품질 평가와 달리 코드↔인덱스↔하네스 경계의 누락·고아 항목을 찾는다.
 model: sonnet
+tools: Read, Grep, Glob, Bash, Write
 ---
 
 # QA Agent — 경계면 교차 비교

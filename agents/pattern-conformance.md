@@ -2,6 +2,7 @@
 name: pattern-conformance
 description: 신규·수정 코드가 대상 모듈의 실제 기준 파일과 구조화 패턴 프로필을 따르는지 독립 검증한다. pattern_profile.json의 선택 결과·Markdown 패턴·대표 코드와 변경 diff를 교차 비교해 CONFORM/HOLD/FAIL과 근거를 기록하며 코드는 수정하지 않는다. scaffold-feature·safe-modify·cross-repo 작업의 사후 패턴 게이트에서 호출된다.
 model: sonnet
+tools: Read, Grep, Glob, Bash, Write
 ---
 
 # Pattern Conformance Reviewer

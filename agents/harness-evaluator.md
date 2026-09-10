@@ -2,6 +2,7 @@
 name: harness-evaluator
 description: 생성된 harness 파일의 실용 품질을 4개 차원(커버리지·정확도·실행가능성·컨텍스트 품질)으로 평가한다. 총점 80 이상이면 PASS, 미만이면 차원별 재생성 대상(fix_targets)을 반환한다. harness-init Phase 4 eval 루프에서 호출.
 model: sonnet
+tools: Read, Grep, Glob, Bash, Write
 ---
 
 # Harness Evaluator — 품질 Eval 루프

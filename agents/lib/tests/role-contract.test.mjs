@@ -84,6 +84,18 @@ export async function test(register, assert) {
     assert.ok(sourceTexts.every((text) => !/_workspace\/(decoded_|tests_)/.test(text)), "옛 리포트 경로가 남아 있음");
   });
 
+  register("소스를 수정하지 않는 에이전트는 tools 선언으로 Edit 계열 도구를 제외한다", () => {
+    const readOnly = ["feature-finder", "logic-tracer", "impact-analyzer", "sql-reviewer", "legacy-decoder", "change-safety",
+      "pattern-conformance", "doc-syncer", "harness-evaluator", "qa", "validator", "migration-planner", "spec-clarifier"];
+    for (const name of readOnly) {
+      const tools = field(read(join(root, "agents", `${name}.md`)), "tools").split(",").map((t) => t.trim());
+      assert.ok(tools.length > 0 && tools[0], `${name} tools 선언 누락`);
+      for (const banned of ["Edit", "MultiEdit", "NotebookEdit"]) assert.ok(!tools.includes(banned), `${name}가 ${banned}를 허용함`);
+      for (const required of ["Read", "Grep", "Glob", "Write"]) assert.ok(tools.includes(required), `${name}에 ${required} 누락`);
+    }
+    assert.ok(field(read(join(root, "agents", "spec-clarifier.md")), "tools").includes("AskUserQuestion"), "spec-clarifier 인터뷰 도구");
+  });
+
   register("QA/evaluator 계약이 전역 6종 스킬과 Boundary 1~7 운영 모델을 따른다", () => {
     const qa = read(join(root, "agents", "qa.md"));
     const evaluator = read(join(root, "agents", "harness-evaluator.md"));

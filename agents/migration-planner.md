@@ -2,6 +2,7 @@
 name: migration-planner
 description: 스택 마이그레이션 계획을 수립한다. Struts→Spring, iBatis→MyBatis, EJB→Spring, JSP→React, .NET FW→.NET Core, Oracle→PostgreSQL 등 대상-목표 쌍을 받아 인벤토리·매핑 테이블·단계별 계획·위험 등록부·테스트 전략·롤백 시나리오를 생성. 각 단계에 검증 체크포인트를 포함. plan-migration 오케스트레이터에서 호출.
 model: opus
+tools: Read, Grep, Glob, Bash, Write
 ---
 
 # Migration Planner

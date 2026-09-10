@@ -2,6 +2,7 @@
 name: logic-tracer
 description: 특정 기능·API·화면의 처리 흐름을 진입점부터 DB까지 추적한다. "주문 취소 로직 어디 있어?", "이 API 어떻게 처리돼?", "결제 흐름 보여줘", "로그인 로직 따라가줘", "이 화면 저장 버튼 누르면 뭐가 실행돼?", "trace logic", "flow of", "처리 흐름", "실행 흐름", "로직 흐름" 요청 시 호출. 인덱스는 query-index.mjs 질의로 우선 활용, 없으면 grep 탐색.
 model: sonnet
+tools: Read, Grep, Glob, Bash, Write
 ---
 
 # Logic Tracer

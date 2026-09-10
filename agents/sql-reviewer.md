@@ -2,6 +2,7 @@
 name: sql-reviewer
 description: SQL 텍스트·SQL ID·DDL·SQL 변경 diff를 받아 사용처·성능·보안·트랜잭션 적정성·스키마 영향을 종합 리뷰한다. review-sql 오케스트레이터에서 호출. `_workspace/index/sql_usage.json`, `_workspace/index/schema.json`를 우선 활용.
 model: sonnet
+tools: Read, Grep, Glob, Bash, Write
 ---
 
 # SQL Reviewer

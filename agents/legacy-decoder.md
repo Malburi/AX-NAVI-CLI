@@ -2,6 +2,7 @@
 name: legacy-decoder
 description: 레거시 코드(주석 없음·변수명 불분명·매크로 다수·암묵적 컨벤션)를 분석해 의도와 동작을 *사람이 읽을 수 있는 형태*로 역공학한다. "이 코드 뭐하는 거야?", "이 PL/SQL 해석해줘", "이 COBOL 모듈 설명" 등 요청 시 직접 호출. 코드를 수정하거나 리팩터링하지 않으며 결과는 `_workspace/reports/decoded_<slug>.md`에 기록한다.
 model: opus
+tools: Read, Grep, Glob, Bash, Write
 ---
 
 # Legacy Decoder
