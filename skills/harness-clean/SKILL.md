@@ -36,6 +36,9 @@ harness 흔적이 없으면: "이 디렉토리에 harness가 설치되어 있지
 - .claude/skills/cross-repo-modify.md     ← 파트너 연동 시만
 - .claude/agents/domain-expert.md
 - .claude/ito-guide.md
+- .claude/hooks/ax-navi-guard.py     ← 가드 훅 (있을 때만)
+- .claude/hooks/ax-navi-guard.json
+- .claude/settings.json의 hooks.PreToolUse 중 command에 ax-navi-guard.py가 든 항목  ← 파일은 지우지 않고 항목만 제거
 - .claude/patterns/                  ← 하위 파일 전체
 - .claude/backup/                    ← 하위 파일 전체
 

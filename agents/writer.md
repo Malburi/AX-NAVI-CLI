@@ -175,7 +175,7 @@ dataset_pattern.md       (Nexacro/data-bound UI)
 
 올바른 hooks 사용 사례 (생성 가능):
 - 실제 검증/빌드를 수행하고 결과를 파일로 저장하는 hooks (`ant compile` → `_workspace/compile_result.txt`)
-- 위험 파일(운영 DB 접속 정보 등)을 수정하려는 시도를 **차단**하는 hooks (`exit 1` 반환)
+- 위험 파일(운영 DB 접속 정보 등)을 수정하려는 시도를 **차단**하는 hooks (`exit 2` 반환 — Claude Code는 exit 2만 차단으로 해석한다). 단 이 용도의 가드는 2-2.3 조립 단계의 `guard_hook.py`가 인덱스·파일명 규칙으로 기계 배포하므로 writer가 따로 만들지 않는다.
 - Claude가 도구 결과로 읽을 수 있는 정보를 생성하는 hooks
 
 hooks를 생성할 이유가 명확하지 않으면 **생성하지 않는다.** `settings.json`은 `{"enabledPlugins": {}}` 또는 기존 설정 유지.

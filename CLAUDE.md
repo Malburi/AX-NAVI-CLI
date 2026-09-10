@@ -116,6 +116,7 @@ config / template / requirements 파일은 헤더 생략.
 | `agents/lib/pattern_tally.py` | pattern-extractor의 `05_patterns_extracted.md` 집계 표(샘플수·신뢰도·안티패턴 수)를 개별 패턴 파일에서 기계 취합(zero-LLM) |
 | `agents/lib/validator_checks.py` | validator 체크 1,2,3,4,6,7,8,9(파일존재·트리거품질·경로교차·보안·인덱스무결성·이력)를 기계 실행(zero-LLM), 체크 5·10만 validator(LLM)에 남김 |
 | `agents/lib/qa_boundary6.py` | qa Boundary 6(워크플로우 스킬 ↔ 인덱스 의존성)을 기계 실행(zero-LLM) |
+| `agents/lib/guard_hook.py` | 운영 프로파일 설정·DB 접속 설정·키/인증서 파일을 `env_branches.json`과 파일명 규칙으로 골라 대상 프로젝트 `.claude/hooks/ax-navi-guard.{py,json}` + `settings.json` PreToolUse 차단 훅으로 배포(zero-LLM). 배포기와 훅 런타임이 한 파일 |
 
 > 본 저장소 내의 `agents/`·`skills/` 경로는 *플러그인 소스*이며, 설치된 대상 프로젝트에서 출력되는 결과물은 여전히 대상 프로젝트의 `.claude/skills/...`·`.claude/agents/...`에 기록된다. 에이전트/스킬 본문 내부의 `.claude/...` 경로는 *대상 프로젝트* 경로를 의미한다.
 

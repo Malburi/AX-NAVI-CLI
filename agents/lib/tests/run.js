@@ -10,6 +10,7 @@ import { test as registerQueryIndexTests } from "./query-index.test.mjs";
 import { test as registerPortabilityTests } from "./portability.test.mjs";
 import { test as registerVerifyTargetTests } from "./verify-target.test.mjs";
 import { test as registerAnalysisWikiTests } from "./analysis-wiki.test.mjs";
+import { test as registerGuardHookTests } from "./guard-hook.test.mjs";
 
 const tests = [];
 function test(name, fn) {
@@ -36,6 +37,7 @@ await registerQueryIndexTests(test, assert);
 await registerPortabilityTests(test, assert);
 await registerVerifyTargetTests(test, assert);
 await registerAnalysisWikiTests(test, assert);
+await registerGuardHookTests(test, assert);
 
 let passed = 0,
   failed = 0;
