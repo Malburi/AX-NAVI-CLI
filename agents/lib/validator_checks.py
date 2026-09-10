@@ -185,22 +185,6 @@ def check2_skill_registration(root, decisions, claude_md_text):
 KOREAN_QUOTE_RE = re.compile(r'"([^"]*[가-힣][^"]*)"')
 ASCII_QUOTE_RE = re.compile(r'"([a-zA-Z][a-zA-Z \-]*)"')
 
-# 정적 스킬 6종(analyze-impact/safe-modify/scaffold-feature/vibe/plan-migration/review-sql)은
-# 2026-08-13부터 대상 프로젝트에 로컬 배포되지 않는다(플러그인 전역판만 사용) — 새로 배포되는
-# 프로젝트에서는 애초에 `.claude/skills/*.md` 글롭 스캔에 걸리지 않으므로 이 목록은 사실상
-# no-op이다. 2026-08-13 이전에 배포됐던 레거시 프로젝트에 잔존 사본이 있을 경우를 위한
-# 하위호환 목적으로만 남겨둔다 — check 3은 writer가 실제로 새로 작성한 per-project 스킬
-# (trace/scaffolder/find-logic/cross-repo-*)에만 적용. harness-init.md는 2026-07-23부터
-# 프로젝트에 배포하지 않으므로(메타/툴링 스킬 — 하네스 재초기화용이지 개발 워크플로우가 아님)
-# 이 목록에서 제외했다. 혹시 과거 세션에서 수동 배포된 사본이 남아있어도 이 목록에 없으면
-# check3이 일반 per-project 스킬과 동일하게 트리거 품질을 검사하게 되는데, 이는 의도된
-# 부작용이다 — 남아있는 사본은 트리거 부실 WARN으로 존재가 드러나 정리 대상임을 알 수 있다.
-STATIC_OR_PREEXISTING_SKILLS = {
-    "analyze-impact.md", "safe-modify.md", "scaffold-feature.md",
-    "plan-migration.md", "review-sql.md", "vibe.md",
-}
-
-
 def check3_trigger_quality(root, decisions):
     results = []
     skills_dir = os.path.join(root, ".claude", "skills")
@@ -211,8 +195,6 @@ def check3_trigger_quality(root, decisions):
 
     for path in sorted(glob.glob(os.path.join(skills_dir, "*.md"))):
         name = os.path.basename(path)
-        if name in STATIC_OR_PREEXISTING_SKILLS:
-            continue
         text = _read(path) or ""
         fm = _frontmatter_fields(text)
         desc = fm.get("description", "")

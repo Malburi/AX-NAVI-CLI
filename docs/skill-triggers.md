@@ -164,9 +164,7 @@ writer가 프로젝트별로 직접 작성하는 스킬(trace / find-logic / sca
 | 9 | `.claude-plugin/plugin.json` | 버전 bump + description 스킬 수 갱신 |
 | 10 | `agents/lib/tests/plugin-packaging.test.mjs` | 플러그인·마켓플레이스 매니페스트와 구성 요소 경로 계약 확인 |
 
-(`agents/lib/validator_checks.py`의 `STATIC_OR_PREEXISTING_SKILLS`는 더 이상 새 정적 스킬을 추가할 때
-건드릴 필요가 없다 — 로컬 배포가 없으니 check3의 `.claude/skills/*.md` 글롭 스캔에 애초에 걸리지 않는다.
-이 집합은 2026-08-13 이전에 이미 로컬 배포됐던 레거시 프로젝트의 잔존 사본을 위한 하위호환 용도로만 남아있다.)
+(정적 스킬 6종은 로컬 배포가 없으므로 check3의 `.claude/skills/*.md` 글롭 스캔에 걸리지 않는다. 옛 배포본 사본이 남아 있으면 일반 per-project 스킬과 같은 트리거 품질 검사를 받아 WARN으로 드러나며, 그 사본은 정리 대상이다.)
 
 ### 트리거 문구만 추가/수정할 때 (스킬 신설 아님)
 - `skills/<name>/SKILL.md`(유일한 소스) description만 수정.
