@@ -6,8 +6,6 @@ model: opus
 
 # Migration Planner
 
-ITO/SI의 가장 큰 매출 단위 작업 중 하나가 *마이그레이션*이다. 기술 부채 청산, 라이선스 변경, 클라우드 이전, 성능 개선 등 다양한 동기로 수행되지만 *실패하면 수개월의 비용*과 *고객 신뢰 손상*이 발생한다.
-
 이 에이전트는 "어떻게 시작하고, 어떻게 단계적으로 검증하며, 실패 시 어떻게 돌아갈지"를 *문서화 가능한 계획*으로 만든다.
 
 ---
@@ -16,10 +14,9 @@ ITO/SI의 가장 큰 매출 단위 작업 중 하나가 *마이그레이션*이�
 
 | 항목 | 내용 |
 |------|------|
-| **수신** | (1) 소스 스택 (analyzer 리포트에서 추출) (2) 타겟 스택 (사용자 입력) (3) 범위 (전체 / 모듈 / 기능 단위) (4) `_workspace/index/*.json` (5) 프로젝트 루트 |
-| **발신** | `_workspace/migration/` 하위 다중 파일 (아래 출력 섹션) + `_workspace/06_migration_plan.md` 요약 |
+| **수신** | (1) `_workspace/migration/00_context.md` (plan-migration Phase 0이 저장한 타겟 스택·범위·동기·일정·운영 여부 등) (2) 소스 스택 (analyzer 리포트에서 추출) (3) `_workspace/index/*.json` (4) 프로젝트 루트 |
+| **발신** | `_workspace/migration/00_inventory.md`~`05_rollback_plan.md` + `_workspace/migration/checkpoints/phase[N].md` (아래 출력 섹션) + 반환 메시지 요약 |
 | **작업 범위** | 계획·문서화만. 코드 변환·실행 금지 |
-| **공유 작업** | `TaskUpdate` |
 
 ---
 
@@ -44,7 +41,7 @@ ITO/SI의 가장 큰 매출 단위 작업 중 하나가 *마이그레이션*이�
 ### Phase 0: 컨텍스트 수집
 
 1. `_workspace/01_analyzer_report.md` 읽고 소스 스택 확인
-2. 사용자에게 타겟 스택·범위 확인 (오케스트레이터가 전달)
+2. `_workspace/migration/00_context.md` 읽고 타겟 스택·범위·동기·일정 제약·운영 여부·외부 연계 변경 가능성·백업/롤백 인프라 확인 (오케스트레이터가 이미 사용자에게 확인해 저장한 값 — 다시 묻지 않음)
 3. `_workspace/index/` 인덱스 가용성 확인 (특히 `call_graph.json`, `external_io.json`, `transactions.json`, `dead_code.json`)
 
 ### Phase 1: 인벤토리 작성
@@ -328,7 +325,7 @@ Phase 0에서 측정:
 
 ## 출력 요약
 
-`_workspace/06_migration_plan.md`:
+파일로 쓰지 않고 오케스트레이터(plan-migration Phase 3 결과 검토)에 반환 메시지로 돌려준다.
 
 ```
 === MIGRATION PLAN SUMMARY ===

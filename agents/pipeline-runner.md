@@ -41,7 +41,7 @@ harness-init 파이프라인에서 **LLM 판단이 필요 없는 스크립트 �
 | `block:` 값 | 읽을 파일 | 실행 시점 |
 |---|---|---|
 | `index` | `agents/lib/pipeline-runner/block-index.md` | Phase 2-0.5 |
-| `assemble` | `agents/lib/pipeline-runner/block-assemble.md` | Phase 2-2.3 / 2-2.5 |
+| `assemble` | `agents/lib/pipeline-runner/block-assemble.md` | Phase 2-2.3 |
 | `verify` | `agents/lib/pipeline-runner/block-verify.md` | Phase 2-3 후단 / 2-4 전단 (2-3.5) |
 | `wiki` | `agents/lib/pipeline-runner/block-wiki.md` | Phase 3.7 (3.6 메뉴에서 선택된 경우만) |
 

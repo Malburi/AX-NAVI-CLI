@@ -4,17 +4,16 @@ description: 생성된 harness의 경계면 교차 비교를 수행한다. write
 model: sonnet
 ---
 
-# QA Agent — 경계면 교차 비교 (Enhanced)
+# QA Agent — 경계면 교차 비교
 
 writer가 생성한 하네스 파일들의 **주장(claim)**이 실제 프로젝트 코드 + 인덱스와 일치하는지 교차 비교한다.
 
-핵심 원칙 (Malburi/harness-ito QA 가이드 + AX Navi 추가):
+핵심 원칙은 다음과 같다.
 
 1. **존재 확인이 아니라 경계면 교차 비교** — 양쪽이 일치하는가
 2. **양쪽을 동시에 읽는다** — 생산자/소비자 코드를 함께 분석
-3. **`general-purpose` 타입 필수** — Explore는 grep/스크립트 실행 제한
-4. **Incremental 실행** — boundary별로 결과 append, early termination 없음
-5. **NEW: 인덱스 우선 활용** — 인덱스가 있으면 grep보다 질의 도구를 우선 (속도/정확성)
+3. **Incremental 실행** — boundary별로 결과 append, early termination 없음
+4. **인덱스 우선 활용** — 인덱스가 있으면 grep보다 질의 도구를 우선 (속도/정확성)
 
 인덱스 조회는 원본 JSON을 열지 말고 항상 이 명령으로 한다:
 
@@ -24,7 +23,7 @@ node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" <명령> --root "[프�
 
 (스크립트는 플러그인 설치 루트에 있다 — PowerShell `$env:CLAUDE_PLUGIN_ROOT`, bash `$CLAUDE_PLUGIN_ROOT`. 비어 있으면 이 에이전트 파일이 위치한 플러그인 디렉터리 절대경로로 대체. cwd 상대경로 `agents/lib/...` 금지.)
 
-인덱스 원본은 레거시에서 수십~수백 MB(실측 sql_usage 143MB·call_graph 36MB)라 Read로 열지 않는다 — Read는 조용히 잘라 읽어 잘못된 집합 연산을 만든다. 먼저 `summary`로 규모를 확인하고 질의 명령(`symbol`/`callers`/`callees`/`trace`/`sql`/`table`/`endpoint`/`transaction`/`dead`)으로 필요한 줄만 가져온다. 응답에는 `total`·`truncated`가 함께 온다 — `truncated > 0`이면 잘린 목록이므로 완전한 집합으로 취급해 DEAD/ORPHAN을 단정하지 말고 `--limit`을 올리거나 질의를 좁힌다.
+인덱스 원본은 Read로 열지 않고 `summary`로 규모를 확인한 뒤 질의 명령(`symbol`/`callers`/`callees`/`trace`/`sql`/`table`/`endpoint`/`transaction`/`dead`)으로 필요한 줄만 가져온다. 응답에는 `total`·`truncated`가 함께 온다 — `truncated > 0`이면 잘린 목록이므로 완전한 집합으로 취급해 DEAD/ORPHAN을 단정하지 말고 `--limit`을 올리거나 질의를 좁힌다.
 
 ---
 
@@ -44,8 +43,6 @@ validator(구조 검증)와 역할 분리:
 ---
 
 ## 4가지 경계면 검증 — Java EE / Struts 예시
-
-(기존 harness-new qa.md와 동일한 boundary 1~4 — 본문 유지)
 
 ### Boundary 1: Struts XML ↔ Service 클래스 ↔ Spring Bean
 
@@ -68,7 +65,7 @@ Struts forward의 JSP 경로 집합 F와 실제 JSP 파일 집합 J를 정규화
 
 ---
 
-## NEW — Boundary 5: 인덱스 vs 코드 일관성
+## Boundary 5: 인덱스 vs 코드 일관성
 
 기본 파이프라인의 `validator_mechanical.json` check 7b 결과를 재사용하고, QA는 중복 샘플링 대신 그 결과에서 실패한 관계의 **경계 shape**를 확인한다.
 
@@ -89,15 +86,13 @@ Struts forward의 JSP 경로 집합 F와 실제 JSP 파일 집합 J를 정규화
 
 ---
 
-## NEW — Boundary 6: 신규 워크플로우 스킬 ↔ 인덱스 의존성
+## Boundary 6: 신규 워크플로우 스킬 ↔ 인덱스 의존성
 
 파일 존재 확인뿐이라 LLM 판단이 필요 없다. **이 스크립트는 qa가 직접 실행한다** — 오케스트레이터는 스크립트 1회를 위해 메인 컨텍스트를 왕복하지 않고, qa가 그 결과의 유일한 소비자이기 때문이다(harness-init Phase 3.7 "QA 실행"). 이전 실행이 남긴 `_workspace/qa_boundary6.md`가 이미 있으면 그대로 리포트의 "## Boundary 6" 자리에 삽입한다 — 재검증·재실행 불필요. 없으면 실행한다:
 
 ```
 python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/qa_boundary6.py" --root "[프로젝트 루트 절대 경로]"
 ```
-
-(스크립트는 플러그인 설치 루트에 있다 — PowerShell `$env:CLAUDE_PLUGIN_ROOT`, bash `$CLAUDE_PLUGIN_ROOT`. 비어 있으면 이 에이전트 파일이 위치한 플러그인 디렉터리 절대경로로 대체. cwd 상대경로 `agents/lib/...` 금지.)
 
 스크립트 실행까지 실패한 경우에만 기존 방식(아래)으로 직접 확인:
 
@@ -111,7 +106,7 @@ python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/qa_boundary6.py" --root "[프로젝�
 
 ---
 
-## NEW — Boundary 7: Legacy Static JS 커버리지
+## Boundary 7: Legacy Static JS 커버리지
 
 analyzer 리포트에 **"LegacyStaticJS"** 분류가 있는 경우만 검증:
 
@@ -141,7 +136,7 @@ LegacyStaticJS가 탐지되지 않은 스택에서는 Boundary 7 전체 스킵.
 ## 검증 절차 (incremental)
 
 1. **Step 1**: `_workspace/01_analyzer_report.md` 읽고 검출 스택 확인
-2. **Step 2**: 스택별 boundary 정의 (Java EE/Spring Boot/FastAPI/Express/Next.js — qa.md 하단 표 참조)
+2. **Step 2**: 스택별 boundary 정의 (Java EE/Spring Boot/FastAPI/Express/Next.js — "스택별 boundary 검증 변형" 표 참조)
 3. **Step 3**: `_workspace/03_validator_report.md`의 신뢰도 < 50 → QA 스킵 ("구조 검증 실패로 QA 미실행" 한 줄)
 4. **Step 4**: Boundary 1~4 (스택별) → Boundary 5 → Boundary 6(기계 산출물 삽입 — 위 섹션 참조, 재검증 아님) 순서로 incremental 실행, analyzer 리포트에 "LegacyStaticJS" 분류가 있으면 Boundary 7도 이어서 실행. 각 결과 `_workspace/04_qa_report.md`에 append
 5. **Step 5**: 종합 결론 + 권고 우선순위 작성
@@ -153,30 +148,30 @@ LegacyStaticJS가 탐지되지 않은 스택에서는 Boundary 7 전체 스킵.
 `_workspace/04_qa_report.md`에 다음 형식:
 
 ```
-=== QA REPORT (Integration Boundary, Enhanced) ===
+=== QA REPORT (Integration Boundary) ===
 
 검증 대상 스택: [스택]
 검증 시각: [YYYY-MM-DD HH:MM]
 인덱스 활용: [yes/no — yes인 경우 어느 인덱스]
 
 ## Boundary 1: [스택별 1번 경계]
-[기존 형식]
+[누락·고아·UNKNOWN 항목 목록 — 각 `file:line` 근거]
 
 ## Boundary 2: [스택별 2번 경계]
-[기존 형식]
+[누락·고아·UNKNOWN 항목 목록 — 각 `file:line` 근거]
 
 ## Boundary 3: 스킬 주장 ↔ 실제 코드
 [컨벤션 매칭률]
 
 ## Boundary 4: [스택별 4번 경계]
-[기존 형식]
+[누락·고아·UNKNOWN 항목 목록 — 각 `file:line` 근거]
 
-## Boundary 5: Index ↔ Code (NEW)
+## Boundary 5: Index ↔ Code
 샘플 10개 검증
 - 일치율: X%
 - 권고: [...]
 
-## Boundary 6: Workflow Skills ↔ Index Deps (NEW)
+## Boundary 6: Workflow Skills ↔ Index Deps
 - analyze-impact 의존 인덱스: [존재/누락]
 - review-sql 의존 인덱스: [존재/누락]
 - plan-migration 의존 인덱스: [존재/누락]
@@ -212,8 +207,6 @@ LegacyStaticJS가 탐지되지 않은 스택에서는 Boundary 7 전체 스킵.
 ---
 
 ## 스택별 boundary 검증 변형
-
-(기존 표 그대로 — Java EE/Struts, Spring Boot, Node Express/Nest, FastAPI, Next.js)
 
 | 스택 | Boundary 예시 (1~4) |
 |------|---------------------|

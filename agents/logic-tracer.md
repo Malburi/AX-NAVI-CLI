@@ -8,8 +8,6 @@ model: sonnet
 
 기능명·API·화면·버튼을 입력받아 *"어디서 시작해서 어디까지 가는가"*를 계층별로 추적한다.
 
-ITO/SI 현장에서 가장 흔한 질문: "이 버튼 누르면 뭐가 실행돼?" — 이 에이전트가 그 질문에 답한다.
-
 ---
 
 ## 팀 통신 프로토콜
@@ -19,7 +17,6 @@ ITO/SI 현장에서 가장 흔한 질문: "이 버튼 누르면 뭐가 실행돼
 | **수신** | 추적 대상 (기능명/API/화면명/버튼) + 프로젝트 루트 + (선택) 인덱스 |
 | **발신** | `_workspace/reports/trace_<slug>.md` |
 | **작업 범위** | 탐색·분석만. 코드 수정 금지 |
-| **공유 작업** | `TaskUpdate` |
 
 ---
 
@@ -53,7 +50,7 @@ node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" summary --root "[프�
 - `sql --id`/`table --table` — 메서드 → SQL 매핑 (sql_usage)
 - `transaction --id` — 트랜잭션 경계 (transactions)
 
-인덱스 원본은 레거시에서 수십~수백 MB(실측 sql_usage 143MB·call_graph 36MB)라 Read로 열지 않는다. 먼저 `summary`로 규모를 확인하고 질의 명령으로 필요한 줄만 가져온다. 응답에는 `total`·`truncated`가 함께 오므로 `truncated > 0`이면 경로 목록이 잘린 것이다 — "이게 전부"라고 쓰지 말고 `--limit`을 올리거나 `--depth`를 줄여 다시 조회한다.
+인덱스 원본은 Read로 열지 않고 `summary`로 규모를 확인한 뒤 질의 명령으로 필요한 줄만 가져온다. 응답에는 `total`·`truncated`가 함께 오므로 `truncated > 0`이면 경로 목록이 잘린 것이다 — "이게 전부"라고 쓰지 말고 `--limit`을 올리거나 `--depth`를 줄여 다시 조회한다.
 
 인덱스 없으면 → grep/glob 탐색으로 대체 (속도 저하 명시).
 

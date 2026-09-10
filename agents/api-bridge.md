@@ -25,10 +25,10 @@ model: sonnet
 
 | mode | 동작 | 호출처 |
 |------|------|--------|
-| `extract` | 백엔드 코드 → `api_contract.json` 생성 | pair-init, harness-init(analyzer Step 16), cross-repo-scaffold Phase 4 |
+| `extract` | 백엔드 코드 → `api_contract.json` 생성 | pair-init Phase 3, harness-init Phase 4 게이트(`api_contract` 스키마 실패 시 재실행), cross-repo-scaffold Phase 4 |
 | `validate` | 프론트엔드 호출 vs 파트너 계약 비교 → drift 리포트 | pair-init |
 | `generate-stub` | 신규 엔드포인트의 프론트엔드 서비스 스텁 생성 | cross-repo-scaffold Phase 5 |
-| `check-impact` | API 변경 시 파트너 프론트엔드 영향 확인 | impact-analyzer Step 8.5 |
+| `check-impact` | API 변경 시 파트너 프론트엔드 영향 확인 | cross-repo-modify Phase 2 |
 
 ---
 
@@ -54,24 +54,7 @@ grep -rn "@RestController\|@Controller" src/ --include="*.java" -l
 
 ### Step 2: 엔드포인트 상세 추출
 
-각 컨트롤러 파일을 Read로 읽어 엔드포인트별 추출:
-
-```json
-{
-  "method": "POST",
-  "path": "/api/orders/{id}/cancel",
-  "controller_file": "src/main/java/.../OrderCancelController.java",
-  "controller_class": "OrderCancelController",
-  "handler": "cancel",
-  "path_variables": ["id"],
-  "query_params": [],
-  "request_body_type": "CancelRequest",
-  "response_type": "ResponseEntity<CancelResponse>",
-  "auth_required": true,
-  "roles": ["USER"],
-  "deprecated": false
-}
-```
+각 컨트롤러 파일을 Read로 읽어 엔드포인트별로 메서드·경로·핸들러·파일·라인·요청/응답 shape·인증 여부·역할을 추출한다. 기록 형태는 Step 4 규칙 2의 예시가 유일한 정본이다.
 
 **인증 탐지:**
 - Spring Security: `@PreAuthorize`, `@Secured`, SecurityConfig `permitAll()` vs `authenticated()`
@@ -83,18 +66,7 @@ grep -rn "@RestController\|@Controller" src/ --include="*.java" -l
 
 ### Step 3: DTO/모델 추출 (추론 가능한 경우)
 
-Request/Response 타입에 대해 실제 클래스/인터페이스 파일 읽어 필드 추출:
-
-```json
-{
-  "CancelRequest": {
-    "fields": [
-      {"name": "reason", "type": "String", "required": true, "constraints": ["@NotBlank"]},
-      {"name": "canceledAt", "type": "LocalDateTime", "required": false}
-    ]
-  }
-}
-```
+Request/Response 타입에 대해 실제 클래스/인터페이스 파일을 읽어 필드(이름·타입·필수 여부·제약)를 추출하고, Step 4 규칙 2 예시의 `models` 부가 키에 기록한다.
 
 DTO 파일 탐지가 어려운 경우 (레거시, 복잡한 상속) → 필드 목록 `"fields": "TODO: 수동 확인 필요"` 로 표기.
 
@@ -103,9 +75,7 @@ DTO 파일 탐지가 어려운 경우 (레거시, 복잡한 상속) → 필드 �
 저장: `[백엔드 루트]/_workspace/index/api_contract.json`
 
 > **이 파일은 `docs/index-schema/api_contract.schema.json`을 따른다. 자기만의 형태를 만들지 않는다.**
-> 2026-08-15 실사고에서 이 에이전트가 `contracts.screen_struts.actions` 같은 독자 구조를 써서
-> 인덱서가 만든 스키마 준수 파일을 통째로 덮어썼고, `validate-harness.mjs`가 뒤늦게 FAIL을 내
-> 사람이 계약 파일을 손으로 재구축해야 했다. 아래 세 규칙이 그 재발 방지다.
+> 독자 구조로 쓰면 인덱서가 만든 스키마 준수 파일을 덮어써 `validate-harness.mjs`가 FAIL을 낸다. 아래 세 규칙을 따른다.
 
 **규칙 1 — 덮어쓰지 말고 병합한다.**
 `build-index.mjs`가 이미 같은 경로에 `origin: "deterministic-indexer"`인 endpoints·consumers를
@@ -347,10 +317,10 @@ grep -rn "['\"]/api/orders/${id}/cancel['\"]" [프론트엔드 루트]/src/
 
 ### Step 3: 영향 목록 반환
 
-impact-analyzer의 "## 외부 통신 영향 (파트너 프로젝트)" 섹션에 추가:
+호출한 cross-repo-modify에 아래 형식으로 반환한다. impact-analyzer 리포트의 "## 파트너 프로젝트 영향" 섹션과 같은 형식이다.
 
 ```
-## 파트너 프로젝트 영향 (프론트엔드)
+## 파트너 프로젝트 영향 (frontend)
 
 변경 엔드포인트: [METHOD /path]
 프론트엔드 호출 위치:

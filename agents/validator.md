@@ -4,7 +4,7 @@ description: writer가 생성한 harness 파일 + 인덱스를 검증한다. har
 model: sonnet
 ---
 
-# Validator Agent (Enhanced)
+# Validator Agent
 
 writer가 생성한 harness 파일들을 검증하고 보완 권고를 리포트한다.  
 Read·Glob 도구로 파일을 실제로 읽고 교차 확인한다.
@@ -49,7 +49,7 @@ writer가 상충 패턴을 병기했다면, validator가 분석 리포트와 실
 | `.claude/agents/domain-expert.md` | frontmatter, 스택 정보, 코드 컨벤션 |
 | `.claude/patterns/` | 최소 1개 파일 존재, 각 300줄 이하 |
 
-### 2. NEW — 워크플로우 스킬 등록 확인
+### 2. 워크플로우 스킬 등록 확인
 
 이 6개는 프로젝트에 로컬 파일로 배포되지 않는다(플러그인 전역 스킬) — CLAUDE.md 자동 워크플로우
 표에 이름이 등록됐는지로만 확인한다:
@@ -103,7 +103,7 @@ writer가 상충 패턴을 병기했다면, validator가 분석 리포트와 실
 발견 시: `[PASSWORD]`, `[API_KEY]`, `[DB_HOST]`, `[INTERNAL_IP]`, `[INTERNAL_DOMAIN]` 플레이스홀더 권고.  
 **자동 수정 절대 금지 — 리포트만.**
 
-### 7. NEW — 인덱스 무결성 확인
+### 7. 인덱스 무결성 확인
 
 `_workspace/index/*.json` 파일들:
 
@@ -122,15 +122,15 @@ writer가 상충 패턴을 병기했다면, validator가 분석 리포트와 실
 
 7b는 인덱스 *내용*의 정확성 게이트다 — 기존 검사는 구조(존재·파싱·카운트)만 봤다. `_meta.sampled`·`git_commit` 드리프트도 정보성으로 함께 표기된다 (감점 없음).
 
-### 8. harness-init 스킬 보존 확인
+### 8. (폐지 — validator_checks.py에서 항상 PASS)
 
-`.claude/skills/harness-init.md`가 writer에 의해 삭제·덮어쓰기되지 않았는지 확인.
+검사 내용 없음, 감점 없음. 스크립트의 `report_fragments.8`을 그대로 전사한다.
 
-### 9. NEW — 변경 이력 기록 확인
+### 9. 변경 이력 기록 확인
 
 CLAUDE.md의 "변경 이력" 테이블에 이번 실행의 항목이 추가되었는지 확인. 누락 시 WARN.
 
-### 10. NEW — patterns/ 스켈레톤 vs 본문 구분
+### 10. patterns/ 스켈레톤 vs 본문 구분
 
 patterns/ 파일들(skills_builder.py가 스켈레톤 배포)이 *스켈레톤*인지 *본문*인지 구분 표시:
 - 스켈레톤 (pattern-extractor 미실행): "pattern-extractor 호출 권장" 안내
@@ -145,7 +145,7 @@ patterns/ 파일들(skills_builder.py가 스켈레톤 배포)이 *스켈레톤*�
 
 프로필 FAIL은 신뢰도 점수에서 -10점이며, 실제 근거 파일이 없는 패턴을 정상 컨벤션으로 승인하지 않는다.
 
-### 11. NEW — 인덱스 스키마 검증
+### 11. 인덱스 스키마 검증
 
 `_workspace/validator_schema.json`이 있으면(`agents/lib/validate-harness.mjs`가 기계 생성) 그대로 전사한다 — 재검증하지 않는다. 체크 7(내용 정확성 — 실제 소스와 엣지·SQL 대조)과는 다른 층으로, 이건 `docs/index-schema/*.json` 대조 **형태** 검증(필수 필드·타입·enum·값 범위)이다.
 
@@ -194,7 +194,7 @@ QA는 자동 후속 실행되지 않는다 — harness-init Phase 3.6 선택 작
 `_workspace/03_validator_report.md`에 다음 형식:
 
 ```
-=== VALIDATOR REPORT (Enhanced) ===
+=== VALIDATOR REPORT ===
 
 검증 시각: [YYYY-MM-DD HH:MM]
 
@@ -211,7 +211,7 @@ QA는 자동 후속 실행되지 않는다 — harness-init Phase 3.6 선택 작
 - (그 외)
 
 ## 8. harness-init 보존
-[PASS / FAIL]
+[PASS — 폐지된 검사, validator_checks.py가 항상 PASS]
 
 ## 9. 변경 이력 기록
 [PASS / WARN]

@@ -9,7 +9,7 @@ model: sonnet
 작성한 변경(또는 작성 중인 변경)이 *안전한가*를 다각도로 평가한다.  
 "수정해도 되는가?"라는 질문에 단순 yes/no 가 아닌 *근거 있는 GO/HOLD/STOP*으로 답한다.
 
-ITO/SI에서는 한 번의 잘못된 수정이 야간 콜·SLA 위반·고객 신뢰 손상으로 이어진다. 이 에이전트는 commit/merge 전 마지막 게이트 역할을 한다.
+이 에이전트는 commit/merge 전 마지막 게이트 역할을 한다.
 
 ---
 
@@ -20,7 +20,6 @@ ITO/SI에서는 한 번의 잘못된 수정이 야간 콜·SLA 위반·고객 �
 | **수신** | (1) git diff 또는 변경된 파일 목록 (2) `_workspace/reports/impact_<slug>.md` (있으면) (3) `_workspace/reports/pattern_conformance_<slug>.md` (4) 실제 테스트/빌드/린트 실행 결과 (5) 대상별 adapter coverage 판정 (6) 프로젝트 루트 |
 | **발신** | `_workspace/reports/safety_<slug>.md` (GO/HOLD/STOP + 근거) |
 | **작업 범위** | 평가·리포트만. 코드 자동 수정 금지 |
-| **공유 작업** | `TaskUpdate` |
 
 ---
 

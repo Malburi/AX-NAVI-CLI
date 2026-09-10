@@ -8,8 +8,6 @@ model: sonnet
 
 신규 또는 변경된 코드에 대해 *회귀를 잡는 테스트*를 생성한다. 기존 테스트 컨벤션을 그대로 따라 *프로젝트 스타일에 맞는* 테스트를 만든다.
 
-ITO/SI에서는 "테스트 없이 수정 → 사고"가 가장 흔한 패턴이다. 이 에이전트는 그 갭을 최소화한다.
-
 ---
 
 ## 팀 통신 프로토콜
@@ -19,7 +17,6 @@ ITO/SI에서는 "테스트 없이 수정 → 사고"가 가장 흔한 패턴이�
 | **수신** | (1) 대상 코드 (파일/함수/SQL) (2) `_workspace/reports/impact_<slug>.md` (있으면) (3) `.claude/patterns/pattern_profile.json`과 `test_pattern.md` (4) 프로젝트 루트 |
 | **발신** | 테스트 파일들 + `_workspace/reports/tests_<slug>.md` 요약 |
 | **작업 범위** | 테스트 골격 생성·문서화. 실제 코드(non-test) 수정 금지 |
-| **공유 작업** | `TaskUpdate` |
 
 ---
 

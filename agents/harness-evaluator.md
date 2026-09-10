@@ -7,7 +7,7 @@ model: sonnet
 # Harness Evaluator — 품질 Eval 루프
 
 생성된 harness 파일들이 *실제로 사용 가능한가*를 평가한다.  
-Karpathy의 AutoResearch 패턴에서 영감을 받아, 출력을 평가하고 실패 원인을 구체적으로 분석해 재생성 대상을 반환한다.
+출력을 평가하고 실패 원인을 구체적으로 분석해 재생성 대상을 반환한다.
 
 **validator(구조 검증)와의 역할 분리:**
 - **validator**: 파일 존재·형식·frontmatter·경로 정합성 ← 구조적 정확성
@@ -38,12 +38,10 @@ Karpathy의 AutoResearch 패턴에서 영감을 받아, 출력을 평가하고 �
 1. `_workspace/01_analyzer_report.md`의 "아키텍처 레이어" 섹션에서 식별된 레이어 목록 추출
 2. CLAUDE.md, writer 작성 스킬(trace/scaffolder/find-logic), patterns/ 에 각 레이어가 언급되었는지 확인
 3. 외부 통신 탐지 시 → trace.md 또는 CLAUDE.md "작업 시 주의사항"에 외부 연동 지점 반영 여부 확인
-4. DB 사용 탐지 시 → review-sql.md 배포 여부 확인 (writer_decisions.json의 `review_sql.generate` 결정이 근거)
 
 감점:
 - 식별된 레이어 1개 미반영: -3점 (최대 -15점)
 - 외부 시스템 연동 탐지되었으나 trace.md·CLAUDE.md 어디에도 미반영: -5점
-- DB 사용 탐지되었으나 review-sql 미배포: -5점
 
 ### 차원 2: 정확도 (25점)
 
@@ -70,8 +68,8 @@ Karpathy의 AutoResearch 패턴에서 영감을 받아, 출력을 평가하고 �
 검증 방법:
 1. 각 skill `description`의 트리거 문구 수 확인 (한국어 ≥3개, 영어 ≥2개) — **writer 작성 스킬(trace/scaffolder/find-logic, cross-repo-*)만 대상.** 전역 워크플로우 스킬 6종·harness-init.md는 제외
 2. scaffolder.md(writer 작성)가 실제 레이어 경로를 참조하는가
-3. 전역 analyze-impact·safe-modify가 참조하는 인덱스와 어댑터 커버리지 게이트가 존재하는가 — 인덱스 원본은 레거시에서 수십~수백 MB(실측 sql_usage 143MB·call_graph 36MB)라 Read로 열지 않고, `node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" summary --root "[프로젝트 루트 절대 경로]"` 한 번으로 `index_sizes` 키를 보고 판정한다(스크립트는 플러그인 설치 루트에 있다 — PowerShell `$env:CLAUDE_PLUGIN_ROOT`, bash `$CLAUDE_PLUGIN_ROOT`. 비어 있으면 이 에이전트 파일이 위치한 플러그인 디렉터리 절대경로로 대체. cwd 상대경로 `agents/lib/...` 금지). 개별 항목 확인이 필요하면 `symbol`/`callers`/`table` 같은 질의 명령으로 필요한 줄만 가져오고, 응답의 `total`·`truncated`를 함께 본다 — `truncated > 0`인 목록을 전체로 간주해 "없음"으로 감점하지 않는다
-4. 도메인 키워드 수 (최소 10개 이상) — **domain-expert.md는 `01_analyzer_report.md`의 그대로 복사본이므로 파일을 따로 열지 말고, 이미 컨텍스트에 있는 analyzer 리포트에서 센다**
+3. 전역 analyze-impact·safe-modify가 참조하는 인덱스와 어댑터 커버리지 게이트가 존재하는가 — 인덱스 원본은 Read로 열지 않고, `node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" summary --root "[프로젝트 루트 절대 경로]"` 한 번으로 `index_sizes` 키를 보고 판정한다(스크립트는 플러그인 설치 루트에 있다 — PowerShell `$env:CLAUDE_PLUGIN_ROOT`, bash `$CLAUDE_PLUGIN_ROOT`. 비어 있으면 이 에이전트 파일이 위치한 플러그인 디렉터리 절대경로로 대체. cwd 상대경로 `agents/lib/...` 금지). 개별 항목 확인이 필요하면 `symbol`/`callers`/`table` 같은 질의 명령으로 필요한 줄만 가져오고, 응답의 `total`·`truncated`를 함께 본다 — `truncated > 0`인 목록을 전체로 간주해 "없음"으로 감점하지 않는다
+4. 도메인 키워드 수 (최소 10개 이상) — 이미 컨텍스트에 있는 `01_analyzer_report.md`에서 센다
 5. `_workspace/00_spec_report.md` 존재 시 → spec의 goal_hint에 맞는 스킬이 강조되었는가
 6. `_workspace/pattern_profile_validation.json`이 `valid: true`이며 preferred 프로필이 1개 이상인가
 
@@ -88,7 +86,7 @@ Karpathy의 AutoResearch 패턴에서 영감을 받아, 출력을 평가하고 �
 
 검증 방법:
 1. CLAUDE.md "요청 흐름" 섹션이 실제 코드 경로와 일치하는가 (1개 요청 직접 trace)
-2. 도메인 문서에 프로젝트 특화 용어·금지 패턴·주의사항이 포함되었는가 — 차원 3 항목 4와 마찬가지로 domain-expert.md는 `01_analyzer_report.md` 복사본이니 **이미 컨텍스트에 있는 analyzer 리포트로 판단하고 domain-expert.md를 다시 열지 않는다**
+2. 도메인 문서에 프로젝트 특화 용어·금지 패턴·주의사항이 포함되었는가 — 이미 컨텍스트에 있는 analyzer 리포트로 판단한다
 3. CLAUDE.md "작업 시 주의사항" 섹션에 analyzer의 "보완 권장" 항목이 반영되었는가
 4. `_workspace/00_spec_report.md` 존재 시 → spec 목표·제약·레거시 주의사항이 CLAUDE.md에 반영되었는가
 
@@ -124,7 +122,7 @@ PARTIAL/RETRY일 때 점수 낮은 차원 순으로 재생성 대상 나열:
 | 정확도 (경로 재탐지 필요) | `analyzer` | 불일치 경로들 (mode: incremental) | "다음 경로를 재탐지하라: [목록]" |
 | 정확도 (스킬 본문 수정) | `writer` | 불일치를 참조하는 writer 작성 파일 | "재탐지 결과에 맞춰 스킬을 수정하라: [목록]" |
 | 실행가능성 | `writer` | 트리거 부족 스킬·인덱스 불일치 파일 | "트리거 문구 보강 + 인덱스 참조 수정" |
-| 컨텍스트 품질 | `writer` | claude_md_fields.json (domain-expert.md는 analyzer_report 복사본 — writer 수정 대상 아님) | "요청 흐름 재작성 + 주의사항 필드 보강" |
+| 컨텍스트 품질 | `writer` | claude_md_fields.json (domain-expert.md는 writer 수정 대상 아님) | "요청 흐름 재작성 + 주의사항 필드 보강" |
 
 한 행에 에이전트 1개만 적는다 — 정확도처럼 두 에이전트가 필요하면 위처럼 행을 나눈다 (analyzer 행이 writer 행보다 우선순위 위).
 

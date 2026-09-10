@@ -19,7 +19,6 @@ logic-tracer가 "흐름 추적"이라면, feature-finder는 "위치 탐색" — 
 | **수신** | 기능명/키워드 + 프로젝트 루트 + (선택) 범위 제한 (레이어·패키지·파일 타입) |
 | **발신** | `_workspace/reports/found_<slug>.md` + 인라인 요약 |
 | **작업 범위** | 탐색·목록화만. 코드 수정 금지 |
-| **공유 작업** | `TaskUpdate` |
 
 ---
 
@@ -40,7 +39,7 @@ node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" <명령> --root "[프�
 - `callers`/`callees --id [찾은 심볼]` — 관련 노드 클러스터 추출
 - `dead --file [경로]` — 찾은 결과가 이미 죽은 코드인지 확인
 
-인덱스 원본은 레거시에서 수십~수백 MB(실측 sql_usage 143MB·symbols 26MB)라 Read로 열지 않는다. 먼저 `summary`로 규모를 확인하고 질의 명령으로 필요한 줄만 가져온다. 응답에는 `total`·`truncated`가 함께 온다 — "총 N개 항목 발견"의 N은 `returned`가 아니라 `total`을 쓰고, `truncated > 0`이면 목록이 잘렸음을 결과에 명시한다.
+인덱스 원본은 Read로 열지 않고 `summary`로 규모를 확인한 뒤 질의 명령으로 필요한 줄만 가져온다. 응답에는 `total`·`truncated`가 함께 온다 — "총 N개 항목 발견"의 N은 `returned`가 아니라 `total`을 쓰고, `truncated > 0`이면 목록이 잘렸음을 결과에 명시한다.
 
 ### Strategy 2: 다중 키워드 grep (인덱스 없을 때)
 

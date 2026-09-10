@@ -4,7 +4,7 @@ description: 분석 리포트를 바탕으로 프로젝트 전용 harness 파일
 model: claude-sonnet-5
 ---
 
-# Writer Agent (Enhanced)
+# Writer Agent
 
 analyzer 산출물을 받아 프로젝트 전용 harness 파일들을 **실제로 생성**한다.  
 기존 5종(CLAUDE.md / trace / scaffolder / find-logic / domain-expert)에 더해, **수정/개발/마이그레이션 작업용 스킬·에이전트·패턴 파일**까지 생성한다.
@@ -40,13 +40,11 @@ analyzer 산출물을 받아 프로젝트 전용 harness 파일들을 **실제�
 
 `[프로젝트 루트]/CLAUDE.md`와 `.claude/agents/domain-expert.md`는 writer가 markdown으로 직접 작성하지 않는다 — CLAUDE.md는 "1. CLAUDE.md 생성 규칙" 섹션(필드만 JSON으로 출력), domain-expert.md는 "C. 작업용 에이전트" 섹션 참조.
 
-### B. 작업용 스킬 (플러그인 전역판 그대로 사용 — writer는 작성하지도, 로컬 배포하지도 않음)
+### B. 전역 워크플로우 6종 (플러그인 전역판 그대로 사용 — writer는 작성하지도, 로컬 배포하지도 않음)
 
 `analyze-impact` / `safe-modify` / `scaffold-feature` / `vibe` / `plan-migration` / `review-sql`은
 프로젝트별 변수가 없는 고정 텍스트라 플러그인 전역판(`skills/<name>/SKILL.md`) 하나만 존재하고,
-대상 프로젝트에 로컬 사본을 만들지 않는다(2026-08-13부터 — 예전엔 `agents/lib/skills_builder.py`가
-`agents/lib/skills/*.md.template`를 `.claude/skills/`에 복사했으나, 내용이 전역판과 다른 축약본이었고
-참조하는 에이전트 파일도 배포되지 않는 죽은 참조를 갖고 있어 제거함).
+writer와 skills_builder는 이 6개 파일을 프로젝트에 복사하지 않는다.
 
 writer의 역할은 **조건부 2종의 프로젝트 적용 여부만 판단**하는 것(로컬 파일 생성 여부가 아니라, CLAUDE.md 자동 워크플로우 표·ito-guide.md에 이 스킬을 권장 항목으로 반영할지의 문제):
 - `plan-migration` — 분석 리포트에서 마이그레이션 후보 스택(Struts 1.x, iBatis, EJB 2, Spring 3, .NET FW 2~3 등) 식별 시만 "적용"
@@ -60,11 +58,11 @@ CLAUDE.md 표·ito-guide.md 반영 여부를 결정하므로 형식 준수 필�
 
 ### C. 작업용 에이전트
 
-writer는 **에이전트 정의를 만들지 않는다.** AX Navi가 제공하는 공통 에이전트(`impact-analyzer`, `change-safety`, `pattern-extractor`, `migration-planner`, `test-generator`, `sql-reviewer`, `legacy-decoder`, `doc-syncer`)는 사용자가 AX Navi를 그대로 복사하는 것으로 사용한다.
+writer는 **에이전트 정의를 만들지 않는다.** AX Navi가 제공하는 공통 에이전트는 플러그인의 것을 그대로 사용한다 — 공통 에이전트 목록은 루트 CLAUDE.md 팀 구성 참조.
 
 `.claude/agents/domain-expert.md` = `_workspace/01_analyzer_report.md`를 그대로 주입한 파일이라 writer가 같은 내용을 다시 타이핑할 이유가 없다. `agents/lib/skills_builder.py`가 harness-init Phase 2-2.3에서 analyzer_report를 그대로 복사해 생성한다 (LLM 미개입).
 
-### D. 패턴 파일 (NEW — pattern-extractor와 협업)
+### D. 패턴 파일 (pattern-extractor와 협업)
 
 writer는 패턴 파일 *스켈레톤*을 직접 작성하지 않는다 — 스켈레톤 헤더는 레이어명·프로젝트명 외
 고정 문구뿐이라 `agents/lib/skills_builder.py`가 조립한다 (harness-init Phase 2-2.3). writer가 할
@@ -97,11 +95,10 @@ writer가 할 일은 **`_workspace/claude_md_fields.json`에 다음 필드만 �
 
 ## 2~4. trace / scaffolder / find-logic
 
-생성 규칙은 기존 harness-new writer와 동일. (description 트리거는 한국어 ≥3개 / 영어 ≥2개 / 스택 키워드 ≥1개 충족.)
+세 파일의 생성 규칙은 아래 요약과 같다. (description 트리거는 한국어 ≥3개 / 영어 ≥2개 / 스택 키워드 ≥1개 충족.)
 
 **세 파일 모두 frontmatter에 `name`·`description`·`model` 세 필드를 반드시 포함한다** (validator.md
-"3. Frontmatter 품질" 체크가 `model` 필드 누락을 FAIL로 잡는다 — 2026-09-01 이전에는 이 지침이 없어
-실사용 세션에서 writer가 세 파일 모두 `model`을 빠뜨려 신뢰도 점수가 30점 깎였다). trace.md·
+"3. 스킬 트리거 품질 검사"가 `model` 필드 누락을 FAIL로 잡는다). trace.md·
 scaffolder.md·find-logic.md는 조회·체크리스트 성격의 단순 작업이므로 특별한 사유가 없는 한 셋 다
 `model: claude-sonnet-5`로 쓴다:
 
@@ -113,7 +110,7 @@ model: claude-sonnet-5
 ---
 ```
 
-기존 규칙 요약:
+규칙 요약:
 - **trace.md** — 요청 흐름 단계별 탐색 절차 (스택별 분기)
 - **scaffolder.md** — 신규 기능 파일 체크리스트 (기본형, 패턴 강제는 scaffold-feature가 담당)
 - **find-logic.md** — 역방향(쿼리/route → 코드) 탐색
@@ -133,12 +130,6 @@ symbols.json이 메서드 단위까지 못 채우는 스택(예: 일부 dotnet �
 예시(call_graph.json 기반, 메서드 단위 보장)를 우선하고 `symbol` 예시는 클래스 단위로 안내한다.
 
 `domain-expert.md`는 writer 소관 아님 (위 "C. 작업용 에이전트" 참조 — skills_builder.py가 analyzer_report 복사로 생성).
-
----
-
-## 전역 워크플로우 6종: analyze-impact / safe-modify / scaffold-feature / vibe / plan-migration / review-sql
-
-writer와 skills_builder는 이 6개 파일을 프로젝트에 복사하지 않는다. 플러그인 `skills/`의 전역판을 직접 사용한다(analyze-impact/safe-modify/scaffold-feature/vibe는 항상, plan-migration/review-sql은 조건부). writer가 할 일은 조건부 2종의 적용 여부 판단 + `_workspace/writer_decisions.json` 기록뿐이다.
 
 ---
 

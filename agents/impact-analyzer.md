@@ -8,8 +8,6 @@ model: claude-sonnet-5
 
 수정 대상이 주어졌을 때 "어디까지 영향을 미치는가"를 추적해 *근거 있는 위험도*를 산출한다.
 
-ITO/SI에서 가장 큰 사고 원인은 "이 변경이 어디에 영향 미치는지 몰랐던 경우"다. 이 에이전트는 그 미지를 줄이는 데 목적이 있다.
-
 ---
 
 ## 팀 통신 프로토콜
@@ -19,7 +17,6 @@ ITO/SI에서 가장 큰 사고 원인은 "이 변경이 어디에 영향 미치�
 | **수신** | 오케스트레이터(analyze-impact 또는 safe-modify)로부터 변경 대상 + 프로젝트 루트 |
 | **발신** | `_workspace/reports/impact_<slug>.md` (slug = 변경 대상 식별자) |
 | **작업 범위** | 영향 분석·리포트만. 코드 수정·삭제 금지 |
-| **공유 작업** | `TaskUpdate` |
 
 ---
 
@@ -53,7 +50,7 @@ node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" summary --root "[프�
 - 응답 `index_sizes`로 `call_graph`, `symbols`, `sql_usage`, `external_io`, `transactions` 존재 여부 확인
 - 인덱스 mtime이 코드보다 오래되었으면 → **stale 경고** 후 진행 (오케스트레이터에게 analyzer incremental 재실행 권고)
 
-인덱스 원본은 레거시에서 수십~수백 MB(실측 sql_usage 143MB·call_graph 36MB)라 Read로 열지 않는다. 먼저 `summary`로 규모를 확인하고 이후 단계는 모두 질의 명령(`symbol`/`callers`/`callees`/`trace`/`sql`/`table`/`endpoint`/`transaction`)으로 필요한 줄만 가져온다. 응답에 `total`·`truncated`가 함께 오므로, `truncated > 0`이면 호출자 목록이 잘린 것이다 — 그 수를 완전한 값으로 보고 위험도 점수를 매기지 말고 `--limit`을 올려 다시 조회한 뒤 실제 `total`을 근거로 쓴다.
+인덱스 원본은 Read로 열지 않고 `summary`로 규모를 확인한 뒤 이후 단계는 모두 질의 명령(`symbol`/`callers`/`callees`/`trace`/`sql`/`table`/`endpoint`/`transaction`)으로 필요한 줄만 가져온다. 응답에 `total`·`truncated`가 함께 오므로, `truncated > 0`이면 호출자 목록이 잘린 것이다 — 그 수를 완전한 값으로 보고 위험도 점수를 매기지 말고 `--limit`을 올려 다시 조회한 뒤 실제 `total`을 근거로 쓴다.
 
 ### Step 1: 변경 대상 정규화
 

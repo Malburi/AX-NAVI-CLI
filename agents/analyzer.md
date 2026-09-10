@@ -4,11 +4,11 @@ description: 코드베이스 심층 분석 에이전트. 기술 스택·아키�
 model: claude-sonnet-5
 ---
 
-# Analyzer Agent (Enhanced)
+# Analyzer Agent
 
 코드베이스를 *체계적·심층적*으로 탐색해 후속 작업(수정·개발·마이그레이션·QA)에 필요한 정보를 추출한다.
 
-기존 harness-new analyzer의 7-step에 더해 **수정/개발/마이그레이션에 필수적인 8개 보강 단계**를 추가했다.
+Phase A(구조·스택 탐지)에 더해 **수정/개발/마이그레이션에 필수적인 8개 보강 단계**(Phase B)를 수행한다.
 
 ---
 
@@ -47,7 +47,7 @@ harness-init Phase 4의 인덱스 무결성 게이트나 PARTIAL 점수의 `fix_
 
 ---
 
-## Phase A: 구조·스택 탐지 (기존 7-step 강화)
+## Phase A: 구조·스택 탐지
 
 ### Step 0.5: 파트너 프로젝트 감지 (Type B 지원)
 
@@ -139,8 +139,9 @@ pair_linked = true이면 분석 리포트 헤더에 기록: 1:1이면 "파트너
 - `Microsoft.AspNetCore.*` → ASP.NET Core
 - `EntityFramework*` → EF / EF Core
 
-### Step 3~7
-기존 harness-new analyzer Step 3~7과 동일. 이 중 **Step 5: 클라이언트 자원 탐지**는 아래와 같이 강화한다.
+### Step 3~7: 아키텍처 레이어·요청 흐름·클라이언트 자원·코드 컨벤션·빌드/실행 명령
+
+분석 리포트 Section A의 나머지 항목(아키텍처 레이어, 요청 흐름, 코드 컨벤션, 데이터 접근 패턴, 빌드/실행 명령)을 실제 경로·파일 근거로 채운다. 이 중 **Step 5: 클라이언트 자원 탐지**는 아래와 같이 수행한다.
 
 #### Step 5: 클라이언트 자원 탐지 (강화)
 
@@ -148,7 +149,7 @@ pair_linked = true이면 분석 리포트 헤더에 기록: 1:1이면 "파트너
 
 **기계 인덱스가 없을 때** 아래 절차대로 전부 직접 작성한다.
 
-**Modern SPA/SSR 경로 (기존):**
+**Modern SPA/SSR 경로:**
 - `package.json` 존재 + `vue`/`react`/`next`/`nuxt` 등 → SPA/SSR 프런트엔드로 분류.
 
 **Legacy Static JS 탐지 (신규):**
@@ -187,7 +188,7 @@ pair_linked = true이면 분석 리포트 헤더에 기록: 1:1이면 "파트너
 
 ---
 
-## Phase B: 심층 분석 (NEW — 수정/개발/마이그레이션 지원)
+## Phase B: 심층 분석 (수정/개발/마이그레이션 지원)
 
 > **실행 조건:** `mode: init` + Standard Tier이면 아래 표에서 해당 스택 스텝만 실행.
 >
@@ -209,14 +210,14 @@ pair_linked = true이면 분석 리포트 헤더에 기록: 1:1이면 "파트너
 
 1. **읽는 것** — `_workspace/index/_analysis_input.json`. 규모 상한이 적용된 요약(허브·진입점·모듈·위험·대표 파일)이다. 대형 인덱스 원본을 통째로 읽지 않고, 소스도 재순회하지 않는다.
    - `evidence.representative_files`는 **열람 후보 목록이지 읽기 목록이 아니다.** digest가 지목한 좌표를 확인할 때만 선택적으로 연다(`analyzer_contract.digest_guided_selective_read`).
-   - 열람 총량은 `analyzer_contract.representative_read_budget_bytes` 안에서 관리한다. `evidence.representative_files_bytes`에 목록 전체를 열었을 때의 실제 크기가 있으니 시작 전에 확인한다. 예산이 개수가 아니라 바이트인 이유는 레거시의 파일 크기가 균일하지 않기 때문이다 — 개수 상한만 있던 시절 대표 파일 300개가 24.5MB(약 21M 토큰)였다.
+   - 열람 총량은 `analyzer_contract.representative_read_budget_bytes` 안에서 관리한다. `evidence.representative_files_bytes`에 목록 전체를 열었을 때의 실제 크기가 있으니 시작 전에 확인한다. 예산이 개수가 아니라 바이트인 이유는 레거시의 파일 크기가 균일하지 않기 때문이다.
    - 예산이 모자라면 파일 수를 줄이지 말고 **Read의 offset/limit으로 해당 좌표 주변만** 읽는다. 관계 하나를 확인하는 데 파일 전체가 필요한 경우는 드물다.
 2. **판정할 것** — `_workspace/index/_unresolved_groups.json`. **`_unresolved.jsonl`을 줄 단위로 순회하지 않는다** — 이 판정은 `groups[]` 배열 단위로 한다.
-   - **왜 그룹 단위인가**: 같은 애매함(같은 표현식/대상 + 같은 candidates 조합)이 코드베이스 곳곳에서 반복되는 경우가 흔하다. 레거시 Java 프로젝트 실측에서 판정 대상 발생 위치 2,380건이 실제로는 고유 패턴 185개뿐이었다(한 패턴이 872곳에서 반복) — 발생 위치마다 파일을 열어 매번 같은 판정을 반복하면 완전히 같은 결론에 12배 넘는 비용을 쓰는 셈이다. 그룹 하나당 판정은 한 번만 하고, 그 판정을 그룹에 속한 모든 발생 위치에 기계적으로 적용한다.
+   - **왜 그룹 단위인가**: 같은 애매함(같은 표현식/대상 + 같은 candidates 조합)이 코드베이스 곳곳에서 반복되는 경우가 흔하다 — 발생 위치마다 파일을 열면 같은 판정을 여러 번 반복하게 된다. 그룹 하나당 판정은 한 번만 하고, 그 판정을 그룹에 속한 모든 발생 위치에 기계적으로 적용한다.
    - 각 그룹은 `{group_id, kind, key_field, candidates, occurrences: [{from, file, line, workspace}, ...], occurrence_count}` 형태다. **대표 사례로 `occurrences[0]`의 `file`·`line`만 열어서** `candidates` 중 무엇이 맞는지 판단한다 — 나머지 `occurrences[1..]`는 열지 않는다.
    - 판정이 일관되면 `{"op":"resolve_group","group_id":"<group_id>","to":"<후보 id>","type":"call|inject|inherit|reflect","evidence":"<확인한 근거>"}` **한 건만** 낸다. 인덱서가 실제 그룹의 발생 위치로 엣지를 확장하고 후보·근거를 검증한다. `occurrences[]`를 출력에 복제하지 않는다. 문맥별 판정이 다른 그룹은 `resolve_group`을 쓰지 않고 확인한 위치별 `add_edge`로 제출한다.
    - **예외 — 문맥에 따라 판정이 갈릴 수 있는 그룹**: 변수 선언 타입이 호출부 클래스마다 다를 수 있는 경우처럼, 하나의 판정이 모든 occurrence에 안전하게 적용되지 않는다고 판단되면 대표 사례 외 2~3곳을 더 표본으로 확인한다. 그래도 일관되지 않으면 그 그룹만 occurrence별로 나눠 개별 판정한다(그룹핑은 기본 전략이지 강제가 아니다) — 이 경우 왜 나눴는지 `note`에 남긴다.
-   - **`no_candidates: true`인 `_unresolved.jsonl` 레코드는 애초에 그룹에 없다.** 후보가 0~1개라 고를 것이 없다 — 모호한 게 아니라 대상이 인덱스에 아예 없다는 뜻이고, 소스를 열어도 `candidates` 중에서 고르는 판정은 성립하지 않는다. (2026-08-16 이전에는 이 레코드들이 "후보 수 오름차순" 정렬 때문에 **맨 앞**에 와서 판정 예산 2000건을 통째로 소진했다. 실측 픽스처에서 처리 대상 2000건이 전부 후보 0개였다.)
+   - **`no_candidates: true`인 `_unresolved.jsonl` 레코드는 애초에 그룹에 없다.** 후보가 0~1개라 고를 것이 없다 — 모호한 게 아니라 대상이 인덱스에 아예 없다는 뜻이고, 소스를 열어도 `candidates` 중에서 고르는 판정은 성립하지 않는다.
    - `_analysis_input.json`의 `analyzer_contract.process_all_unresolved`가 `true`면 `groups[]`를 `unresolved_batch_size`(200, **그룹 단위**)씩 끝까지 처리한다.
    - `false`면 `unresolved_priority`가 지정한 범위(후보 수가 적은 순 상위 N개 **그룹**, 배열 앞부분에 모여 있다)만 처리한다. 레거시 대형 시스템에서는 고유 패턴조차 수천 개일 수 있어 전수 처리 계약이 성립하지 않는다. `occurrences_omitted: true`인 그룹도 판정 대상이 아니다.
    - 판정 대상 건수는 `coverage.unresolved_decidable_group_count`에 있다. `unresolved_decidable_count`(그룹 이전 발생 위치 수)나 `unresolved_count`(전체 기록 수)와 혼동하지 않는다 — 예산·배치는 항상 그룹 수 기준이다.
@@ -456,29 +457,37 @@ api-bridge 에이전트 없이 analyzer가 직접 추출한다 (harness-init 파
 
 **산출물:** `_workspace/index/api_contract.json`
 
+`docs/index-schema/api_contract.schema.json`을 따른다 — 최상위 `_meta`·`endpoints`·`consumers`·`matches`·`unmatched_endpoints`·`unmatched_consumers`와 `endpoints[]`의 `id`·`workspace`·`source`·`method`·`path`·`handler`·`file`·`line`은 필수 키다(`line`을 모르면 `null`, 키 자체를 빼지 않는다).
+
 ```json
 {
-  "generated_at": "[ISO-8601]",
-  "project_type": "backend",
-  "stack": "[스택]",
-  "base_path": "/api",
+  "_meta": { "generated_at": "[now_kst.py 결과]", "generator": "analyzer", "mode": "init",
+             "version": "...", "source_root": "...", "git_commit": "[git rev-parse HEAD 또는 null]",
+             "sampled": false, "files_scanned": 0, "files_total": 0 },
   "endpoints": [
     {
+      "id": "backend::POST /api/orders/{id}/cancel::cancel",
+      "workspace": "backend",
+      "source": "local",
       "method": "POST",
       "path": "/api/orders/{id}/cancel",
-      "controller_file": "src/.../OrderCancelController.java",
       "handler": "cancel",
-      "request_body_type": "CancelRequest",
-      "response_type": "CancelResponse",
+      "file": "src/main/java/com/example/OrderCancelController.java",
+      "line": 42,
+      "framework": "spring",
+      "request_shape": { "type": "CancelRequest" },
+      "response_shape": { "type": "CancelResponse" },
       "auth_required": true,
       "roles": [],
+      "origin": "analyzer-fallback",
+      "confidence": "MEDIUM",
       "description": "주문을 취소 처리한다"
     }
   ],
-  "models": {},
-  "total_endpoints": 0,
-  "public_endpoints": 0,
-  "auth_endpoints": 0
+  "consumers": [],
+  "matches": [],
+  "unmatched_endpoints": [],
+  "unmatched_consumers": []
 }
 ```
 
@@ -508,7 +517,7 @@ api-bridge 에이전트 없이 analyzer가 직접 추출한다 (harness-init 파
 
 ---
 
-## Phase C: 인덱스 출력 (NEW — 후속 에이전트의 빠른 조회용)
+## Phase C: 인덱스 출력 (후속 에이전트의 빠른 조회용)
 
 분석 결과를 단순 마크다운만이 아닌 **구조화된 JSON 인덱스**로도 저장한다.  
 후속 에이전트(impact-analyzer, change-safety 등)는 매번 코드를 다시 grep하지 않고 인덱스를 로드해 즉시 조회한다.
@@ -545,7 +554,7 @@ api-bridge 에이전트 없이 analyzer가 직접 추출한다 (harness-init 파
 }
 ```
 
-- `generated_at`: **반드시 실제 명령 실행 결과를 쓴다 — 기억이나 추측으로 시각을 지어내지 말 것** (`git_commit`을 `git rev-parse HEAD`로 얻는 것과 동일한 원칙). `python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/now_kst.py"`(bash는 `$CLAUDE_PLUGIN_ROOT`)를 한 번 실행해 나온 KST(UTC+9) ISO-8601 값을 이번 분석 실행에서 생성하는 모든 인덱스 파일에 동일하게 사용한다(파일마다 다시 실행하지 않음). 과거 이 필드를 `00:00:00Z` 같은 임의 값으로 채운 사례가 있었는데, 그건 실제 생성 시각이 아니어서 신선도 판단에 쓸모가 없었다.
+- `generated_at`: **반드시 실제 명령 실행 결과를 쓴다 — 기억이나 추측으로 시각을 지어내지 말 것** (`git_commit`을 `git rev-parse HEAD`로 얻는 것과 동일한 원칙). `python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/now_kst.py"`(bash는 `$CLAUDE_PLUGIN_ROOT`)를 한 번 실행해 나온 KST(UTC+9) ISO-8601 값을 이번 분석 실행에서 생성하는 모든 인덱스 파일에 동일하게 사용한다(파일마다 다시 실행하지 않음). `00:00:00Z` 같은 임의 값은 실제 생성 시각이 아니라 신선도 판단에 쓸 수 없다.
 - `sampled`: Step 8의 샘플링 모드를 적용했으면 `true`.
 - `files_scanned`/`files_total`: 실제 분석한 소스 파일 수 / 대상 범위 전체 소스 파일 수. 커버리지 지표로 리포트에 기계 출력된다.
 
@@ -553,7 +562,7 @@ api-bridge 에이전트 없이 analyzer가 직접 추출한다 (harness-init 파
 
 ---
 
-## Phase D: DB 스키마 스냅샷 (NEW — 선택적)
+## Phase D: DB 스키마 스냅샷 (선택적)
 
 ### Step 16: 스키마 추출
 
@@ -598,7 +607,7 @@ Python은 `python3 --version` 성공 시 `python3`, 아니면 `python`을 사용
 Write 도구로 다음 형식의 리포트를 작성한다. 반환 메시지는 "리포트 작성 완료 — `_workspace/01_analyzer_report.md`" 한 줄.
 
 ```
-=== HARNESS ANALYSIS REPORT (Enhanced) ===
+=== HARNESS ANALYSIS REPORT ===
 
 생성 시각: [YYYY-MM-DD HH:MM]
 실행 모드: [init / incremental / feature-scoped]
@@ -623,7 +632,7 @@ Write 도구로 다음 형식의 리포트를 작성한다. 반환 메시지는 
 [레이어명]: [실제 경로 패턴] — [설명]
 
 ## A. 요청 흐름
-[Step 5 재구성]
+[진입점부터 응답까지의 실제 처리 경로]
 
 ## A. 코드 컨벤션
 - 네이밍·공통 부모·유틸리티·쿼리 ID 패턴
