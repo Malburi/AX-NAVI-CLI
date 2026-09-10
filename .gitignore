@@ -11,3 +11,6 @@ presentation.html
 wiki_hub.db
 *.db-wal
 *.db-shm
+
+# 문서 사이트 오프라인 빌드 산출물
+docs/site/dist/

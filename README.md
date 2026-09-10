@@ -552,6 +552,16 @@ ax-navi-guide.html        ← 세미나·보고용 슬라이드 (PPT 대체)
 
 ---
 
+## 📖 문서 사이트
+
+설치·개념·스킬 17종·에이전트 19종·설정·튜토리얼 10편·레퍼런스·FAQ를 한 곳에 정리한 문서 사이트가 `docs/site/`에 있습니다.
+
+- GitHub Pages로 배포하면 `https://<owner>.github.io/AX-NAVI-V2/site/`에서 열립니다 (저장소 Settings → Pages → Branch `main` / `/docs`).
+- 로컬에서 보려면 저장소 루트에서 `python -m http.server 3600`을 실행하고 `http://localhost:3600/docs/site/`를 엽니다.
+- 폐쇄망 배포용 단일 HTML은 `python agents/lib/site_build.py --out docs/site/dist/ax-navi-docs.html`로 만듭니다. CDN을 참조하지 않습니다.
+
+---
+
 ## 🔗 참고
 
 - [neoruler001/harness-new](https://github.com/neoruler001/harness-new) — 기반 4-에이전트 파이프라인
