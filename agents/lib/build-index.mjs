@@ -59,7 +59,7 @@ const DIGEST_LIMITS = {
   partial_coverage: 20,
 };
 /* 대표 파일 경로 목록 상한 — 경로 문자열뿐이라 Tier가 커질수록 넉넉하게 준다. */
-const REPRESENTATIVE_FILE_LIMITS = { Lite: 50, Standard: 150, Full: 300 };
+const REPRESENTATIVE_FILE_LIMITS = { Standard: 150, Full: 300 };
 /*
  * 대표 파일 목록에 **바이트 예산**을 함께 건다.
  *
@@ -71,7 +71,7 @@ const REPRESENTATIVE_FILE_LIMITS = { Lite: 50, Standard: 150, Full: 300 };
  * 또 지나치게 큰 파일은 애초에 "대표"가 아니다 — 컨벤션을 담은 손으로 쓴 코드가 아니라
  * 생성물·번들·데이터인 경우가 대부분이다. 개별 상한으로 먼저 걸러낸다.
  */
-const REPRESENTATIVE_BYTE_BUDGET = { Lite: 256 * 1024, Standard: 768 * 1024, Full: 1536 * 1024 };
+const REPRESENTATIVE_BYTE_BUDGET = { Standard: 768 * 1024, Full: 1536 * 1024 };
 const REPRESENTATIVE_PER_FILE_CAP = 128 * 1024;
 
 /*
@@ -205,14 +205,13 @@ function parseArgs(argv) {
   if (!result.applyAiPatch && !new Set(["init", "incremental", "feature-scoped"]).has(result.mode)) {
     throw new Error(`지원하지 않는 mode: ${result.mode}`);
   }
-  if (!new Set(["Auto", "Lite", "Standard", "Full"]).has(result.tier)) {
+  if (!new Set(["Auto", "Standard", "Full"]).has(result.tier)) {
     throw new Error(`지원하지 않는 tier: ${result.tier}`);
   }
   return result;
 }
 
 function recommendedTier(score) {
-  if (score <= 50) return "Lite";
   if (score <= 120) return "Standard";
   return "Full";
 }
@@ -2078,7 +2077,7 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
    */
   const uniqueEdges = unique(edges, (item) => `${item.from}:${item.to}:${item.type}`);
   const { inDegree } = degreeMaps(nodes, uniqueEdges);
-  /* 데드 코드 후보는 전 Tier에서 계산한다. Full 전용이면 Lite/Standard 분석이 유지보수 위험을 볼 근거를 잃는다. */
+  /* 데드 코드 후보는 전 Tier에서 계산한다. Full 전용이면 Standard 분석이 유지보수 위험을 볼 근거를 잃는다. */
   const unusedMethods = deadCodeCandidates(nodes, inDegree, uniqueEdges, endpoints);
   /*
    * _meta 9필드는 이 저장소의 계약이다(docs/index-spec.md, validator_checks._meta_field_issues).
@@ -3212,7 +3211,7 @@ export function applyAiPatch(rootArg, patchArg) {
 function printHelp() {
   process.stdout.write(`AX-Harness deterministic indexer\n\n` +
     `node scripts/build-index.mjs --root <project> --check-stale   # 재인덱싱 필요 여부만 판정(exit 0=최신, 1=필요)\n` +
-    `node scripts/build-index.mjs --root <project> [--mode init|incremental|feature-scoped] [--tier Lite|Standard|Full] [--config <json>]\n` +
+    `node scripts/build-index.mjs --root <project> [--mode init|incremental|feature-scoped] [--tier Standard|Full] [--config <json>]\n` +
     `node scripts/build-index.mjs --root <project> --apply-ai-patch _workspace/index/_ai_patch.json\n`);
 }
 

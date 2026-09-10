@@ -79,14 +79,14 @@ class Repository { public void remove() {} }
     }
   });
 
-  register("Lite도 AI 없이 기본 기계 인덱스를 생성한다", () => {
-    const root = mkdtempSync(join(tmpdir(), "ax-indexer-lite-"));
+  register("Standard도 AI 없이 기본 기계 인덱스를 생성한다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-standard-"));
     try {
       write(root, "src/simple.ts", "export function hello() { return 'hello'; }\n");
-      const result = buildIndex({ root, mode: "init", tier: "Lite", config: null });
+      const result = buildIndex({ root, mode: "init", tier: "Standard", config: null });
       assert.ok(result.indexes.includes("symbols"));
       assert.ok(result.indexes.includes("call_graph"));
-      assert.equal(json(root, "_meta.json").tier, "Lite");
+      assert.equal(json(root, "_meta.json").tier, "Standard");
       assert.equal(json(root, "_meta.json").init_layout, "single-root");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -474,15 +474,15 @@ class OrderStore {
   register("대표 파일 목록 상한이 Tier에 비례한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-repfiles-"));
     try {
-      for (let i = 0; i < 80; i += 1) {
+      for (let i = 0; i < 200; i += 1) {
         write(root, `src/mod${i}.ts`, `export function handler${i}() { return ${i}; }\n`);
       }
-      buildIndex({ root, mode: "init", tier: "Lite", config: null });
-      const lite = json(root, "_analysis_input.json").evidence;
-      assert.ok(lite.representative_files.length <= 50, `Lite 상한 50: ${lite.representative_files.length}`);
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const standard = json(root, "_analysis_input.json").evidence;
+      assert.ok(standard.representative_files.length <= 150, `Standard 상한 150: ${standard.representative_files.length}`);
       buildIndex({ root, mode: "init", tier: "Full", config: null });
       const full = json(root, "_analysis_input.json").evidence;
-      assert.ok(full.representative_files.length > lite.representative_files.length, `Full이 더 많은 대표 파일을 준다: ${full.representative_files.length}`);
+      assert.ok(full.representative_files.length > standard.representative_files.length, `Full이 더 많은 대표 파일을 준다: ${full.representative_files.length}`);
       assert.equal(full.representative_files_truncated, 0);
     } finally {
       rmSync(root, { recursive: true, force: true });
