@@ -77,9 +77,9 @@ claude plugin install ax-navi@ax-navi --scope user
 ```bash
 claude plugin uninstall ax-navi@ax-navi --scope user
 claude plugin marketplace remove ax-navi
-claude plugin marketplace add Malburi/AX-NAVI-V2
-claude plugin install ax-navi@ax-navi --scope user
 ```
+
+제거 후 위 "가장 빠른 설치"의 두 줄을 그대로 실행하면 V2 등록과 설치가 끝납니다.
 
 기존 마켓플레이스의 출처가 이미 `AX-NAVI-V2`라면 제거하지 말고 `claude plugin marketplace update ax-navi` 후 설치 명령만 실행하세요.
 
@@ -125,13 +125,7 @@ Claude Code 어느 프로젝트에서나 실행합니다.
 /ax-navi:harness-init
 ```
 
-터미널에서 비대화형으로 설치하려면 다음 명령도 사용할 수 있습니다.
-
-```bash
-claude plugin marketplace add Malburi/AX-NAVI-V2
-claude plugin install ax-navi@ax-navi --scope user
-claude plugin details ax-navi@ax-navi
-```
+터미널에서 비대화형으로 설치하려면 위 [가장 빠른 설치](#가장-빠른-설치-터미널)의 두 줄을 실행한 뒤 `claude plugin details ax-navi@ax-navi`로 확인하면 됩니다.
 
 > 💡 **설치가 안 될 때** — 저장소 루트에서 `claude plugin validate . --strict`를 실행하고 Claude Code를 최신 버전으로 갱신하세요.
 
@@ -523,15 +517,15 @@ Claude는 HOLD/STOP 상황에서도 자동 수정을 하지 않습니다. **판�
 | 에이전트 | 역할 | 모델 |
 |---------|------|------|
 | `spec-clarifier` | 소크라테스 인터뷰 + 모호성 점수 + 명세 리포트 (spec-gate 스킬 전용) | sonnet |
-| `analyzer` | 코드베이스 분석 + 인덱스 생성 | opus (Full) / sonnet (Standard) |
+| `analyzer` | 코드베이스 분석 + 인덱스 생성 | claude-sonnet-5 |
 | `writer` | 하네스 파일 생성 | sonnet (모든 Tier) |
 | `pattern-extractor` | 코드 컨벤션 패턴 추출 (Legacy Static JS 포함) | sonnet |
 | `pattern-conformance` | 변경 코드와 선택된 실제 기준 파일의 패턴 적합성 판정 | sonnet |
 | `validator` | 하네스 구조 검증 | sonnet |
-| `qa` | 경계면 교차 비교 (온디맨드, Phase 3.7 메뉴 선택 시) | sonnet |
+| `qa` | 경계면 교차 비교 (온디맨드, Phase 3.6 메뉴에서 선택 시 Phase 3.7에서 실행) | sonnet |
 | `harness-evaluator` | 4차원 품질 평가 + 타겟 재생성 지시 (Phase 4) | sonnet |
 | `pipeline-runner` | harness-init의 결정론적 스크립트 블록(index·assemble·verify·wiki) 대리 실행 후 요약만 반환 (토큰 절감 계층) | sonnet |
-| `impact-analyzer` | 변경 영향도 분석 | opus |
+| `impact-analyzer` | 변경 영향도 분석 | claude-sonnet-5 |
 | `change-safety` | 안전성 평가 (GO/HOLD/STOP) | sonnet |
 | `migration-planner` | 마이그레이션 계획 수립 | opus |
 | `test-generator` | 회귀 테스트 골격 생성 | sonnet |
@@ -554,8 +548,6 @@ Claude는 HOLD/STOP 상황에서도 자동 수정을 하지 않습니다. **판�
 
 ```
 ax-navi-guide.html        ← 세미나·보고용 슬라이드 (PPT 대체)
-skill-guide.html          ← 스킬 사용 가이드
-skill-triggers.html       ← 스킬 트리거 체계 상세
 ```
 
 ---
