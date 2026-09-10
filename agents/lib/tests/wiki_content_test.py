@@ -5,6 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import wiki_content
+import wiki_mermaid
 import wiki_render
 from analyzer_index_summary import assemble_report
 
@@ -29,6 +30,30 @@ class WikiContentTest(unittest.TestCase):
         self.assertIn("`A` | `C`", rendered)
         self.assertNotIn("`B` | `C`", rendered)
         self.assertIn("상한", rendered)
+
+    def test_mermaid_diagrams_are_deterministic_and_escaped(self):
+        schema = {"tables": [
+            {"name": "TBL_ORDER", "columns": [{"name": "ORDER_ID", "type": "NUMBER(19)", "primary_key": True}, {"name": "USER_ID", "type": "VARCHAR2(20)"}],
+             "primary_key": ["ORDER_ID"], "foreign_keys": [{"name": "FK_ORDER_USER", "columns": ["USER_ID"], "references_table": "TBL_USER", "references_columns": ["USER_ID"]}]},
+            {"name": "TBL_USER", "columns": []},
+        ]}
+        contract = {"endpoints": [{"id": "ep1", "method": "POST", "path": "/orders/{id}/cancel", "handler": "OrderController.cancel"}]}
+        flow = {"chains": [{"endpoint_id": "ep1", "method_chain": ["com.acme.OrderController.cancel", "com.acme.OrderService.cancel", "com.acme.OrderDao.remove"],
+                            "tables_written": ["ORDERS"], "tables_read": [], "truncated": False}]}
+        io_json = {"communications": [{"type": "http", "target": "https://pay.example.com/\"charge\""}, {"type": "http", "target": "https://pay.example.com/\"charge\""}]}
+        page = wiki_mermaid.build_diagrams(schema, contract, flow, io_json, own_label="주문")
+        self.assertIn("erDiagram", page)
+        self.assertIn("NUMBER_19 ORDER_ID PK", page)
+        self.assertIn('TBL_USER ||--o{ TBL_ORDER : "USER_ID"', page)
+        self.assertIn("sequenceDiagram", page)
+        self.assertIn("Client->>OrderController: POST /orders/(id)/cancel", page)
+        self.assertIn("OrderService->>OrderDao: remove()", page)
+        self.assertIn("OrderDao->>DB: write ORDERS", page)
+        self.assertIn("flowchart LR", page)
+        self.assertIn("http ×2", page)
+        self.assertNotIn('\\"charge\\"', page)
+        self.assertEqual(page, wiki_mermaid.build_diagrams(schema, contract, flow, io_json, own_label="주문"))
+        self.assertIsNone(wiki_mermaid.build_diagrams(None, None, None, None))
 
     def test_safe_offline_markdown(self):
         rendered = wiki_render.render_markdown_page("wiki", "flow.md", "# Flow\n\n| From | To |\n|---|---|\n| A | B |\n\n[Domain](domain.md)\n[unsafe](javascript:alert)\n<script>alert(1)</script>\n```js\nconst x = '<tag>';\n```")

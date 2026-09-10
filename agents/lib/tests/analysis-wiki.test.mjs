@@ -84,6 +84,9 @@ export async function test(register, assert) {
     assert.ok(readFileSync(join(wikiDir, "_sidebar.md"), "utf8").includes("(/business-flows)"));
     assert.ok(readFileSync(join(wikiDir, "_html/business-flows.html"), "utf8").includes("<table>"));
     assert.ok(existsSync(join(root, "_workspace/wiki_quality.json")));
+    const diagrams = readFileSync(join(wikiDir, "diagrams.md"), "utf8");
+    assert.ok(diagrams.includes("erDiagram") && diagrams.includes("ORDERS"), "Mermaid ERD가 유도 스키마에서 생성됨");
+    assert.ok(readFileSync(join(wikiDir, "_sidebar.md"), "utf8").includes("(/diagrams)"));
     const graphHtml = readFileSync(join(wikiDir, "call-graph.html"), "utf8");
     for (const match of graphHtml.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
       new Script(match[1]);

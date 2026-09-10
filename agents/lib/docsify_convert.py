@@ -35,6 +35,7 @@ PAGE_META = {
     "support-status":   ("유지보수 지원 현황", "AI 도구"),
     "database":         ("데이터베이스", "데이터"),
     "external-systems": ("외부 시스템", "데이터"),
+    "diagrams":         ("다이어그램 (Mermaid)", "데이터"),
     "api-endpoints":    ("전체 API 엔드포인트", "API 레퍼런스"),
     "patterns":         ("패턴 가이드", "코드 컨벤션"),
     "issues":           ("이슈 & 보안", "분석 리포트"),

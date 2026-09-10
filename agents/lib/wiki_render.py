@@ -212,9 +212,31 @@ def render_index(title, heading="", entries=None, extra_html="", **kwargs):
         successText: '복사됨 ✓'
       }},
       themeColor: '#2563eb',
+      markdown: {{
+        renderer: {{
+          code: function(code, lang) {{
+            if (lang === 'mermaid') {{
+              var esc = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              return '<pre class="mermaid">' + esc + '</pre>';
+            }}
+            return this.origin.code.apply(this, arguments);
+          }}
+        }}
+      }},
+      plugins: [
+        function(hook) {{
+          hook.doneEach(function() {{
+            if (window.mermaid && document.querySelector('.mermaid')) {{
+              window.mermaid.initialize({{ startOnLoad: false, securityLevel: 'strict' }});
+              window.mermaid.run({{ querySelector: '.mermaid' }});
+            }}
+          }});
+        }}
+      ],
     }}
   </script>
   <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/docsify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docsify-copy-code@2/dist/docsify-copy-code.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docsify-pagination/dist/docsify-pagination.min.js"></script>

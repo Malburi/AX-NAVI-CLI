@@ -8,6 +8,7 @@ import random    # 추가 — 결정론적(고정 시드) 레이아웃 배치용
 import wiki_render
 import wiki_content
 import docsify_convert
+import wiki_mermaid
 
 # 템플릿(call-graph)과 vis-network 라이브러리는 이 스크립트가 속한
 # 플러그인 저장소(agents/lib/)에 있다. 대상 프로젝트(project_root) 안에는 없다 — 대상
@@ -1394,6 +1395,14 @@ def main():
         write_file(os.path.join(wiki_dir, "external-systems.md"), ext_content)
         render_and_track(wiki_dir, page_entries, project_name, "external-systems.md", ext_content, "External Systems")
         print("Generated external-systems.md")
+
+    # 8.5 diagrams.md ← schema/api_contract/data_flow/external_io를 Mermaid 마크업으로 (문서에 붙여넣기용, 인터랙티브 탐색은 call-graph.html)
+    diagrams_content = wiki_mermaid.build_diagrams(
+        own_schema_json, own_api_contract_json, own_data_flow_json, own_external_io_json, own_label=own_label)
+    if diagrams_content:
+        write_file(os.path.join(wiki_dir, "diagrams.md"), diagrams_content)
+        render_and_track(wiki_dir, page_entries, project_name, "diagrams.md", diagrams_content, "Diagrams (Mermaid)")
+        print("Generated diagrams.md")
 
     # 9. issues.md ← 03_validator_report.md + 04_qa_report.md + dead_code.json + owasp_top10.json (병합 대상 아님)
     if issues_exists:
