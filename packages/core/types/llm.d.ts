@@ -1,0 +1,114 @@
+/*
+ * LLM Provider 경계.
+ *
+ * 이 파일에는 공급자 이름도, 모델 id 문자열도 없다. Core와 Workflow가 특정 SDK 타입에
+ * 결합되면 Provider 교체가 불가능해지기 때문이다(브리프 §17).
+ *
+ * 추상화 수준은 "에이전트"가 아니라 "메시지"다. 즉 Provider에게 맡기는 것은
+ * `턴 목록 + 도구 정의를 받아 어시스턴트 턴 하나를 스트리밍하라`뿐이고,
+ * **도구를 언제 실행할지·실행해도 되는지·결과가 무엇인지는 Core가 정한다.**
+ * 이렇게 해야 Tool Gateway가 장식이 아니라 실제 통제점이 된다(브리프 §6).
+ */
+
+/** 모델 등급. 구체 모델 id로의 변환은 각 Provider가 한다. */
+export type ModelTier = "fast" | "standard" | "deep";
+
+export type JsonSchema = Record<string, unknown>;
+
+export interface ToolDefinition {
+  /** Claude Code 내장 도구와 같은 이름을 쓴다(Read/Grep/Glob/Bash/Write).
+   *  기존 agents/*.md 19종이 이 이름으로 쓰여 있어, 이름을 맞추면 본문 수정이 0건이 된다. */
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: JsonSchema;
+  /** 부수효과 여부. 읽기 전용 역할에는 true인 도구를 주지 않는다. */
+  readonly mutates: boolean;
+}
+
+export type ContentBlock =
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "tool_use"; readonly id: string; readonly name: string; readonly input: unknown }
+  | { readonly type: "tool_result"; readonly toolUseId: string; readonly content: string; readonly isError?: boolean };
+
+export interface Turn {
+  readonly role: "user" | "assistant";
+  readonly content: readonly ContentBlock[];
+}
+
+export interface SessionSpec {
+  readonly system: string;
+  readonly tools: readonly ToolDefinition[];
+  readonly tier: ModelTier;
+  readonly maxOutputTokens?: number;
+  /** 시스템 프롬프트 캐싱 힌트. Provider가 무시해도 된다. */
+  readonly cacheSystem?: boolean;
+  /** 로그·세션 기록용 라벨 (예: "feature-finder"). */
+  readonly label?: string;
+}
+
+export interface ProviderCapabilities {
+  /** true면 Provider가 자체 에이전트 루프를 돈다(claude CLI 래핑 등).
+   *  이 경우 Core의 Tool Gateway는 통제점이 아니므로 관측 전용으로 격하된다. */
+  readonly ownsAgentLoop: boolean;
+  readonly streaming: boolean;
+  readonly promptCaching: boolean;
+  readonly reportsCost: boolean;
+  readonly resumable: boolean;
+  readonly maxContextTokens: number;
+}
+
+export type StopReason =
+  | "end_turn" | "tool_use" | "max_tokens" | "stop_sequence" | "refusal" | "cancelled";
+
+export type ProviderErrorKind =
+  | "auth" | "rate_limit" | "overloaded" | "context_overflow"
+  | "invalid_request" | "network" | "budget" | "cancelled" | "unknown";
+
+export interface ProviderError {
+  readonly kind: ProviderErrorKind;
+  readonly message: string;
+  readonly retryable: boolean;
+  readonly retryAfterMs?: number;
+}
+
+export interface Usage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheReadTokens: number;
+  readonly cacheWriteTokens: number;
+  /** capabilities.reportsCost가 false면 undefined. 추정치를 지어내지 않는다. */
+  readonly costUsd?: number;
+}
+
+/*
+ * tool_result는 "실행해 달라"는 요청이 아니라 "이미 실행됐다"는 관측이다.
+ * ownsAgentLoop=false인 Provider는 이 이벤트를 내보내지 않는다 — Core가 실행하고
+ * 다음 Turn으로 되먹인다. ownsAgentLoop=true인 Provider만 자기가 돌린 결과를
+ * 같은 기록에 실어 보내기 위해 쓴다.
+ */
+export type ProviderEvent =
+  | { readonly type: "turn_start"; readonly turnId: string }
+  | { readonly type: "text_delta"; readonly text: string }
+  | { readonly type: "thinking_delta"; readonly text: string }
+  | { readonly type: "tool_use"; readonly id: string; readonly name: string; readonly input: unknown }
+  | { readonly type: "tool_result"; readonly toolUseId: string; readonly content: string; readonly isError: boolean }
+  | { readonly type: "usage"; readonly usage: Usage }
+  | { readonly type: "turn_end"; readonly stopReason: StopReason; readonly content: readonly ContentBlock[] }
+  | { readonly type: "error"; readonly error: ProviderError }
+  | { readonly type: "done" };
+
+export interface LLMSession {
+  readonly id: string;
+  run(turns: readonly Turn[], signal?: AbortSignal): AsyncIterable<ProviderEvent>;
+  cancel(): void;
+  close(): Promise<void>;
+}
+
+export interface LLMProvider {
+  /** "anthropic" | "claude-cli" | ... */
+  readonly id: string;
+  readonly capabilities: ProviderCapabilities;
+  createSession(spec: SessionSpec): Promise<LLMSession>;
+  resume(sessionId: string): Promise<LLMSession>;
+  cancel(sessionId: string): Promise<void>;
+}

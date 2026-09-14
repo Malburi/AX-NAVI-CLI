@@ -1,0 +1,16 @@
+{
+  "name": "ax-navi",
+  "version": "0.1.0-alpha.0",
+  "private": true,
+  "type": "module",
+  "description": "AX-NAVI CLI — 엔터프라이즈·레거시 코드베이스를 위한 AI Engineering CLI.",
+  "license": "MIT",
+  "bin": { "axnavi": "./src/bin.mjs" },
+  "exports": { ".": "./src/index.mjs" },
+  "main": "./src/index.mjs",
+  "dependencies": {
+    "@ax-navi/core": "*",
+    "@ax-navi/indexer": "*",
+    "@ax-navi/provider-anthropic": "*"
+  }
+}

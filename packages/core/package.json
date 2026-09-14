@@ -1,0 +1,18 @@
+{
+  "name": "@ax-navi/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AX-NAVI Core — Orchestrator, Tool Gateway, Agent/Skill 로더. LLM Provider 구현을 import하지 않는다.",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.mjs"
+    }
+  },
+  "types": "./types/index.d.ts",
+  "main": "./src/index.mjs",
+  "dependencies": {
+    "@ax-navi/indexer": "*"
+  }
+}

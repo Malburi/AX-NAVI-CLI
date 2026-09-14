@@ -1,0 +1,25 @@
+{
+  "name": "ax-navi-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AX-NAVI CLI v2 monorepo. Claude Code 플러그인(.claude-plugin/, agents/, skills/)과 같은 저장소에 공존한다.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.18"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:harness": "node agents/lib/tests/run.js",
+    "test:cli": "node --test packages/core/test/",
+    "test": "npm run test:harness && npm run test:cli",
+    "validate:plugin": "claude plugin validate . --strict"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@ax-navi/provider-anthropic",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "LLMProvider 구현 (Anthropic Messages API, 내장 fetch 사용 — SDK 의존 없음). 방향은 언제나 provider → core.",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "main": "./src/index.mjs",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
+    "@ax-navi/core": "*"
+  }
+}

@@ -14,3 +14,10 @@ wiki_hub.db
 
 # 문서 사이트 오프라인 빌드 산출물
 docs/site/dist/
+
+# CLI v2 (TypeScript 모노레포)
+node_modules/
+packages/*/dist/
+*.tsbuildinfo
+.axnavi/
+coverage/
