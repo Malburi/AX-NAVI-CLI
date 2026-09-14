@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { headline, renderCall, resultBlock, shorten } from "../../cli/src/transcript.mjs";
+import { headline, renderCall, resultBlock, shorten, summarizeResult } from "../../cli/src/transcript.mjs";
 import { visibleLength } from "../../cli/src/width.mjs";
 
 const plainUi = {
@@ -103,6 +103,51 @@ test("어떤 폭에서도 줄이 폭을 넘지 않는다 — 접히면 상태 �
   for (const width of [30, 40, 80, 120, 200]) {
     for (const line of render({ input: long, result: "가".repeat(300), width })) {
       assert.ok(visibleLength(line) < width, `폭 ${width}에서 ${visibleLength(line)}자`);
+    }
+  }
+});
+
+/* ---------- 요약 ---------- */
+
+/*
+ * Read 의 결과는 파일 내용 그 자체다. 그 앞 네 줄을 찍어 봐야 "이 파일을 읽었다"는
+ * 사실 외에 알 수 있는 게 없고, 파일 수십 개를 읽는 동안 화면이 남의 파일 앞도리로
+ * 덮인다 — 실측으로 harness-init 중 화면의 대부분이 이것이었다.
+ */
+test("파일 내용은 뿌리지 않고 얼마나 했는지만 남긴다", () => {
+  const file = Array.from({ length: 60 }, (_, i) => `${i + 1}  코드`).join("\n");
+  assert.equal(summarizeResult("Read", file), "60줄 읽음");
+  assert.equal(summarizeResult("Glob", "a\nb\nc"), "파일 3개");
+  assert.equal(summarizeResult("Grep", "m1\nm2"), "2건");
+});
+
+test("Bash 출력은 줄이지 않는다 — 출력 자체가 보고 싶은 것이다", () => {
+  assert.equal(summarizeResult("Bash", "a\nb\nc"), null);
+});
+
+test("실패는 줄이지 않는다 — 왜 실패했는지가 본문에 있다", () => {
+  assert.equal(summarizeResult("Read", "a\nb\nc", true), null);
+});
+
+test("한 줄짜리 안내는 줄이지 않는다 — '파일 없음'이 사라진다", () => {
+  assert.equal(summarizeResult("Glob", "No files found"), null);
+});
+
+/* ---------- 중첩 ---------- */
+
+test("서브에이전트 안의 일은 들여써서 누가 한 일인지 보인다", () => {
+  const inner = render({ depth: 1 });
+  const outer = render({ depth: 0 });
+  assert.ok(/** @type {string} */ (inner[0]).startsWith("│"), "들여쓰지 않았다");
+  assert.ok(!(/** @type {string} */ (outer[0]).startsWith("│")));
+  // 결과 줄까지 같이 들여써야 블록으로 읽힌다.
+  assert.ok(inner.every((l) => l.startsWith("│")), "결과 줄이 블록 밖으로 샜다");
+});
+
+test("들여써도 폭을 넘지 않는다", () => {
+  for (const width of [30, 60, 120]) {
+    for (const line of render({ depth: 1, result: "가".repeat(300), width })) {
+      assert.ok(visibleLength(line) < width, `폭 ${width}에서 ${visibleLength(line)}칸`);
     }
   }
 });

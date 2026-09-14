@@ -46,14 +46,14 @@ const MUTATING = ["Edit", "MultiEdit", "NotebookEdit", "Write"];
  * 실측에서 ScheduleWakeup·ToolSearch·PowerShell 이 그렇게 튀어나왔다.
  * 허용할 것을 적고 나머지를 끄는 쪽이 빠뜨릴 여지가 없다.
  */
-const KEEP = ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "Bash", "Task", "TaskOutput", "TaskStop"];
+const KEEP = ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "Bash", "Task", "Agent", "TaskOutput", "TaskStop"];
 
 /*
  * claude Code 2.1.x 가 제공하는 도구 전체(init 이벤트에서 실측).
  * 새 버전에서 도구가 늘면 여기 없는 것은 못 끄므로, 주기적으로 --verbose 로 확인해야 한다.
  */
 const CLAUDE_CODE_TOOLS = [
-  "Task", "Bash", "CronCreate", "CronDelete", "CronList", "DesignSync", "Edit",
+  "Task", "Agent", "Bash", "CronCreate", "CronDelete", "CronList", "DesignSync", "Edit",
   "EnterWorktree", "ExitWorktree", "Glob", "Grep", "ListAgents", "ListMcpResourcesTool",
   "Monitor", "MultiEdit", "NotebookEdit", "PowerShell", "PushNotification", "Read",
   "ReadMcpResourceDirTool", "ReadMcpResourceTool", "RemoteTrigger", "ReportFindings",
@@ -68,7 +68,11 @@ const CLAUDE_CODE_TOOLS = [
  * 절차의 본체라, 이걸 막으면 스킬 자체가 성립하지 않는다. spec.allowDelegation이
  * 요청될 때만 연다.
  */
-const DELEGATION_TOOLS = ["Task", "TaskOutput", "TaskStop"];
+/*
+ * claude 는 목록에는 Task 로 알리면서 실제 호출은 Agent 로 보낸다(실측).
+ * 둘 다 적어 둔다 — 한 쪽만 적으면 막았다고 생각한 곳이 안 막힐 수 있다.
+ */
+const DELEGATION_TOOLS = ["Task", "Agent", "TaskOutput", "TaskStop"];
 
 /** AX-NAVI MCP 서버가 노출하는 도구. claude 쪽에서는 이 이름으로 보인다. */
 const MCP_TOOLS = ["mcp__axnavi__AskUserQuestion", "mcp__axnavi__QueryIndex"];
@@ -191,11 +195,18 @@ export function translateEvent(msg) {
   /** @type {ProviderEvent[]} */
   const out = [];
 
+  /*
+   * 서브에이전트 안에서 난 일은 그를 띄운 Task 호출의 id 를 달고 온다.
+   * 이걸 버리면 서브에이전트의 도구 호출이 최상위 호출처럼 평평하게 쌏아져, 누가
+   * 무엇을 하고 있는지 화면에서 구분되지 않는다(실측).
+   */
+  const parent = typeof msg.parent_tool_use_id === "string" ? { parentId: msg.parent_tool_use_id } : {};
+
   if (msg.type === "assistant" && msg.message?.content) {
     for (const block of msg.message.content) {
-      if (block.type === "text" && block.text) out.push({ type: "text_delta", text: block.text });
+      if (block.type === "text" && block.text) out.push({ type: "text_delta", text: block.text, ...parent });
       else if (block.type === "tool_use") {
-        out.push({ type: "tool_use", id: block.id, name: block.name, input: block.input });
+        out.push({ type: "tool_use", id: block.id, name: block.name, input: block.input, ...parent });
       }
     }
     return out;
@@ -209,6 +220,7 @@ export function translateEvent(msg) {
           toolUseId: block.tool_use_id,
           content: flattenToolContent(block.content).slice(0, 2000),
           isError: block.is_error === true,
+          ...parent,
         });
       }
     }
@@ -328,6 +340,13 @@ export class ClaudeCliProvider {
       ...(pluginMuteSettings() ? ["--settings", /** @type {string} */ (pluginMuteSettings())] : []),
       ...this.options.extraArgs ?? [],
     ];
+
+    /*
+     * 서브에이전트가 무엇을 말하는지까지 받아온다.
+     * 도구 호출은 이 플래그 없이도 오지만, 서브에이전트가 내놓는 글은 이게 있어야 보인다.
+     * 위임이 꿠진 경우엔 서브에이전트 자체가 없으므로 붙일 이유가 없다.
+     */
+    if (spec.allowDelegation === true) args.push("--forward-subagent-text");
 
     const disallowed = toDisallowedTools(spec.tools, spec.allowDelegation === true);
     if (disallowed.length) args.push("--disallowedTools", ...disallowed);

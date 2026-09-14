@@ -108,10 +108,14 @@ export type ProviderEvent =
   | { readonly type: "turn_start"; readonly turnId: string }
   /* Provider가 대화를 자기 쪽에 들고 있을 때, 다음 턴에 이어 붙일 식별자. */
   | { readonly type: "session"; readonly id: string }
-  | { readonly type: "text_delta"; readonly text: string }
+  | { readonly type: "text_delta"; readonly text: string; readonly parentId?: string }
   | { readonly type: "thinking_delta"; readonly text: string }
-  | { readonly type: "tool_use"; readonly id: string; readonly name: string; readonly input: unknown }
-  | { readonly type: "tool_result"; readonly toolUseId: string; readonly content: string; readonly isError: boolean }
+  /*
+   * parentId — 서브에이전트 안에서 일어난 일이면 그를 띄운 Task 호출의 id.
+   * 이게 없으면 서브에이전트 다섯이 동시에 돌 때 누가 무엇을 했는지 구분되지 않는다.
+   */
+  | { readonly type: "tool_use"; readonly id: string; readonly name: string; readonly input: unknown; readonly parentId?: string }
+  | { readonly type: "tool_result"; readonly toolUseId: string; readonly content: string; readonly isError: boolean; readonly parentId?: string }
   | { readonly type: "usage"; readonly usage: Usage }
   | { readonly type: "turn_end"; readonly stopReason: StopReason; readonly content: readonly ContentBlock[] }
   | { readonly type: "error"; readonly error: ProviderError }

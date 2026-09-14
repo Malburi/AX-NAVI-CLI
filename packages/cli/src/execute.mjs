@@ -161,8 +161,12 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 상태 표시는 한 줄 제자리 갱신이라, 무언가를 찍기 전에 그 줄을 지우고 찍은 뒤 되살린다.
    * 스트리밍 텍스트는 줄 단위로 모아 내보낸다 — 토큰마다 화면을 건드리면 깜빡인다.
    */
-  /** 결과를 기다리는 호출들. @type {Map<string, { tool: string, input: unknown }>} */
+  /** 결과를 기다리는 호출들. @type {Map<string, { tool: string, input: unknown, parentId?: string }>} */
   const pending = new Map();
+
+  /** 지금 도는 서브에이전트들. @type {Map<string, { label: string, startedAt: number, tools: number }>} */
+  const subagents = new Map();
+  const NEWLINE = String.fromCharCode(10);
 
   /** @param {string} text */
   const emit = (text) => {
@@ -171,19 +175,44 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     activity.resume();
   };
 
-  let textBuffer = "";
-  /** @param {string} chunk */
-  const emitText = (chunk) => {
-    textBuffer += chunk;
-    for (let nl = textBuffer.indexOf("\n"); nl !== -1; nl = textBuffer.indexOf("\n")) {
-      emit(textBuffer.slice(0, nl));
-      textBuffer = textBuffer.slice(nl + 1);
+  /*
+   * 본문 버퍼를 둘로 나눈다 — 오케스트레이터와 서브에이전트.
+   *
+   * 하나로 쓰면 서브에이전트가 내놓는 글이 부모의 문장 한가운데 끼어든다.
+   * 실측으로 "clean, compile, ...clean, compile, ..." 처럼 두 글이 붙어 나왔다.
+   */
+  /** @type {Map<string, string>} */
+  const buffers = new Map();
+
+  /**
+   * @param {string} chunk
+   * @param {string} [parentId]  서브에이전트가 낸 글이면 그 Task 호출 id
+   */
+  const emitText = (chunk, parentId) => {
+    const key = parentId ?? "";
+    let buf = (buffers.get(key) ?? "") + chunk;
+    for (let nl = buf.indexOf(NEWLINE); nl !== -1; nl = buf.indexOf(NEWLINE)) {
+      writeText(buf.slice(0, nl), parentId);
+      buf = buf.slice(nl + 1);
     }
+    buffers.set(key, buf);
   };
-  const flushText = () => {
-    if (textBuffer) {
-      emit(textBuffer);
-      textBuffer = "";
+
+  /**
+   * @param {string} line
+   * @param {string} [parentId]
+   */
+  const writeText = (line, parentId) => {
+    // 서브에이전트가 한 말은 들여서 흐리게 — 부모가 한 말과 섞이면 누가 한 말인지 모른다.
+    emit(parentId ? `${ui.dim("│")} ${ui.dim(line)}` : line);
+  };
+
+  /** @param {string} [parentId] 주면 그 버퍼만, 안 주면 전부 비운다. */
+  const flushText = (parentId) => {
+    for (const [key, buf] of buffers) {
+      if (parentId !== undefined && key !== parentId) continue;
+      if (buf) writeText(buf, key || undefined);
+      buffers.set(key, "");
     }
   };
 
@@ -200,7 +229,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
 
   try {
     for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt: prompt, ...(conversation ? { conversation } : {}) })) {
-      if (event.type === "text") emitText(event.text ?? "");
+      if (event.type === "text") emitText(event.text ?? "", event.parentId);
       else if (event.type === "compacted") {
         // 컨텍스트를 줄였다는 사실은 숨기지 않는다 — 답이 앞 내용을 잊은 이유가 될 수 있다.
         emit(`${ui.yellow("  ⤵ ")}${ui.dim(event.reason ?? "")}`);
@@ -211,9 +240,26 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
          */
         debug(`${ui.yellow("  ! ")}${ui.dim(event.reason ?? "")}\n`);
       } else if (event.type === "tool_call") {
-        flushText();
+        // 자기 버퍼만 비운다 — 서브에이전트 도구 호출이 부모의 문장을 끊으면 안 된다.
+        flushText(event.parentId ?? "");
         const tool = toolLabel(event.tool ?? "");
-        activity.set({ tool });
+        const id = event.id ?? `익명${pending.size}`;
+
+        /*
+         * Task 는 그 자체가 담짜다 — 머리를 바로 찍고, 안에서 나는 일을 들여 보인다.
+         * 결과까지 들고 있으면 서브에이전트가 몇 분을 도는 동안 화면이 깜깜해진다.
+         */
+        if (SUBAGENT_TOOLS.has(tool)) {
+          const label = describeTask(event.input);
+          subagents.set(id, { label, startedAt: Date.now(), tools: 0 });
+          activity.set({ subagent: label, tool: "" });
+          emit(`${ui.cyan("●")} ${ui.bold(`Task(${label})`)}`);
+          continue;
+        }
+
+        const parent = event.parentId ? subagents.get(event.parentId) : undefined;
+        if (parent) parent.tools += 1;
+        activity.set({ tool, subagent: parent ? parent.label : "" });
         /*
          * 바로 찍지 않고 결과가 올 때까지 든다.
          *
@@ -221,9 +267,22 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
          * 따라오니, 오는 대로 흘리면 어느 결과가 어느 호출의 것인지 모른다(실측).
          * 지금 무엇이 도는지는 상태 표시 줄이 보여 주므로 기다리는 동안 깜깜하지 않다.
          */
-        pending.set(event.id ?? `익명${pending.size}`, { tool, input: event.input });
+        pending.set(id, { tool, input: event.input, parentId: event.parentId });
       } else if (event.type === "tool_result") {
         const key = event.id ?? [...pending.keys()][0];
+
+        // 서브에이전트가 끝났다 — 무엇을 얼마나 했는지 한 줄로 닫는다.
+        const done = key === undefined ? undefined : subagents.get(key);
+        if (done && key !== undefined) {
+          // 서브에이전트가 마지막에 한 말을 먼저 비운다. 닫는 줄 뒤에 나오면 블록 밖으로 샐다.
+          flushText(key);
+          subagents.delete(key);
+          activity.set({ subagent: "" });
+          emit(`  ${ui.dim("⎿")} ${ui.dim(`끝남 · 도구 ${done.tools}회 · ${elapsed(Date.now() - done.startedAt)}`)}`);
+          if (event.isError) toolErrors += 1;
+          continue;
+        }
+
         const call = key === undefined ? undefined : pending.get(key);
         if (key !== undefined) pending.delete(key);
         emit(
@@ -233,14 +292,15 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
             result: event.result ?? "",
             isError: event.isError === true,
             root: paths.root,
+            depth: (call?.parentId ?? event.parentId) ? 1 : 0,
             width: process.stdout.columns ?? 100,
             ui,
           }).join("\n"),
         );
         /*
          * 도구 실패 하나를 실행 전체의 실패로 보지 않는다.
-         * 에이전트는 잘못된 경로로 grep했다가 고쳐 다시 부르는 식으로 스스로 복구한다 —
-         * 그걸 실패로 세면 정상적으로 끝난 작업이 exit 1로 나간다(실측으로 확인).
+         * 에이전트는 잘못된 경로로 grep 했다가 고쳌 다시 부르는 식으로 스스로 복구한다 —
+         * 그걸 실패로 세면 정상적으로 끝난 작업이 exit 1 로 나간다(실측으로 확인).
          * 최종 판정은 아래 error 이벤트와 종료 사유로만 한다.
          */
         if (event.isError) toolErrors += 1;
@@ -346,4 +406,28 @@ function summarize(input) {
     .map(([k, v]) => `${k}=${String(v).slice(0, 60)}`)
     .slice(0, 3);
   return parts.join(" ");
+}
+
+/*
+ * 서브에이전트를 띄우는 도구 이름.
+ *
+ * claude 2.1.259 는 도구 목록에 Task 로 알리면서 실제 호출은 Agent 로 보낸다(실측).
+ * 한 쪽만 보면 서브에이전트 머리가 안 찍히고 안의 도구들만 떠돌아다니게 된다.
+ */
+const SUBAGENT_TOOLS = new Set(["Task", "Agent"]);
+
+/**
+ * Task 호출을 부를 이름.
+ *
+ * subagent_type 은 이 런타임에서 항상 general-purpose 라 구분이 안 된다 —
+ * 실제 역할은 description 에 들어 있다.
+ * @param {unknown} input
+ * @returns {string}
+ */
+function describeTask(input) {
+  const args = input && typeof input === "object" ? /** @type {Record<string, unknown>} */ (input) : {};
+  for (const key of ["description", "subagent_type"]) {
+    if (typeof args[key] === "string" && args[key]) return /** @type {string} */ (args[key]);
+  }
+  return "서브에이전트";
 }

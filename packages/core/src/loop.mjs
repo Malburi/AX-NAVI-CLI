@@ -41,6 +41,7 @@
  * @property {string} [text]
  * @property {string} [tool]
  * @property {string} [id]        호출과 결과를 짝짓는다. 병렬로 돌면 순서가 섞여 이게 없으면 못 맞춘다.
+ * @property {string} [parentId]  서브에이전트 안에서 난 일이면 그를 띄운 Task 호출의 id
  * @property {unknown} [input]
  * @property {string} [result]
  * @property {boolean} [isError]
@@ -111,13 +112,17 @@ export async function* runAgent({ provider, agent, registry, gateway, ctx, userP
       userPrompt,
       ctx.signal,
     )) {
-      if (event.type === "text_delta") yield { type: "text", text: event.text };
+      if (event.type === "text_delta") {
+        yield { type: "text", text: event.text, ...(event.parentId ? { parentId: event.parentId } : {}) };
+      }
       else if (event.type === "session") {
         // 다음 턴이 이어 붙일 수 있게 기억한다.
         if (conversation) conversation.providerSessionId = event.id;
-      } else if (event.type === "tool_use") yield { type: "tool_call", id: event.id, tool: event.name, input: event.input };
+      } else if (event.type === "tool_use") {
+        yield { type: "tool_call", id: event.id, tool: event.name, input: event.input, ...(event.parentId ? { parentId: event.parentId } : {}) };
+      }
       else if (event.type === "tool_result") {
-        yield { type: "tool_result", id: event.toolUseId, tool: "(위임)", result: event.content, isError: event.isError };
+        yield { type: "tool_result", id: event.toolUseId, tool: "(위임)", result: event.content, isError: event.isError, ...(event.parentId ? { parentId: event.parentId } : {}) };
       } else if (event.type === "usage") yield { type: "usage", usage: event.usage };
       else if (event.type === "error") {
         yield { type: "error", reason: `${event.error.kind}: ${event.error.message}` };

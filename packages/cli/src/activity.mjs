@@ -29,6 +29,7 @@ const TICK_MS = 120;
  * @typedef {object} ActivityState
  * @property {string} label        지금 도는 역할
  * @property {string} [tool]       마지막으로 부른 도구
+ * @property {string} [subagent]   지금 도는 서브에이전트 이름
  * @property {number} outputTokens
  * @property {number} [queued]     처리 대기 중인 입력 줄 수
  */
@@ -63,7 +64,9 @@ export function createActivity({ output, ui }) {
   let state = { label: "", outputTokens: 0 };
 
   function line() {
-    const bits = [ui.cyan(state.label), ui.dim(elapsed(Date.now() - startedAt))];
+    // 서브에이전트가 도는 중이면 누가 도는지를 먼저 밝힌다.
+    const who = state.subagent ? `${state.label} › ${state.subagent}` : state.label;
+    const bits = [ui.cyan(who), ui.dim(elapsed(Date.now() - startedAt))];
     if (state.outputTokens > 0) bits.push(ui.dim(`↓ ${compact(state.outputTokens)} tokens`));
     if (state.tool) bits.push(ui.dim(state.tool));
     // 작업 중에 친 입력이 사라진 게 아니라 줄 서 있다는 것을 보여 준다.

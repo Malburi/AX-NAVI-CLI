@@ -16,6 +16,7 @@ import { clipToWidth, visibleLength } from "./width.mjs";
 
 /** 결과에서 보여 줄 줄 수. 넘치면 몇 줄이 더 있는지만 알린다. */
 const RESULT_LINES = 4;
+const NEWLINE = String.fromCharCode(10);
 
 /**
  * 도구별로 "이것만 보면 무슨 일을 하는지 아는" 인자.
@@ -33,6 +34,15 @@ const PRIMARY = {
   QueryIndex: ["command"],
   AskUserQuestion: ["question"],
 };
+
+/**
+ * 화면에 쓸 도구 이름. 브리지 전송 경로 이름은 사용자가 알 필요가 없다.
+ * @param {string} tool
+ * @returns {string}
+ */
+export function toolName(tool) {
+  return tool.replace(/^mcp__axnavi__/, "");
+}
 
 /**
  * 프로젝트 안의 경로는 짧게 줄인다. 절대경로를 그대로 두면 한 줄이 경로로 다 찬다.
@@ -58,8 +68,7 @@ export function shorten(value, root) {
  * @returns {string}
  */
 export function headline(tool, input, opts = {}) {
-  // 브리지 전송 경로 이름은 사용자가 알 필요가 없다.
-  const name = tool.replace(/^mcp__axnavi__/, "");
+  const name = toolName(tool);
   const args = input && typeof input === "object" ? /** @type {Record<string, unknown>} */ (input) : {};
 
   const keys = /** @type {string[] | undefined} */ (/** @type {any} */ (PRIMARY)[name]);
@@ -74,6 +83,44 @@ export function headline(tool, input, opts = {}) {
 
   const text = shorten(String(value), opts.root).replace(/\s+/g, " ").trim();
   return text ? `${name}(${text})` : name;
+}
+
+/*
+ * 결과를 그대로 보여 주면 안 되는 도구들.
+ *
+ * Read 의 결과는 파일 내용 그 자체다. 그 앞 네 줄을 찍어 봐야 "이 파일을
+ * 읽었다"는 사실 외에 알 수 있는 게 없고, 파일 수십 개를 읽는 동안 화면이
+ * 남의 파일 앞도리로 덤복된다(실측: harness-init 중 화면의 대부분이 이것이었다).
+ * 무엇을 얼만큼 했는지만 남긴다.
+ *
+ * Bash 는 일부러 뺄다 — 출력 그 자체가 보고 싶은 것이다.
+ */
+const SUMMARIZE = {
+  /** @param {number} n */ Read: (n) => `${n}줄 읽음`,
+  /** @param {number} n */ Write: (n) => `${n}줄 썼`,
+  /** @param {number} n */ Glob: (n) => `파일 ${n}개`,
+  /** @param {number} n */ Grep: (n) => `${n}건`,
+  /** @param {number} n */ QueryIndex: (n) => `${n}줄`,
+};
+
+/**
+ * 이 결과를 한 줄로 줄일 수 있는가.
+ *
+ * 실패했을 때는 줄이지 않는다 — 왜 실패했는지가 결과 본문에 들어 있다.
+ * 한 줄짜리도 줄이지 않는다 — "파일 없음" 같은 안내가 사라진다.
+ *
+ * @param {string} tool
+ * @param {string} result
+ * @param {boolean} [isError]
+ * @returns {string | null}
+ */
+export function summarizeResult(tool, result, isError) {
+  if (isError) return null;
+  const make = /** @type {((n: number) => string) | undefined} */ (/** @type {any} */ (SUMMARIZE)[tool]);
+  if (!make) return null;
+  const lines = (result ?? "").trimEnd().split(NEWLINE).filter((l) => l.trim());
+  if (lines.length <= 1) return null;
+  return make(lines.length);
 }
 
 /**
@@ -105,37 +152,46 @@ export function resultBlock(text, opts = {}) {
  * @param {string} [args.result]
  * @param {boolean} [args.isError]
  * @param {boolean} [args.pending]   결과를 못 받고 끝난 호출 (중단 등)
+ * @param {number} [args.depth]      서브에이전트 안의 일이면 1
  * @param {string} [args.root]
  * @param {number} args.width
  * @param {{ dim: (s: string) => string, cyan: (s: string) => string, green: (s: string) => string, red: (s: string) => string, yellow: (s: string) => string, bold: (s: string) => string }} args.ui
  * @returns {string[]}
  */
-export function renderCall({ tool, input, result, isError, pending, root, width, ui }) {
+export function renderCall({ tool, input, result, isError, pending, root, depth = 0, width, ui }) {
+  // 서브에이전트 안의 일은 한 칸 들여써 누가 한 일인지 보이게 한다.
+  const pad = depth > 0 ? `${ui.dim("│")} ` : "";
   const cap = Math.max(20, width - 1);
   const bullet = pending ? ui.yellow("●") : isError ? ui.red("●") : ui.green("●");
   const head = headline(tool, input, root === undefined ? {} : { root });
-  // 도구 이름만 진하게. 인자는 흐리게 둬야 이름이 눈에 먼저 들어온다.
+  // 도구 이름만 진하게. 인자는 흐리게 두어야 이름이 눈에 먼저 들어온다.
   const open = head.indexOf("(");
   const painted = open === -1
     ? ui.bold(head)
     : `${ui.bold(head.slice(0, open))}${ui.dim(head.slice(open))}`;
-  const lines = [clipToWidth(`${bullet} ${painted}`, cap)];
+  const lines = [clipToWidth(`${pad}${bullet} ${painted}`, cap)];
 
   if (pending) {
-    lines.push(clipToWidth(ui.dim("  ⎿  (결과를 받지 못했다)"), cap));
+    lines.push(clipToWidth(`${pad}${ui.dim("  ⎿  (결과를 받지 못했다)")}`, cap));
+    return lines;
+  }
+
+  const tint = isError ? ui.red : ui.dim;
+  const short = summarizeResult(toolName(tool), result ?? "", isError);
+  if (short !== null) {
+    lines.push(clipToWidth(`${pad}  ${ui.dim("⎿")} ${tint(short)}`, cap));
     return lines;
   }
 
   const { lines: body, hidden } = resultBlock(result ?? "");
-  const tint = isError ? ui.red : ui.dim;
   if (!body.length) {
-    lines.push(clipToWidth(tint("  ⎿  (출력 없음)"), cap));
+    lines.push(clipToWidth(`${pad}${tint("  ⎿  (출력 없음)")}`, cap));
   } else {
     body.forEach((line, i) => {
-      lines.push(clipToWidth(`  ${ui.dim(i === 0 ? "⎿ " : "  ")} ${tint(line)}`, cap));
+      lines.push(clipToWidth(`${pad}  ${ui.dim(i === 0 ? "⎿ " : "  ")} ${tint(line)}`, cap));
     });
   }
-  if (hidden) lines.push(clipToWidth(ui.dim(`     … +${hidden}줄`), cap));
+  if (hidden) lines.push(clipToWidth(`${pad}${ui.dim(`     … +${hidden}줄`)}`, cap));
   return lines;
 }
 
