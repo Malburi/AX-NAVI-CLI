@@ -95,7 +95,7 @@ const MANIFEST_FILES = new Set(["pom.xml", "go.mod", "package.json", "build.grad
 const DISCOVERY_ONLY_EXTENSIONS = ADAPTER_DISCOVERY_ONLY_EXTENSIONS;
 const EXCLUDED_DIRS = new Set([
   ".git", "node_modules", "vendor", "dist", "build", "target", "out", ".next", ".nuxt",
-  "coverage", "_workspace", "_workspace_prev", ".claude", ".idea", ".vscode", "bin", "obj",
+  "coverage", "_workspace", "_workspace_prev", ".claude", ".axnavi", ".idea", ".vscode", "bin", "obj",
   ".venv", "venv", "env", ".tox", "site-packages", "__pycache__", ".pytest_cache", ".mypy_cache",
 ]);
 /* generate-wiki 산출물(wiki/, wiki_prev/)은 2026-08-14부터 _workspace/ 아래로 옮겨져
