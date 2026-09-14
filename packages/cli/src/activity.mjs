@@ -30,6 +30,7 @@ const TICK_MS = 120;
  * @property {string} label        지금 도는 역할
  * @property {string} [tool]       마지막으로 부른 도구
  * @property {string} [subagent]   지금 도는 서브에이전트 이름
+ * @property {string} [typing]     지금 치고 있는 글
  * @property {number} outputTokens
  * @property {number} [queued]     처리 대기 중인 입력 줄 수
  */
@@ -69,8 +70,12 @@ export function createActivity({ output, ui }) {
     const bits = [ui.cyan(who), ui.dim(elapsed(Date.now() - startedAt))];
     if (state.outputTokens > 0) bits.push(ui.dim(`↓ ${compact(state.outputTokens)} tokens`));
     if (state.tool) bits.push(ui.dim(state.tool));
-    // 작업 중에 친 입력이 사라진 게 아니라 줄 서 있다는 것을 보여 준다.
-    if (state.queued) bits.push(ui.yellow(`⌨ ${state.queued}건 대기`));
+    /*
+     * 작업 중에 친 입력. 치는 중이면 그 글을, 엔터까지 치고 기다리는 게 있으면 그 수를.
+     * 둘 다 보여 줄 자리는 없으니 치는 중인 글을 앞세운다 — 지금 손이 거기 있다.
+     */
+    if (state.typing) bits.push(ui.yellow(`⌨ ${state.typing}`));
+    else if (state.queued) bits.push(ui.yellow(`⌨ ${state.queued}건 대기`));
     return `  ${ui.cyan(FRAMES[frame % FRAMES.length] ?? "")} ${bits.join(ui.dim(" · "))}`;
   }
 

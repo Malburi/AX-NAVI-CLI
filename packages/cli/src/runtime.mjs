@@ -163,6 +163,25 @@ export function setLineReader(fn) {
 /** @type {AbortController | null} */
 let currentTurn = null;
 
+/*
+ * 턴이 도는 동안 사용자가 치고 있는 글.
+ *
+ * 상태 표시 줄이 이걸 보여 줘야 한다 — 그 구간에는 readline 을 물러나게 하므로
+ * 터미널이 알아서 에코해 주지 않는다. 안 보여 주면 장님 타이핑이 된다.
+ */
+/** @type {(() => { text: string, queued: number }) | null} */
+let typingProbe = null;
+
+/** @param {(() => { text: string, queued: number }) | null} fn */
+export function setTypingProbe(fn) {
+  typingProbe = fn;
+}
+
+/** @returns {{ text: string, queued: number }} */
+export function readTyping() {
+  return typingProbe?.() ?? { text: "", queued: 0 };
+}
+
 /**
  * 턴을 시작하며 취소 손잡이를 등록한다. 끝나면 반드시 endTurn 으로 돌려준다.
  * @returns {AbortController}

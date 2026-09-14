@@ -16,7 +16,7 @@ import { startMcpBridge } from "./mcp/bridge.mjs";
 import { createActivity, elapsed } from "./activity.mjs";
 import { renderCall } from "./transcript.mjs";
 import { join } from "node:path";
-import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, debug, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, debug, ui } from "./runtime.mjs";
 
 /**
  * @param {object} args
@@ -224,7 +224,10 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
 
   activity.start(agent.name);
   /** 대기 입력이 늘면 상태줄에 반영한다 — 사라진 게 아니라 줄 섰다는 신호다. */
-  const queueWatch = setInterval(() => activity.set({ queued: queuedCount?.() ?? 0 }), 500);
+  const queueWatch = setInterval(() => {
+    const typed = readTyping();
+    activity.set({ queued: queuedCount?.() ?? typed.queued, typing: typed.text });
+  }, 200);
   queueWatch.unref?.();
 
   try {

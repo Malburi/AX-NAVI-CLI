@@ -18,7 +18,7 @@ import {
   saveSession,
   toTitle,
 } from "@ax-navi/core";
-import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, setLineReader, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, setLineReader, setTypingProbe, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
 import { buildCommands, menuItems, renderCommandMenu } from "./completion.mjs";
 import { attachAutocomplete } from "./autocomplete.mjs";
@@ -28,6 +28,7 @@ import { cmdIndex, runSkill } from "./commands.mjs";
 import { renderStatus } from "./status.mjs";
 import { estimateTokens } from "@ax-navi/core";
 import { createNaviPersona } from "./persona.mjs";
+import { createTypeahead } from "./typeahead.mjs";
 
 const NL = String.fromCharCode(10);
 
@@ -108,7 +109,12 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
   let waiter = null;
   let closed = false;
 
-  rl.on("line", (raw) => {
+  /**
+   * 들어온 한 줄을 기다리는 쪽에 준다.
+   * readline 이 읽은 것과 턴 중에 우리가 직접 받은 것이 같은 길로 들어와야 한다.
+   * @param {string} raw
+   */
+  const deliver = (raw) => {
     if (waiter) {
       const resolve = waiter;
       waiter = null;
@@ -116,7 +122,9 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     } else {
       queued.push(raw);
     }
-  });
+  };
+
+  rl.on("line", deliver);
   rl.on("close", () => {
     closed = true;
     waiter?.(null);
@@ -170,6 +178,45 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     }
     process.stdout.write(`\n${ui.yellow(`  ⛔ 중단 (${how})`)}\n`);
     return true;
+  };
+
+  /*
+   * 턴이 도는 동안 readline 을 물러나게 하고 키를 직접 받는다.
+   *
+   * 안 그러면 방향키가 난장판을 만든다 — 위·아래는 히스토리를 불러내 프롬프트를
+   * 다시 그리고(실측: `> /harness-init` 이 누를 때마다 쌏아졌다), 좌·우도 입력 줄을
+   * 다시 그린다. 그 자리엔 이미 스트리밍 출력이 흐르고 있으니 섞여 버린다.
+   *
+   * 대신 치는 글을 상태 표시 줄에 보여 준다 — 그 줄은 우리가 온전히 통제하는 한 줄이라
+   * 다툴 커서가 없다.
+   */
+  /** @type {{ text: () => string } | null} 턴 중에만 산다. */
+  let reader = null;
+  setTypingProbe(() => ({ text: reader?.text() ?? "", queued: queued.length }));
+
+  /** @returns {() => void} 되돌리는 함수 */
+  const captureKeys = () => {
+    if (!process.stdin.isTTY) return () => {};
+    const typeahead = createTypeahead({ onLine: deliver, onInterrupt: interrupt });
+    reader = typeahead;
+
+    const saved = /** @type {Function[]} */ (process.stdin.listeners("keypress"));
+    for (const fn of saved) process.stdin.off("keypress", /** @type {any} */ (fn));
+    /**
+     * @param {string | undefined} ch
+     * @param {{ name?: string, ctrl?: boolean, meta?: boolean } | undefined} key
+     */
+    const onKey = (ch, key) => typeahead.handle(ch, key);
+    process.stdin.on("keypress", onKey);
+
+    return () => {
+      process.stdin.off("keypress", onKey);
+      for (const fn of saved) process.stdin.on("keypress", /** @type {any} */ (fn));
+      reader = null;
+      // 끝날 때 치던 중이었다면 버리지 않고 프롬프트에 돌려준다.
+      const leftover = typeahead.take();
+      if (leftover) rl.write(leftover);
+    };
   };
 
   rl.on("SIGINT", () => {
@@ -286,6 +333,8 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     if (!line) continue;
     if (line === "/exit" || line === "/quit") break;
 
+    // 턴이 도는 동안에는 readline 을 물러나게 한다 — 방향키가 프롬프트를 다시 그려 화면을 어지른다.
+    const release = captureKeys();
     try {
       if (line.startsWith("/")) {
         code = await handleSlash({
@@ -355,6 +404,8 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     } catch (error) {
       process.stderr.write(`${ui.red("실패")}: ${/** @type {Error} */ (error).message}\n`);
       code = 1;
+    } finally {
+      release();
     }
   }
 
