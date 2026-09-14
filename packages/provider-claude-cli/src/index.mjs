@@ -160,6 +160,27 @@ export function probeClaudeCli() {
 }
 
 /**
+ * 도구 결과 본문을 사람이 읽는 문자열로 편다.
+ *
+ * MCP 도구의 결과는 `[{type:"text", text:"..."}]` 봉투로 온다. 그대로 찍으면
+ * 화면에 JSON 봉투가 보이고 정작 내용은 이스케이프된 채로 묻힌다.
+ *
+ * @param {unknown} content
+ * @returns {string}
+ */
+export function flattenToolContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const texts = content
+      .map((b) => (b && typeof b === "object" && "text" in b ? String(b.text) : null))
+      .filter((t) => t !== null);
+    // 텍스트 블록만으로 이뤄져 있으면 그것만 이어 붙인다. 아니면 원형을 보여 준다.
+    if (texts.length === content.length) return texts.join("\n");
+  }
+  return JSON.stringify(content);
+}
+
+/**
  * stream-json 한 줄을 ProviderEvent들로 옮긴다.
  * claude의 이벤트 형태는 실측으로 확인한 것만 다룬다 — 추측한 필드는 넣지 않는다.
  * @param {any} msg
@@ -182,11 +203,10 @@ export function translateEvent(msg) {
   if (msg.type === "user" && msg.message?.content) {
     for (const block of msg.message.content) {
       if (block.type === "tool_result") {
-        const content = typeof block.content === "string" ? block.content : JSON.stringify(block.content);
         out.push({
           type: "tool_result",
           toolUseId: block.tool_use_id,
-          content: content.slice(0, 2000),
+          content: flattenToolContent(block.content).slice(0, 2000),
           isError: block.is_error === true,
         });
       }

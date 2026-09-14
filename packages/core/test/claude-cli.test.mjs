@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toDisallowedTools, translateEvent } from "@ax-navi/provider-claude-cli";
+import { flattenToolContent, toDisallowedTools, translateEvent } from "@ax-navi/provider-claude-cli";
 
 /** @param {string[]} names */
 const tools = (names) =>
@@ -120,4 +120,26 @@ test("오케스트레이터가 요청하면 서브에이전트를 연다", () =>
   for (const name of ["Skill", "WebSearch", "WebFetch"]) {
     assert.ok(off.includes(name), `${name}까지 열렸다`);
   }
+});
+
+test("MCP 도구 결과의 봉투를 벗겨 낸다", () => {
+  // 그대로 찍으면 화면에 JSON 봉투가 보이고 정작 내용은 이스케이프된 채로 묻힌다.
+  const wrapped = [{ type: "text", text: '{"tier":"Full"}' }];
+  assert.equal(flattenToolContent(wrapped), '{"tier":"Full"}');
+  assert.equal(flattenToolContent("그냥 문자열"), "그냥 문자열");
+});
+
+test("텍스트가 아닌 블록이 섞이면 원형을 보여 준다 — 조용히 버리지 않는다", () => {
+  const mixed = [{ type: "text", text: "가" }, { type: "image", data: "..." }];
+  assert.match(flattenToolContent(mixed), /image/);
+});
+
+test("도구 결과에서도 봉투가 벗겨진 채로 전달된다", () => {
+  const events = translateEvent({
+    type: "user",
+    message: {
+      content: [{ type: "tool_result", tool_use_id: "t1", content: [{ type: "text", text: "결과 본문" }] }],
+    },
+  });
+  assert.equal(/** @type {any} */ (events[0]).content, "결과 본문");
 });

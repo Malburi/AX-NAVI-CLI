@@ -10,6 +10,7 @@
  * git 조회는 매번 하지 않는다. 프로세스를 띄우는 비용이 한 줄 그리는 값보다 크다.
  */
 import { spawnSync } from "node:child_process";
+import { visibleLength } from "./screen.mjs";
 
 /** @typedef {{ branch: string, added: number, removed: number } | null} GitInfo */
 
@@ -97,17 +98,28 @@ export function renderStatus({ root, runtime, contextTokens, maxTokens, turns, c
   // 작업 중에 친 입력이 있으면 사라진 게 아니라 줄 서 있다는 것을 보여 준다.
   if (queued > 0) parts.push(ui.yellow(`⌨ ${queued}건 대기`));
 
-  const line = parts.join(ui.dim(" · "));
-  const rule = ui.dim("─".repeat(Math.max(0, width - visibleLength(line) - 3)));
-  return `${ui.dim("─")} ${line} ${rule}`;
-}
+  /*
+   * 폭을 반드시 넘지 않게 만든다.
+   *
+   * 터미널 폭에 딱 맞게 채우면 커서가 마지막 칸을 넘어가며 줄이 접힌다. 그러면 상태줄이
+   * 물리적으로 두 줄이 되고, 지울 때 한 줄만 올라가던 코드와 어긋나 출력마다 상태줄이
+   * 화면에 쌓였다(실측).
+   *
+   * 좁은 터미널에서는 내용 자체가 폭을 넘는다. 그때는 **뒤쪽 항목부터 버린다** —
+   * 앞에 둔 것일수록 지금 결정을 바꾸는 정보라 남길 값이 크다.
+   */
+  const budget = Math.max(10, width - 1);
+  const sep = ui.dim(" · ");
+  const lead = `${ui.dim("─")} `;
 
-/**
- * ANSI 이스케이프를 뺀 표시 길이. 색을 넣은 채로 세면 줄이 밀린다.
- * @param {string} s
- * @returns {number}
- */
-function visibleLength(s) {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/\[[0-9;]*m/g, "").length;
+  let line = "";
+  for (const part of parts) {
+    const candidate = line ? line + sep + part : part;
+    if (visibleLength(lead + candidate) + 1 > budget) break;
+    line = candidate;
+  }
+
+  const head = `${lead}${line} `;
+  const used = visibleLength(head);
+  return used >= budget ? head : head + ui.dim("─".repeat(budget - used));
 }

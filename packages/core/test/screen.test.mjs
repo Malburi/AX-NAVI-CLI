@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createScreen } from "../../cli/src/screen.mjs";
+import { createScreen, physicalLines, visibleLength } from "../../cli/src/screen.mjs";
 import { renderStatus } from "../../cli/src/status.mjs";
 
 const ESC = String.fromCharCode(27);
@@ -156,4 +156,75 @@ test("컨텍스트가 없거나 비용을 모르면 그 칸을 비운다 — 0�
   assert.ok(!line.includes("$"), "비용을 모르는데 표시했다");
   assert.ok(!line.includes("턴"), "턴이 없는데 표시했다");
   assert.ok(!line.includes("대기"), "대기가 없는데 표시했다");
+});
+
+/* ---------- 줄 접힘 ---------- */
+
+test("색 코드를 뺀 길이를 센다 — ESC 가 빠지면 폭 계산이 틀어진다", () => {
+  const colored = `${ESC}[36m클로드${ESC}[0m`;
+  assert.equal(visibleLength(colored), 3, "색 코드가 길이에 섞여 들어갔다");
+});
+
+test("폭을 넘으면 물리 줄 수를 그만큼 센다", () => {
+  assert.equal(physicalLines("가".repeat(10), 80), 1);
+  assert.equal(physicalLines("x".repeat(80), 80), 1);
+  assert.equal(physicalLines("x".repeat(81), 80), 2);
+  assert.equal(physicalLines("x".repeat(161), 80), 3);
+});
+
+test("상태줄이 접혀도 지울 때 그만큼 되짚어 올라간다", () => {
+  const out = fakeOutput();
+  out.columns = 40;
+  const screen = createScreen({ output: /** @type {any} */ (out), prompt: "> ", currentInput: () => "" });
+  // 폭 40인데 60자짜리 상태줄 — 물리적으로 두 줄을 차지한다.
+  screen.setStatus(() => "S".repeat(60));
+
+  screen.redraw();
+  out.reset();
+  screen.redraw();
+
+  // 상태줄 2줄 + 프롬프트 1줄 = 3줄. 마지막 줄에서 2줄 올라가야 첫 줄이다.
+  assert.ok(out.text().includes(`${ESC}[2A`), `2줄 올라가지 않았다: ${JSON.stringify(out.text().slice(0, 40))}`);
+});
+
+test("상태줄은 터미널 폭을 넘지 않는다 — 넘으면 접혀서 쌓인다", () => {
+  const plain = {
+    dim: (/** @type {string} */ s) => s,
+    cyan: (/** @type {string} */ s) => s,
+    green: (/** @type {string} */ s) => s,
+    yellow: (/** @type {string} */ s) => s,
+  };
+  for (const width of [40, 80, 100, 120]) {
+    const line = renderStatus({
+      root: process.cwd(),
+      runtime: "claude-cli 2.1.259",
+      contextTokens: 12_300,
+      maxTokens: 120_000,
+      turns: 3,
+      costUsd: 0.1234,
+      queued: 2,
+      ui: plain,
+      width,
+    });
+    assert.ok(visibleLength(line) < width, `폭 ${width}에서 ${visibleLength(line)}자 — 접힌다`);
+  }
+});
+
+test("출력을 여러 번 해도 상태줄이 화면에 쌓이지 않는다", () => {
+  const out = fakeOutput();
+  out.columns = 60;
+  const screen = createScreen({ output: /** @type {any} */ (out), prompt: "> ", currentInput: () => "" });
+  screen.setStatus(() => "STATUS");
+  screen.redraw();
+  out.reset();
+
+  screen.print("첫째 줄");
+  screen.print("둘째 줄");
+  screen.print("셋째 줄");
+
+  const text = out.text();
+  // 세 번 출력했으면 상태줄도 세 번 그려지되, 그 앞에 매번 지우기가 있어야 한다.
+  assert.equal((text.match(/STATUS/g) ?? []).length, 3);
+  // 지우기 시퀀스를 정규식 없이 센다 — ESC 를 정규식에 넣으면 이스케이프가 꼬인다.
+  assert.equal(text.split(`${ESC}[0J`).length - 1, 3, "지우지 않고 덧그렸다");
 });
