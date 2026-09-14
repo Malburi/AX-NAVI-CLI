@@ -18,7 +18,7 @@ import {
   saveSession,
   toTitle,
 } from "@ax-navi/core";
-import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, setLineReader, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
 import { buildCommands, menuItems, renderCommandMenu } from "./completion.mjs";
 import { attachAutocomplete } from "./autocomplete.mjs";
@@ -134,6 +134,15 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     if (closed) return Promise.resolve(null);
     return new Promise((resolve) => { waiter = resolve; });
   };
+
+  /*
+   * 작업 중에 뜨는 질문(AskUserQuestion)도 이 큐로 읽는다.
+   *
+   * 여기서 readline 을 따로 열면 두 인터페이스가 stdin 을 두고 경쟁해서, 질문은
+   * 화면에 떠 있는데 무엇을 눌러도 이 큐로 흘러들어가 선택이 되지 않는다(실측).
+   * 질문을 기다리는 동안 메인 루프는 executeAgent 를 await 중이라 큐는 비어 있다.
+   */
+  setLineReader(nextLine);
 
   /*
    * 대화 상태.

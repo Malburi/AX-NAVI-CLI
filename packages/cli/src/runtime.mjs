@@ -93,42 +93,81 @@ function redact(value) {
 /* ---------- 사용자 질의 ---------- */
 
 /**
- * Claude Code의 AskUserQuestion 자리. 그쪽에 있던 옵션 4개 상한은 여기 없다.
- * 비대화형(파이프 입력 등)에서는 묻지 않고 사유를 돌려준다 — 멈춰 서서 매달리지 않는다.
+ * 선택지를 그리고 답을 고른다.
+ *
+ * 입력을 **직접 읽지 않고** 주어진 readLine 으로만 받는 것이 요점이다.
+ * 예전에는 여기서 readline 인터페이스를 새로 만들었는데, REPL 이 이미 stdin 을
+ * 붙잡고 있어서 두 인터페이스가 경쟁했다 — 질문은 떴지만 사용자가 무엇을 눌러도
+ * REPL 쪽 큐로 들어가 버려 선택이 되지 않았다(실측).
+ *
+ * @param {() => Promise<string | null>} readLine  한 줄을 읽어 오는 함수
+ * @returns {import("@ax-navi/core").Elicitor}
  */
-export function createElicitor() {
+export function createElicitor(readLine) {
   return {
-    /**
-     * @param {string} question
-     * @param {readonly string[]} options
-     * @param {{ multiSelect?: boolean }} [opts]
-     * @returns {Promise<string[]>}
-     */
     async ask(question, options, opts = {}) {
-      if (!process.stdin.isTTY) return [];
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
-      try {
-        process.stdout.write(`\n${ui.yellow("?")} ${ui.bold(question)}\n`);
-        if (!options.length) {
-          const free = await rl.question(ui.dim("  > "));
-          return free.trim() ? [free.trim()] : [];
-        }
-        options.forEach((opt, i) => process.stdout.write(`  ${ui.cyan(String(i + 1))}. ${opt}\n`));
-        const hint = opts.multiSelect ? "번호(쉼표로 여러 개)" : "번호";
-        const answer = (await rl.question(ui.dim(`  ${hint} > `))).trim();
-        if (!answer) return [];
-        const picked = answer
-          .split(",")
-          .map((part) => Number(part.trim()))
-          .filter((n) => Number.isInteger(n) && n >= 1 && n <= options.length)
-          .map((n) => /** @type {string} */ (options[n - 1]));
-        // 번호로 안 읽히면 자유 입력으로 취급한다.
-        return picked.length ? picked : [answer];
-      } finally {
-        rl.close();
-      }
+      process.stdout.write(`
+${ui.yellow("?")} ${ui.bold(question)}
+`);
+      options.forEach((opt, i) => process.stdout.write(`  ${ui.cyan(String(i + 1))}. ${opt}
+`));
+      const hint = options.length
+        ? (opts.multiSelect ? "번호(쉼표로 여러 개)" : "번호")
+        : "답";
+      process.stdout.write(`${ui.dim(`  ${hint} > `)}`);
+
+      const answer = (await readLine())?.trim() ?? "";
+      if (!answer) return [];
+      if (!options.length) return [answer];
+
+      const picked = answer
+        .split(",")
+        .map((part) => Number(part.trim()))
+        .filter((n) => Number.isInteger(n) && n >= 1 && n <= options.length)
+        .map((n) => /** @type {string} */ (options[n - 1]));
+      // 번호로 안 읽히면 자유 입력으로 취급한다 — 되묻느라 절차를 멈추지 않는다.
+      return picked.length ? picked : [answer];
     },
   };
+}
+
+/*
+ * stdin 은 하나뿐이다 — 지금 누가 쥐고 있는지 여기서 기억한다.
+ *
+ * REPL 이 돌 때는 REPL 의 입력 큐가 유일한 독자다. 질문할 때마다 readline 을 새로
+ * 열면 두 인터페이스가 경쟁해서, 질문은 떠 있는데 무엇을 눌러도 선택이 되지 않는다
+ * (실측: /harness-init 의 AskUserQuestion 이 응답을 못 받고 멈췄다).
+ *
+ * 인자로 넘기지 않고 여기 두는 이유는 실행 경로가 넷(/skill, 오케스트레이터, /agent,
+ * 일반 대화)이라 배관만 늘기 때문이다. 프로세스에 하나뿐인 자원이니 자리도 하나면 된다.
+ */
+/** @type {(() => Promise<string | null>) | null} */
+let lineReader = null;
+
+/**
+ * stdin 을 쥔 쪽이 자기 줄 읽기를 등록한다. REPL 이 시작할 때 한 번 부른다.
+ * @param {(() => Promise<string | null>) | null} fn
+ */
+export function setLineReader(fn) {
+  lineReader = fn;
+}
+
+/**
+ * 지금 환경에 맞는 질문 통로를 만든다.
+ * 등록된 독자가 있으면 그쪽으로, 없으면(단발 실행) 직접 readline 을 연다.
+ * @returns {import("@ax-navi/core").Elicitor}
+ */
+export function createHostElicitor() {
+  return createElicitor(async () => {
+    if (lineReader) return lineReader();
+    if (!process.stdin.isTTY) return null;
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      return await rl.question("");
+    } finally {
+      rl.close();
+    }
+  });
 }
 
 /* ---------- 진행 표시 ---------- */

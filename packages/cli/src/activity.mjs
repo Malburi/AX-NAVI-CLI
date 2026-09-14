@@ -53,6 +53,12 @@ export function createActivity({ output, ui }) {
   let frame = 0;
   let startedAt = 0;
   let painted = false;
+  /*
+   * 멈춰 세운 상태. 회전자 타이머는 계속 도니까, 이 표시가 없으면 suspend() 로 지워도
+   * 120ms 뒤 타이머가 그대로 다시 그린다 — 질문의 입력 자리를 덮어써서 어디에 답해야
+   * 할지 안 보이게 된다(실측: AskUserQuestion 선택 불가).
+   */
+  let suspended = false;
   /** @type {ActivityState} */
   let state = { label: "", outputTokens: 0 };
 
@@ -67,7 +73,7 @@ export function createActivity({ output, ui }) {
   }
 
   function paint() {
-    if (!active) return;
+    if (!active || suspended) return;
     // 폭을 넘으면 줄이 접히고, 한 줄만 지우는 이 코드와 어긋나 잔상이 남는다.
     output.write(COL_ZERO + CLEAR_LINE + clipToWidth(line(), (output.columns ?? 80) - 1));
     painted = true;
@@ -105,11 +111,18 @@ export function createActivity({ output, ui }) {
       state.outputTokens += tokens;
       if (painted) paint();
     },
-    suspend: erase,
-    resume: paint,
+    suspend() {
+      suspended = true;
+      erase();
+    },
+    resume() {
+      suspended = false;
+      paint();
+    },
     stop() {
       if (timer) clearInterval(timer);
       timer = null;
+      suspended = true;
       erase();
     },
   };

@@ -15,7 +15,7 @@ import { selectProvider } from "./provider.mjs";
 import { startMcpBridge } from "./mcp/bridge.mjs";
 import { createActivity } from "./activity.mjs";
 import { join } from "node:path";
-import { AGENTS_DIR, REPO_ROOT, createAuditSink, createElicitor, createProgressSink, debug, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, createAuditSink, createHostElicitor, createProgressSink, debug, ui } from "./runtime.mjs";
 
 /**
  * @param {object} args
@@ -39,7 +39,29 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * API 키를 못 받는 환경에서도 에이전트 경로를 쓸 수 있다.
    */
   const paths = resolveProjectPaths(root);
-  const elicitor = createElicitor();
+
+  /*
+   * 상태 표시를 먼저 만든다 — 질문이 뜰 때 이 줄을 걷어야 하기 때문이다.
+   * 안 걷으면 회전자가 질문 위에 덮어써서 무엇을 묻는지 안 보인다.
+   */
+  const activity = createActivity({ output: process.stdout, ui });
+
+  /*
+   * 질문 통로. 상태 표시를 걷었다 되살리며 묻는다 —
+   * 안 걷으면 회전자가 질문지 위에 덮어써서 선택지가 안 보인다.
+   */
+  const baseElicitor = createHostElicitor();
+  /** @type {import("@ax-navi/core").Elicitor} */
+  const elicitor = {
+    async ask(question, options, opts) {
+      activity.suspend();
+      try {
+        return await baseElicitor.ask(question, options, opts ?? {});
+      } finally {
+        activity.resume();
+      }
+    },
+  };
 
   /*
    * 위임 실행이 사용자에게 되묻고 우리 인덱스를 쓸 수 있게 MCP 브리지를 띄운다.
@@ -131,8 +153,6 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 상태 표시는 한 줄 제자리 갱신이라, 무언가를 찍기 전에 그 줄을 지우고 찍은 뒤 되살린다.
    * 스트리밍 텍스트는 줄 단위로 모아 내보낸다 — 토큰마다 화면을 건드리면 깜빡인다.
    */
-  const activity = createActivity({ output: process.stdout, ui });
-
   /** @param {string} text */
   const emit = (text) => {
     activity.suspend();
@@ -181,8 +201,11 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         debug(`${ui.yellow("  ! ")}${ui.dim(event.reason ?? "")}\n`);
       } else if (event.type === "tool_call") {
         flushText();
-        activity.set({ tool: event.tool ?? "" });
-        emit(`${ui.cyan(`  → ${event.tool}`)} ${ui.dim(summarize(event.input))}`);
+        const tool = toolLabel(event.tool ?? "");
+        activity.set({ tool });
+        // 질문 도구는 곧바로 질문지를 그리므로, 인자를 미리 풀면 같은 말을 두 번 한다.
+        const args = tool === "AskUserQuestion" ? "" : summarize(event.input);
+        emit(`${ui.cyan(`  → ${tool}`)} ${args ? ui.dim(args) : ""}`);
       } else if (event.type === "tool_result") {
         const head = (event.result ?? "").split("\n")[0] ?? "";
         const mark = event.isError ? ui.red("  ✗") : ui.green("  ←");
@@ -251,6 +274,22 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
 }
 
 /** @param {unknown} input */
+/**
+ * 화면에 쓸 도구 이름.
+ *
+ * 질문·인덱스 조회는 MCP 브리지를 타고 가느라 `mcp__axnavi__` 가 붙는데, 그건 우리
+ * 내부 전송 경로 이름이지 사용자가 알아야 할 것이 아니다. 화면에서는 걷어낸다.
+ * @param {string} name
+ * @returns {string}
+ */
+function toolLabel(name) {
+  return name.replace(/^mcp__axnavi__/, "");
+}
+
+/**
+ * @param {unknown} input
+ * @returns {string}
+ */
 function summarize(input) {
   if (!input || typeof input !== "object") return "";
   const parts = Object.entries(input)

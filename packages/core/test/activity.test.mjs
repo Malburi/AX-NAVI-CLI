@@ -187,3 +187,19 @@ test("어떤 폭에서도 상태줄이 폭을 넘지 않는다 — 넘으면 접
     assert.ok(visibleLength(line) < width, `폭 ${width}에서 ${visibleLength(line)}자`);
   }
 });
+
+test("멈춰 세우면 회전자 타이머가 다시 그리지 않는다", async () => {
+  const out = fakeOutput();
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("harness-init");
+  activity.suspend();
+  out.reset();
+
+  // 타이머가 여러 번 돌 만큼 기다린다. 예전에는 여기서 되살아나 질문지를 덮어썼다.
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(out.text(), "", "멈춰 세웠는데 타이머가 다시 그렸다");
+
+  activity.resume();
+  assert.ok(out.text().includes("harness-init"), "되살리지 않았다");
+  activity.stop();
+});
