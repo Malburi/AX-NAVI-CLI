@@ -27,10 +27,29 @@ import { randomUUID } from "node:crypto";
  * @property {string} updatedAt
  * @property {string} title           목록에서 알아볼 수 있는 첫 요청 앞부분
  * @property {Conversation} conversation
+ * @property {SessionMessage[]} [messages]  이어서 열 때 보여 줄 대화 기록
+ */
+
+/**
+ * 주고받은 말 한 마디.
+ * @typedef {object} SessionMessage
+ * @property {"user" | "assistant"} role
+ * @property {string} text
+ * @property {string} at
  */
 
 /** 목록·복원이 무거워지지 않도록 상한을 둔다. */
 const TITLE_LIMIT = 70;
+
+/*
+ * 대화 기록 상한.
+ *
+ * 위임 경로(claude CLI)는 대화를 그쪽이 들고 있어 conversation.turns 가 비어 있다
+ * (실측). 그래서 이어서 열 때 보여 줄 내용을 **우리가 따로** 쌓아 둔다.
+ * 무한정 쌓으면 세션 파일이 커지므로 마지막 것들만 남긴다.
+ */
+const MESSAGE_LIMIT = 40;
+const MESSAGE_CHARS = 8000;
 
 /**
  * @param {ProjectPaths} paths
@@ -114,4 +133,22 @@ export async function listSessions(paths, limit = 20) {
 export async function latestSession(paths) {
   const [first] = await listSessions(paths, 1);
   return first ?? null;
+}
+
+/**
+ * 대화 한 마디를 기록에 붙인다. 상한을 넘으면 오래된 것부터 떨어난다.
+ *
+ * @param {SessionMessage[]} messages
+ * @param {"user" | "assistant"} role
+ * @param {string} text
+ * @returns {SessionMessage[]}
+ */
+export function appendMessage(messages, role, text) {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return messages;
+  const one = trimmed.length > MESSAGE_CHARS
+    ? `${trimmed.slice(0, MESSAGE_CHARS)}\n…(이하 생략)`
+    : trimmed;
+  const next = [...messages, { role, text: one, at: new Date().toISOString() }];
+  return next.length > MESSAGE_LIMIT ? next.slice(next.length - MESSAGE_LIMIT) : next;
 }

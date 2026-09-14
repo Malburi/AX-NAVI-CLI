@@ -13,6 +13,7 @@ import {
   listSessions,
   loadAllAgents,
   loadAllSkills,
+  appendMessage,
   loadSession,
   newSessionId,
   saveSession,
@@ -29,6 +30,7 @@ import { renderStatus } from "./status.mjs";
 import { estimateTokens } from "@ax-navi/core";
 import { createNaviPersona } from "./persona.mjs";
 import { createTypeahead } from "./typeahead.mjs";
+import { renderReplay, replayFrame } from "./replay.mjs";
 
 const NL = String.fromCharCode(10);
 
@@ -94,6 +96,24 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
    * /find 를 치면 `AX-find> /` 가 되고, 지우면 `>` 만 남았다.
    */
   rl.setPrompt(PROMPT);
+
+  /**
+   * 이어서 열 때 지난 대화를 되살린다.
+   *
+   * 이게 없으면 "이어서 시작 · 2턴" 한 줄만 뜨고 화면은 비어 있다.
+   * 무엇을 이어가는지 알 수 없으니 결국 앞 질문을 다시 쓰게 된다.
+   * @param {import("@ax-navi/core").SessionRecord} record
+   * @returns {boolean} 실제로 보여 준 것이 있는지
+   */
+  const showReplay = (record) => {
+    const messages = record.messages ?? [];
+    if (!messages.length) return false;
+    const width = process.stdout.columns ?? 100;
+    const { head, tail } = replayFrame({ title: record.title ?? "", turns: record.turns, width, ui });
+    const body = renderReplay({ messages, width, ui });
+    process.stdout.write([""].concat(head, body, tail, "").join(NL) + NL);
+    return true;
+  };
 
   const menu = process.stdin.isTTY
     ? attachAutocomplete({
@@ -266,7 +286,17 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
    * 턴 수는 따로 센다 — 위임 경로에서는 대화를 그쪽이 들고 있어
    * conversation.turns 가 비어 있기 때문이다.
    */
-  /** @type {{ id: string, agent: string, turns: number, title?: string, createdAt?: string, conversation: import("@ax-navi/core").Conversation } | null} */
+  /**
+   * @typedef {object} Thread
+   * @property {string} id
+   * @property {string} agent
+   * @property {number} turns
+   * @property {string} [title]
+   * @property {string} [createdAt]
+   * @property {import("@ax-navi/core").Conversation} conversation
+   * @property {import("@ax-navi/core").SessionMessage[]} [messages]  이어서 열 때 되살릴 대화
+   */
+  /** @type {Thread | null} */
   let thread = null;
 
   /*
@@ -287,16 +317,20 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
         title: record.title,
         createdAt: record.createdAt,
         conversation: record.conversation,
+        messages: record.messages ?? [],
       };
-      process.stdout.write(
-        `  ${ui.green("이어서 시작")}  ${ui.dim(`${record.agent} · ${record.turns}턴 · ${record.title}`)}\n\n`,
-      );
+      // 되살렸으면 프레임 머리말이 이미 같은 걸 말한다. 두 번 적지 않는다.
+      if (!showReplay(record)) {
+        process.stdout.write(
+          `  ${ui.green("이어서 시작")}  ${ui.dim(`${record.agent} · ${record.turns}턴 · ${record.title}`)}\n\n`,
+        );
+      }
     } else {
       process.stdout.write(`  ${ui.yellow("이어갈 세션이 없다")} ${ui.dim("— 새 대화로 시작한다.")}\n\n`);
     }
   }
 
-  /** @param {string} agentName @param {string} firstLine */
+  /** @param {string} agentName @param {string} firstLine @returns {Thread} */
   const threadFor = (agentName, firstLine) => {
     if (!thread || thread.agent !== agentName) {
       thread = {
@@ -304,12 +338,14 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
         agent: agentName,
         turns: 0,
         conversation: { turns: [] },
+        messages: [],
         title: toTitle(firstLine),
         createdAt: new Date().toISOString(),
       };
     }
-    thread.turns += 1;
-    return thread;
+    const live = /** @type {Thread} */ (thread);
+    live.turns += 1;
+    return live;
   };
 
   /** 한 턴이 끝날 때마다 저장한다 — 마지막에 한 번 저장하면 죽는 순간 전부 잃는다. */
@@ -325,6 +361,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
         updatedAt: new Date().toISOString(),
         title: thread.title ?? "",
         conversation: thread.conversation,
+        messages: thread.messages ?? [],
       });
     } catch {
       // 세션 저장 실패가 대화를 끊을 이유는 아니다.
@@ -359,10 +396,13 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
               title: record.title,
               createdAt: record.createdAt,
               conversation: record.conversation,
+              messages: record.messages ?? [],
             };
-            process.stdout.write(
-              `  ${ui.green("이어서 시작")}  ${ui.dim(`${record.agent} · ${record.turns}턴 · ${record.title}`)}${NL}`,
-            );
+            if (!showReplay(record)) {
+              process.stdout.write(
+                `  ${ui.green("이어서 시작")}  ${ui.dim(`${record.agent} · ${record.turns}턴 · ${record.title}`)}${NL}`,
+              );
+            }
           },
           onContext: () => (thread
             ? {
@@ -386,6 +426,13 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
           conversation: t.conversation,
           onCost: (usd) => { sessionCost += usd; },
           onContextSize: (n) => { lastContextTokens = n; },
+          /*
+           * 주고받은 말을 쌓아 둔다. 위임 경로는 대화를 claude 가 들고 있어
+           * conversation.turns 가 비어 있으므로, 되살릴 내용은 우리가 따로 가지고 있어야 한다.
+           */
+          onAnswer: (text) => {
+            t.messages = appendMessage(appendMessage(t.messages ?? [], "user", line), "assistant", text);
+          },
           queuedCount: () => queued.length,
         });
         await persist();

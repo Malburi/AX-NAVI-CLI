@@ -27,12 +27,13 @@ import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, 
  * @param {import("@ax-navi/core").Conversation} [args.conversation]  주면 대화를 이어간다
  * @param {(usd: number) => void} [args.onCost]  이번 실행의 비용을 호출부에 알린다
  * @param {(tokens: number) => void} [args.onContextSize]  이번 턴이 실제로 실어 보낸 컨텍스트 크기
+ * @param {(text: string) => void} [args.onAnswer]  대화를 다시 여는 데 쓸 답변 본문
  * @param {() => number} [args.queuedCount]  대기 중인 입력 줄 수 (상태 표시에 쓴다)
  * @param {import("./provider.mjs").ProviderName} [args.providerName]
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<number>} 프로세스 종료 코드
  */
-export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, onCost, onContextSize, queuedCount, providerName, signal }) {
+export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, onCost, onContextSize, onAnswer, queuedCount, providerName, signal }) {
   /*
    * Provider를 먼저 고른다.
    *
@@ -216,6 +217,9 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     }
   };
 
+  /** 이번 턴에서 사용자가 본 답. 세션에 쌓아 두면 다음에 이어 열 때 되살릴 수 있다. */
+  let answer = "";
+
   const startedAt = Date.now();
   let failed = false;
   let toolErrors = 0;
@@ -232,7 +236,11 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
 
   try {
     for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt: prompt, ...(conversation ? { conversation } : {}) })) {
-      if (event.type === "text") emitText(event.text ?? "", event.parentId);
+      if (event.type === "text") {
+        // 서브에이전트가 한 말은 말고 오케스트레이터 본인의 답만 모은다 — 그게 사용자가 본 답이다.
+        if (!event.parentId) answer += event.text ?? "";
+        emitText(event.text ?? "", event.parentId);
+      }
       else if (event.type === "compacted") {
         // 컨텍스트를 줄였다는 사실은 숨기지 않는다 — 답이 앞 내용을 잊은 이유가 될 수 있다.
         emit(`${ui.yellow("  ⤵ ")}${ui.dim(event.reason ?? "")}`);
@@ -315,9 +323,13 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         /*
          * 위임 경로에서는 대화를 그쪽이 들고 있어 우리 turns 가 비어 있다 —
          * 그대로 두면 상태줄이 늘 "Ctx 0" 이라 쓸모가 없다.
-         * 실제로 실어 보낸 양(새 입력 + 캐시에서 읽은 양)이 곧 컨텍스트 크기다.
+         * 실제로 실어 보낸 양이 곳 컨텍스트 크기다.
+         * 캐시 **생성**량까지 더해야 한다 — 첫 턴은 읽을 캐시가 없어 전부 생성으로 잡힌다.
+         * 그걸 빼면 26k 를 실어 보내고도 "Ctx 2" 가 된다(실측).
          */
-        onContextSize?.(event.usage.inputTokens + event.usage.cacheReadTokens);
+        onContextSize?.(
+          event.usage.inputTokens + event.usage.cacheReadTokens + event.usage.cacheWriteTokens,
+        );
         // 비용은 Provider가 실제로 줄 때만 표시한다. 추정치를 지어내지 않는다.
         if (typeof event.usage.costUsd === "number") {
           totals.costUsd = (totals.costUsd ?? 0) + event.usage.costUsd;
@@ -353,6 +365,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     activity.stop();
     process.off("SIGINT", onSigint);
     endTurn(controller);
+    onAnswer?.(answer);
     await audit.flush();
   }
 
