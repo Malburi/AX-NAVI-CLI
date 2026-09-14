@@ -9,6 +9,7 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { pick } from "./picker.mjs";
 
 /** @typedef {import("@ax-navi/core").AuditRecord} AuditRecord */
 /** @typedef {import("@ax-navi/core").ProjectPaths} ProjectPaths */
@@ -191,11 +192,14 @@ export function interruptTurn() {
 
 /**
  * 지금 환경에 맞는 질문 통로를 만든다.
- * 등록된 독자가 있으면 그쪽으로, 없으면(단발 실행) 직접 readline 을 연다.
+ *
+ * 실터미널이면 방향키로 고르게 하고, 파이프·로그면 번호 입력으로 내려앉는다.
+ * 번호 경로는 등록된 줄 독자를 쓴다 — 그러지 않으면 REPL 과 stdin 을 다푼다.
+ *
  * @returns {import("@ax-navi/core").Elicitor}
  */
 export function createHostElicitor() {
-  return createElicitor(async () => {
+  const byLine = createElicitor(async () => {
     if (lineReader) return lineReader();
     if (!process.stdin.isTTY) return null;
     const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -205,6 +209,22 @@ export function createHostElicitor() {
       rl.close();
     }
   });
+
+  return {
+    async ask(question, options, opts = {}) {
+      // 자유 입력은 고를 게 없다 — 그때만 줄 입력을 그대로 둔다.
+      if (!options.length || !process.stdin.isTTY) return byLine.ask(question, options, opts);
+      return pick({
+        question,
+        options,
+        multiSelect: opts.multiSelect === true,
+        input: process.stdin,
+        output: process.stdout,
+        ui,
+        onInterrupt: () => { interruptTurn(); },
+      });
+    },
+  };
 }
 
 /* ---------- 진행 표시 ---------- */
