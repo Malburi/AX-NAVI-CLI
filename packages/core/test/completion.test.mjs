@@ -22,11 +22,11 @@ const plainUi = {
   bold: (/** @type {string} */ s) => s,
 };
 
-test("명령 목록 = 내장 7종 + 스킬 24종", async () => {
+test("명령 목록 = 내장 9종 + 스킬 24종", async () => {
   const commands = buildCommands(await loadAllSkills(SKILLS));
   const builtins = commands.filter((c) => c.kind === "builtin");
   const skills = commands.filter((c) => c.kind === "skill");
-  assert.equal(builtins.length, 7);
+  assert.equal(builtins.length, 9);
   assert.equal(skills.length, 24, "스킬이 전부 슬래시 명령이 돼야 한다");
 });
 

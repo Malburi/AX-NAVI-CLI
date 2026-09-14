@@ -5,7 +5,7 @@
  * 라우팅은 아직 규칙 기반이다. 의도 분류를 LLM에 맡기면 질문 한 번마다 호출이
  * 하나 더 붙는데, MVP에서 그 비용을 정당화할 근거가 없다.
  */
-import { createInterface } from "node:readline/promises";
+import { createInterface } from "node:readline";
 import { basename } from "node:path";
 import { indexStaleness } from "@ax-navi/indexer";
 import { loadAllAgents, loadAllSkills } from "@ax-navi/core";
@@ -64,26 +64,100 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
       })
     : null;
 
+  /*
+   * 대화 상태.
+   *
+   * 이게 없으면 매 입력이 새 대화라 "그거 수정하면 어디 영향가?" 에서 "그거"를 잃는다.
+   * 에이전트가 바뀌면(라우팅이 다른 역할을 고르면) 대화를 새로 시작한다 —
+   * 다른 역할의 대화를 이어 붙이면 지침이 섞인다.
+   *
+   * 턴 수는 따로 센다 — 위임 경로에서는 대화를 그쪽이 들고 있어
+   * conversation.turns 가 비어 있기 때문이다.
+   */
+  /** @type {{ agent: string, turns: number, conversation: import("@ax-navi/core").Conversation } | null} */
+  let thread = null;
+
+  /** @param {string} agentName */
+  const threadFor = (agentName) => {
+    if (!thread || thread.agent !== agentName) {
+      thread = { agent: agentName, turns: 0, conversation: { turns: [] } };
+    }
+    thread.turns += 1;
+    return thread;
+  };
+
+  /*
+   * 입력을 직접 큐로 받는다.
+   *
+   * rl.question() 하나로 돌리면 **처리 중에 들어온 줄이 버려진다** — 대기 중인 질문이
+   * 없을 때 오는 line 이벤트를 아무도 받지 않기 때문이다. 사람이 프롬프트를 기다렸다
+   * 치는 동안엔 안 드러나지만, 여러 줄을 붙여넣거나 파이프로 먹이면 첫 줄만 실행되고
+   * 나머지가 사라진다(실측). 큐에 쌓아 두면 순서대로 다 처리된다.
+   */
+  /** @type {string[]} */
+  const queued = [];
+  /** @type {((line: string | null) => void) | null} */
+  let waiter = null;
+  let closed = false;
+
+  rl.on("line", (raw) => {
+    if (waiter) {
+      const resolve = waiter;
+      waiter = null;
+      resolve(raw);
+    } else {
+      queued.push(raw);
+    }
+  });
+  rl.on("close", () => {
+    closed = true;
+    waiter?.(null);
+    waiter = null;
+  });
+
+  /** @returns {Promise<string | null>} null이면 입력 끝. */
+  const nextLine = () => {
+    const buffered = queued.shift();
+    if (buffered !== undefined) return Promise.resolve(buffered);
+    if (closed) return Promise.resolve(null);
+    return new Promise((resolve) => { waiter = resolve; });
+  };
+
   let code = 0;
 
   for (;;) {
-    let line;
-    try {
-      line = (await rl.question(PROMPT)).trim();
-    } catch {
-      break; // Ctrl+C / EOF
-    }
+    // 큐에 이미 쌓여 있으면 프롬프트를 다시 그리지 않는다 — 붙여넣기가 어지러워진다.
+    if (!queued.length) process.stdout.write(PROMPT);
+    const raw = await nextLine();
+    if (raw === null) break; // Ctrl+C / EOF
+    const line = raw.trim();
     menu?.close();
     if (!line) continue;
     if (line === "/exit" || line === "/quit") break;
 
     try {
       if (line.startsWith("/")) {
-        code = await handleSlash({ paths, line, commands, skillByName });
+        code = await handleSlash({
+          paths, line, commands, skillByName,
+          onReset: () => { thread = null; },
+          onContext: () => (thread
+            ? {
+                agent: thread.agent,
+                turns: thread.turns,
+                sessionId: thread.conversation.providerSessionId,
+              }
+            : null),
+        });
       } else {
         const agent = route(line);
-        process.stderr.write(ui.dim(`  라우팅 → ${agent}\n`));
-        code = await executeAgent({ root: paths.root, agentName: agent, prompt: line });
+        const t = threadFor(agent);
+        process.stderr.write(ui.dim(`  ⋯ ${agent}${t.turns > 1 ? ` · ${t.turns}번째 턴` : ""}\n`));
+        code = await executeAgent({
+          root: paths.root,
+          agentName: agent,
+          prompt: line,
+          conversation: t.conversation,
+        });
       }
     } catch (error) {
       process.stderr.write(`${ui.red("실패")}: ${/** @type {Error} */ (error).message}\n`);
@@ -163,15 +237,50 @@ function route(input) {
  * @param {string} args.line
  * @param {import("./completion.mjs").SlashCommand[]} args.commands
  * @param {Map<string, { name: string }>} args.skillByName
+ * @param {() => void} [args.onReset]
+ * @param {() => ({ agent: string, turns: number, sessionId?: string } | null)} [args.onContext]
  * @returns {Promise<number>}
  */
-async function handleSlash({ paths, line, commands, skillByName }) {
+async function handleSlash({ paths, line, commands, skillByName, onReset, onContext }) {
   const spaceAt = line.indexOf(" ");
   const cmd = spaceAt === -1 ? line.slice(1) : line.slice(1, spaceAt);
   const argText = spaceAt === -1 ? "" : line.slice(spaceAt + 1).trim();
   const rest = argText ? argText.split(/\s+/) : [];
 
   switch (cmd) {
+    case "new":
+      /*
+       * 대화를 끊는다. 주제가 바뀌었는데 앞 대화를 끌고 가면 비용만 늘고
+       * 엉뚱한 맥락이 섞인다.
+       */
+      onReset?.();
+      process.stdout.write(`  ${ui.dim("새 대화를 시작한다.")}\n`);
+      return 0;
+
+    case "context": {
+      const info = onContext?.();
+      if (!info) {
+        process.stdout.write(`  ${ui.dim("진행 중인 대화 없음. 뭐든 물어보면 시작된다.")}\n`);
+        return 0;
+      }
+      const resume = info.sessionId
+        ? `${ui.green("활성")} ${ui.dim(`(${info.sessionId.slice(0, 8)}…)`)}`
+        : ui.dim("없음 — 이번 턴이 끝나면 잡힌다");
+      process.stdout.write(
+        [
+          "",
+          `  ${ui.dim("에이전트")}  ${info.agent}`,
+          `  ${ui.dim("턴")}        ${info.turns}`,
+          `  ${ui.dim("이어가기")}  ${resume}`,
+          "",
+          `  ${ui.dim("/new 로 대화를 끊는다. 주제가 바뀌면 끊는 편이 싸다.")}`,
+          "",
+          "",
+        ].join("\n"),
+      );
+      return 0;
+    }
+
     // `/` 만 치고 엔터 — 목록을 보여 준다. "알 수 없는 명령"으로 내쫓지 않는다.
     case "":
     case "help":

@@ -21,6 +21,21 @@
 /** @typedef {import("./agents/loader.mjs").AgentDefinition} AgentDefinition */
 
 /**
+ * 대화 상태.
+ *
+ * REPL이 턴마다 새 대화를 만들면 "그거 수정하면 어디 영향가?" 에서 "그거"를 잃는다.
+ * 그래서 호출부가 이 객체를 들고 다니며 같은 것을 계속 넘긴다.
+ *
+ * 두 경로가 대화를 다르게 보관한다.
+ *   anthropic   우리가 turns를 들고 매번 전부 다시 보낸다
+ *   claude-cli  그쪽이 대화를 들고 있고 우리는 providerSessionId만 기억한다
+ *
+ * @typedef {object} Conversation
+ * @property {Turn[]} turns
+ * @property {string} [providerSessionId]
+ */
+
+/**
  * @typedef {object} LoopEvent
  * @property {"text" | "tool_call" | "tool_result" | "usage" | "turn" | "done" | "error" | "delegated"} type
  * @property {string} [text]
@@ -45,10 +60,11 @@ const DEFAULT_MAX_TURNS = 12;
  * @param {import("./tools/gateway.mjs").ToolGateway} args.gateway
  * @param {ToolContext} args.ctx
  * @param {string} args.userPrompt
+ * @param {Conversation} [args.conversation]  주면 이어간다. 없으면 새 대화.
  * @param {number} [args.maxTurns]
  * @returns {AsyncGenerator<LoopEvent, { turns: Turn[], stopReason: string }>}
  */
-export async function* runAgent({ provider, agent, registry, gateway, ctx, userPrompt, maxTurns = DEFAULT_MAX_TURNS }) {
+export async function* runAgent({ provider, agent, registry, gateway, ctx, userPrompt, conversation, maxTurns = DEFAULT_MAX_TURNS }) {
   const tools = registry.definitionsFor(agent.role);
 
   if (provider.capabilities.ownsAgentLoop) {
@@ -84,12 +100,16 @@ export async function* runAgent({ provider, agent, registry, gateway, ctx, userP
         tier: agent.tier,
         label: agent.name,
         ...(agent.allowDelegation ? { allowDelegation: true } : {}),
+        ...(conversation?.providerSessionId ? { resumeFrom: conversation.providerSessionId } : {}),
       },
       userPrompt,
       ctx.signal,
     )) {
       if (event.type === "text_delta") yield { type: "text", text: event.text };
-      else if (event.type === "tool_use") yield { type: "tool_call", tool: event.name, input: event.input };
+      else if (event.type === "session") {
+        // 다음 턴이 이어 붙일 수 있게 기억한다.
+        if (conversation) conversation.providerSessionId = event.id;
+      } else if (event.type === "tool_use") yield { type: "tool_call", tool: event.name, input: event.input };
       else if (event.type === "tool_result") {
         yield { type: "tool_result", tool: "(위임)", result: event.content, isError: event.isError };
       } else if (event.type === "usage") yield { type: "usage", usage: event.usage };
@@ -109,8 +129,13 @@ export async function* runAgent({ provider, agent, registry, gateway, ctx, userP
     cacheSystem: true,
   });
 
+  /*
+   * 이어가는 대화면 기존 turns 뒤에 붙인다. 없으면 새로 시작한다.
+   * conversation 객체를 그대로 쓰므로 호출부가 결과를 따로 받아 저장할 필요가 없다.
+   */
   /** @type {Turn[]} */
-  const turns = [{ role: "user", content: [{ type: "text", text: userPrompt }] }];
+  const turns = conversation?.turns ?? [];
+  turns.push({ role: "user", content: [{ type: "text", text: userPrompt }] });
 
   try {
     for (let turn = 1; turn <= maxTurns; turn += 1) {

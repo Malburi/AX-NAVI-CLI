@@ -20,11 +20,12 @@ import { AGENTS_DIR, REPO_ROOT, createAuditSink, createElicitor, createProgressS
  * @param {string} [args.agentName]        agents/<이름>.md 를 읽어 실행자로 쓴다
  * @param {import("@ax-navi/core").AgentDefinition} [args.agent]  미리 만든 실행자 (오케스트레이터 등)
  * @param {string} args.prompt
+ * @param {import("@ax-navi/core").Conversation} [args.conversation]  주면 대화를 이어간다
  * @param {import("./provider.mjs").ProviderName} [args.providerName]
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<number>} 프로세스 종료 코드
  */
-export async function executeAgent({ root, agentName, agent: preset, prompt, providerName, signal }) {
+export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, providerName, signal }) {
   /*
    * Provider를 먼저 고른다.
    *
@@ -94,7 +95,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, pro
   const totals = { input: 0, output: 0, cacheRead: 0, costUsd: null };
 
   try {
-    for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt: prompt })) {
+    for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt: prompt, ...(conversation ? { conversation } : {}) })) {
       if (event.type === "text") process.stdout.write(event.text ?? "");
       else if (event.type === "delegated") {
         /*

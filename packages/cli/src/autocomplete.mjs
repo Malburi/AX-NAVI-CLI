@@ -46,7 +46,7 @@ const CLEAR_DOWN = "[J";
  * readline 인터페이스에 자동완성 메뉴를 붙인다.
  *
  * @param {object} args
- * @param {import("node:readline/promises").Interface & { line?: string }} args.rl
+ * @param {import("node:readline").Interface & { line?: string }} args.rl
  * @param {NodeJS.ReadStream} args.input
  * @param {NodeJS.WriteStream} args.output
  * @param {(line: string) => MenuItem[]} args.source  현재 입력에 대한 후보 목록

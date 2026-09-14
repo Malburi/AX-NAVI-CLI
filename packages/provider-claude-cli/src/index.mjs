@@ -195,6 +195,8 @@ export function translateEvent(msg) {
   }
 
   if (msg.type === "result") {
+    // 다음 턴에 --resume 으로 이어 붙일 식별자. 이게 있어야 REPL이 대화를 기억한다.
+    if (msg.session_id) out.push({ type: "session", id: msg.session_id });
     const u = msg.usage ?? {};
     out.push({
       type: "usage",
@@ -293,6 +295,8 @@ export class ClaudeCliProvider {
       "--output-format", "stream-json",
       "--verbose",
       "--model", MODEL_BY_TIER[spec.tier],
+      // 이어가기. 없으면 새 대화로 시작한다.
+      ...(spec.resumeFrom ? ["--resume", spec.resumeFrom] : []),
       /*
        * 사용자가 개인적으로 붙여 둔 MCP 서버는 우리 도구 계약 밖이다.
        * --strict-mcp-config 로 그것들을 끊고, --mcp-config 로 우리 것만 올린다.

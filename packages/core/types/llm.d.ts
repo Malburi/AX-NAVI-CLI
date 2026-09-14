@@ -54,6 +54,14 @@ export interface SessionSpec {
    * ownsAgentLoop Provider만 이 요청을 실제로 들어줄 수 있다.
    */
   readonly allowDelegation?: boolean;
+  /*
+   * 이어갈 이전 대화의 Provider 쪽 식별자.
+   *
+   * ownsAgentLoop Provider는 대화를 자기가 들고 있어서 우리가 turns를 다시 보낼 수 없다.
+   * 대신 이 id를 주면 그쪽이 이어 준다(실측: claude --resume 으로 앞 턴 내용이 유지됨).
+   * 부수 효과로 그쪽의 컨텍스트 관리(자동 압축)도 함께 물려받는다.
+   */
+  readonly resumeFrom?: string;
 }
 
 export interface ProviderCapabilities {
@@ -98,6 +106,8 @@ export interface Usage {
  */
 export type ProviderEvent =
   | { readonly type: "turn_start"; readonly turnId: string }
+  /* Provider가 대화를 자기 쪽에 들고 있을 때, 다음 턴에 이어 붙일 식별자. */
+  | { readonly type: "session"; readonly id: string }
   | { readonly type: "text_delta"; readonly text: string }
   | { readonly type: "thinking_delta"; readonly text: string }
   | { readonly type: "tool_use"; readonly id: string; readonly name: string; readonly input: unknown }

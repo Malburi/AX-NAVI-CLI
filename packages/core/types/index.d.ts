@@ -12,4 +12,5 @@ export { runAgent } from "../src/loop.mjs";
 export { loadSkill, resolveSkill, loadAllSkills } from "../src/skills/loader.mjs";
 
 export type { AgentDefinition } from "../src/agents/loader.mjs";
+export type { Conversation } from "../src/loop.mjs";
 export type { SkillDefinition } from "../src/skills/loader.mjs";
