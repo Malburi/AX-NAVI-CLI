@@ -41,9 +41,11 @@ function fakeOutput(isTTY = true, columns = 100) {
 
 /* ---------- 폭 계산 ---------- */
 
-test("색 코드는 길이에 세지 않는다", () => {
-  assert.equal(visibleLength(`${ESC}[36m클로드${ESC}[0m`), 3);
+test("색 코드는 길이에 세지 않고, 한글은 두 칸으로 센다", () => {
+  // 터미널이 실제로 차지하는 칸을 센다. 글자 수로 세면 한글 줄이 접혀 줄 수가 틀어진다.
+  assert.equal(visibleLength(`${ESC}[36m클로드${ESC}[0m`), 6);
   assert.equal(visibleLength("plain"), 5);
+  assert.equal(visibleLength("ab가나"), 6, "섯임과 한글이 섞여도 칸을 제대로 센다");
 });
 
 test("폭을 넘으면 자르되 색 코드 중간에서 끊지 않는다", () => {

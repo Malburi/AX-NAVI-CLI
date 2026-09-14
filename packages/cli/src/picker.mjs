@@ -12,7 +12,7 @@
  * ESC 는 "이 질문 취소"여야지 "작업 전체 중단"이 아니다.
  */
 
-import { clipToWidth } from "./width.mjs";
+import { wrapToWidth } from "./width.mjs";
 
 const ESC = String.fromCharCode(27);
 const HIDE_CURSOR = `${ESC}[?25l`;
@@ -56,29 +56,84 @@ export function windowFor(total, selected, max = MAX_VISIBLE) {
  */
 export function renderPicker({ question, options, cursor, checked, multiSelect, width, ui }) {
   const cap = Math.max(20, width - 1);
-  const lines = [`${ui.yellow("?")} ${ui.bold(question)}`];
-  const { start, end } = windowFor(options.length, cursor);
+  const { lines, push } = lineSink(cap, ui);
 
-  if (start > 0) lines.push(ui.dim(`    ⋯ 위로 ${start}개 더`));
+  /*
+   * 모든 줄을 표시를 붙이기 **전에** 접는다.
+   *
+   * 질문문에 줄바꿈이 들어 있거나 줄이 폭을 넘으면 실제로 찍히는 줄 수가 늘어난다.
+   * 그걸 한 줄로 세면 지울 때 모자라 매번 몇 줄씩 남는다 — 실측으로 harness-init 의
+   * 견적 안내가 네 줄짜리 질문으로 왔고, 방향키를 움직일 때마다 같은 질문이 쌓였다.
+   */
+  push(question, ui.bold, ui.yellow("?"));
+
+  const { start, end } = windowFor(options.length, cursor);
+  if (start > 0) push(`⋯ 위로 ${start}개 더`, ui.dim, " ");
+
   for (let i = start; i < end; i += 1) {
     const here = i === cursor;
     const mark = multiSelect ? (checked.has(i) ? "◉ " : "◯ ") : "";
-    const text = `${mark}${options[i]}`;
-    // 고른 줄만 화살표와 색을 준다. 색 없는 터미널에서도 화살표로 구분된다.
-    lines.push(here ? `${ui.cyan("❯")} ${ui.cyan(text)}` : `  ${ui.dim(text)}`);
+    // 화살표는 첫 줄에만 단다. 접힌 줄마다 붙이면 항목이 여러 개로 보인다.
+    push(`${mark}${options[i]}`, here ? ui.cyan : ui.dim, here ? ui.cyan("❯") : " ");
   }
-  if (end < options.length) lines.push(ui.dim(`    ⋯ 아래로 ${options.length - end}개 더`));
+  if (end < options.length) push(`⋯ 아래로 ${options.length - end}개 더`, ui.dim, " ");
 
-  lines.push(
-    ui.dim(
-      multiSelect
-        ? "  ↑↓ 이동 · Space 선택 · Enter 확정 · Esc 건너뜀"
-        : "  ↑↓ 이동 · Enter 선택 · Esc 건너뜀",
-    ),
+  push(
+    multiSelect
+      ? "↑↓ 이동 · Space 선택 · Enter 확정 · Esc 건너뜀"
+      : "↑↓ 이동 · Enter 선택 · Esc 건너뜀",
+    ui.dim,
+    " ",
   );
-  // 폭을 넘으면 접혀서 지울 줄 수가 어긋난다 — 여기서 무조건 자른다.
-  return lines.map((line) => clipToWidth(line, cap));
+  return lines;
 }
+
+/**
+ * 고른 뒤에 남길 기록.
+ *
+ * 선택지 목록을 그대로 두면 다음 출력과 섞여 무엇을 골랐는지 되짚기 어렵다.
+ *
+ * @param {object} args
+ * @param {string} args.question
+ * @param {readonly string[]} args.answers
+ * @param {number} args.width
+ * @param {{ dim: (s: string) => string, cyan: (s: string) => string, bold: (s: string) => string, yellow: (s: string) => string }} args.ui
+ * @returns {string[]}
+ */
+export function renderAnswer({ question, answers, width, ui }) {
+  const { lines, push } = lineSink(Math.max(20, width - 1), ui);
+  push(question, ui.bold, ui.yellow("?"));
+  push(answers.length ? answers.join(", ") : "건너뜀", ui.cyan, ui.cyan("❯"));
+  return lines;
+}
+
+/**
+ * 줄을 모으는 그릇.
+ *
+ * 접기·표시 붙이기·들여쓰기를 한 자리에 모아 둔다. 한 곳이라도 빼먹으면 그 줄만
+ * 폭을 넘어 접히고, 그순간 전체 줄 수가 틀려 화면에 잔상이 남는다(실측: 안내 줄을
+ * 빼먹어 폭 30에서 35칸이 나왔다).
+ *
+ * @param {number} cap
+ * @param {{ dim: (s: string) => string }} _ui
+ */
+function lineSink(cap, _ui) {
+  const INDENT = 2; // 표시 한 칸 + 띄어쓰기
+  /** @type {string[]} */
+  const lines = [];
+  /**
+   * @param {string} text
+   * @param {(s: string) => string} paint
+   * @param {string} head  첫 줄 앞에 붙일 표시(한 칸)
+   */
+  const push = (text, paint, head) => {
+    wrapToWidth(text, cap - INDENT).forEach((part, i) => {
+      lines.push(`${i === 0 ? head : " "} ${paint(part)}`);
+    });
+  };
+  return { lines, push };
+}
+
 
 /**
  * 선택지를 띄우고 사용자가 고를 때까지 기다린다.
@@ -130,12 +185,8 @@ export function pick({ question, options, multiSelect = false, input, output, ui
        * 고른 결과를 한 줄로 남긴다.
        * 선택지 목록을 그대로 두면 다음 출력과 섞여 무엇을 골랐는지 되짚기 어렵다.
        */
-      const summary = answers.length ? answers.join(", ") : "건너뜀";
-      output.write(
-        cursorUp(drawn) + CLEAR_DOWN +
-          clipToWidth(`${ui.yellow("?")} ${ui.bold(question)}`, (output.columns ?? 80) - 1) + "\n" +
-          clipToWidth(`${ui.cyan("❯")} ${ui.cyan(summary)}`, (output.columns ?? 80) - 1) + "\n",
-      );
+      const lines = renderAnswer({ question, answers, width: output.columns ?? 80, ui });
+      output.write(cursorUp(drawn) + CLEAR_DOWN + lines.join("\n") + "\n");
       resolve(answers);
     };
 

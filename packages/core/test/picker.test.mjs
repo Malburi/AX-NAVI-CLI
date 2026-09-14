@@ -7,8 +7,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderPicker, windowFor } from "../../cli/src/picker.mjs";
-import { visibleLength } from "../../cli/src/width.mjs";
+import { renderAnswer, renderPicker, windowFor } from "../../cli/src/picker.mjs";
+import { visibleLength, wrapToWidth } from "../../cli/src/width.mjs";
 
 const plainUi = {
   dim: (/** @type {string} */ s) => s,
@@ -211,4 +211,53 @@ test("고른 뒤에는 결과 한 줄만 남긴다", async () => {
   const tail = io.text().split(String.fromCharCode(27) + "[0J").at(-1) ?? "";
   assert.match(tail, /나/);
   assert.ok(!tail.includes("↑↓"), "조작법이 화면에 남았다");
+});
+
+/* ---------- 줄 수 ---------- */
+
+/*
+ * 여기가 실제로 터졌던 자리다. harness-init 의 견적 안내가 여러 줄짜리 질문으로 왔는데
+ * 그걸 한 줄로 세는 바람에, 방향키를 움직일 때마다 지우다 만 질문이 화면에 쌓였다.
+ */
+const MULTILINE = [
+  "인덱싱 완료 — 백엔드 소스 2,575개·심볼 2,363개, 프론트엔드 소스 1,428개·심볼 13,532개. (여기까지 LLM 사용 없음)",
+  "",
+  "이제 LLM 분석 구간입니다. 예상 규모:",
+  "- 백엔드: Full 기준 약 27분 · 약 318,000 토큰",
+].join("\n");
+
+test("여러 줄짜리 질문도 줄 수가 정확하다 — 틀리면 지우다 말아 화면에 쌓인다", () => {
+  const lines = render({ question: MULTILINE, options: opts(3), width: 200 });
+  // 배열 안에 줄바꿈이 남아 있으면 세는 줄 수와 찍히는 줄 수가 어긋난다.
+  for (const line of lines) {
+    assert.ok(!line.includes("\n"), `줄 안에 줄바꿈이 남았다: ${JSON.stringify(line)}`);
+  }
+  assert.equal(lines.length, 4 + 3 + 1, "질문 4줄 + 선택지 3 + 조작법 1이 아니다");
+});
+
+test("긴 선택지는 잘리지 않고 접힌다 — 내용 자체가 정보다", () => {
+  const long = "서버·클라이언트 각각 초기화 후 연결 (1:1) — 두 프로젝트를 독립적으로 초기화하고 pair-init으로 연결합니다";
+  const lines = render({ options: [long], width: 40 });
+  const body = lines.join("").replace(/[❯?\s]/g, "");
+  assert.ok(body.includes("pair-init으로"), "뒷부분이 잘려 나갔다");
+});
+
+test("접힌 줄은 화살표를 되풀이하지 않는다 — 항목이 여러 개로 보인다", () => {
+  const lines = render({ options: ["아주 긴 선택지 ".repeat(10)], width: 40, cursor: 0 });
+  const arrows = lines.filter((l) => l.startsWith("❯")).length;
+  assert.equal(arrows, 1, `화살표가 ${arrows}개다`);
+});
+
+test("한글은 두 칸으로 세어 접는다 — 한 칸으로 세면 터미널이 접어 줄 수가 어긋난다", () => {
+  assert.equal(visibleLength("한글"), 4);
+  for (const line of wrapToWidth("한글".repeat(30), 20)) {
+    assert.ok(visibleLength(line) <= 20, `${visibleLength(line)}칸`);
+  }
+});
+
+test("답 기록도 여러 줄 질문을 그대로 담는다", () => {
+  const lines = renderAnswer({ question: MULTILINE, answers: ["Standard로 진행"], width: 200, ui: plainUi });
+  for (const line of lines) assert.ok(!line.includes("\n"));
+  assert.equal(lines.length, 5, "질문 4줄 + 답 1줄이 아니다");
+  assert.match(lines.join("\n"), /Standard로 진행/);
 });
