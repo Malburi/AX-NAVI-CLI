@@ -22,7 +22,8 @@
  *   (도움말 원문: "OAuth and keychain are never read") 구독 인증과 양립하지 않는다. 쓰지 않는다.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -323,6 +324,8 @@ export class ClaudeCliProvider {
        */
       "--strict-mcp-config",
       ...(this.options.mcpConfigPath ? ["--mcp-config", this.options.mcpConfigPath] : []),
+      // 호스트에 설치된 플러그인을 끌다 — 우리가 쓰는 것은 CLI 자기 설치 경로의 사본이다.
+      ...(pluginMuteSettings() ? ["--settings", /** @type {string} */ (pluginMuteSettings())] : []),
       ...this.options.extraArgs ?? [],
     ];
 
@@ -467,3 +470,45 @@ function terminateTree(child) {
   }
   child.kill();
 }
+
+/*
+ * 호스트에 설치된 플러그인을 끌다.
+ *
+ * axnavi 는 자기 설치 경로의 agents/ · skills/ 를 쓴다. 그런데 위임된 claude 는
+ * 그것과 별개로, 작업 폴더에 설치된 플러그인을 그대로 본다(실측: ax-navi 0.2.0
+ * 캐시본의 스킬 17종이 목록에 뗴다). 그러면 지금 고치고 있는 본이 아니라 예전
+ * 설치본이 쓰일 수 있고, 어느 \履쪽이 돌았는지 화면에서 구분되지도 않는다.
+ *
+ * --safe-mode 는 안 된다 — 플러그인과 함께 --mcp-config 까지 끊어서 질문·인덱스
+ * 도구가 사라진다(실측). --setting-sources 로 local 을 빼는 방법도 플러그인은
+ * 가려지지만 그 프로젝트의 권한 허용 목록까지 같이 잎어버린다. 그래서 플러그인
+ * 여부만 덮어쓰는 설정 파일을 따로 준다. 나머지 설정은 그대로 살아 있다.
+ *
+ * 끌 대상을 ax-navi 로 한정하지 않는 이유는 --strict-mcp-config 와 같다 — 우리가
+ * 알지 못하는 도구·스킬이 끌어들면 도구 게이트웨이 계약이 그만큼 느슨해진다.
+ *
+ * @returns {string | null} 설정 파일 경로. 끌 플러그인이 없으면 null.
+ */
+function pluginMuteSettings() {
+  if (mutePath !== undefined) return mutePath;
+  mutePath = null;
+  try {
+    const registry = join(homedir(), ".claude", "plugins", "installed_plugins.json");
+    if (!existsSync(registry)) return mutePath;
+    const parsed = JSON.parse(readFileSync(registry, "utf8"));
+    const names = Object.keys(parsed?.plugins ?? {});
+    if (!names.length) return mutePath;
+    /** @type {Record<string, boolean>} */
+    const enabledPlugins = {};
+    for (const name of names) enabledPlugins[name] = false;
+    const file = join(mkdtempSync(join(tmpdir(), "axnavi-settings-")), "settings.json");
+    writeFileSync(file, JSON.stringify({ enabledPlugins }, null, 2), "utf8");
+    mutePath = file;
+  } catch {
+    // 레지스트리를 못 읽어도 실행을 멈출 일은 아니다. 그냥 끌 것이 없다고 본다.
+  }
+  return mutePath;
+}
+
+/** @type {string | null | undefined} 한 프로세스에 한 번만 만든다. */
+let mutePath;
