@@ -22,6 +22,7 @@ import {
   resolveProjectPaths,
 } from "@ax-navi/core";
 import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
+import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 
 const AGENT_ENV = { pluginRoot: REPO_ROOT, projectRoot: process.cwd() };
@@ -96,12 +97,12 @@ export async function cmdDoctor(root) {
   const git = spawnSync("git", ["--version"], { encoding: "utf8" });
   rows.push([git.status === 0, "git", (git.stdout || "").trim() || "없음"]);
 
-  const hasKey = Boolean(process.env["ANTHROPIC_API_KEY"] || process.env["ANTHROPIC_AUTH_TOKEN"]);
-  rows.push([
-    hasKey ? true : "warn",
-    "API 키",
-    hasKey ? "설정됨" : "미설정 — index 계열은 동작하고, ask/agent/skill은 키가 필요하다",
-  ]);
+  /*
+   * 인증은 둘 중 하나만 있으면 된다. "API 키가 없다"만 보여 주면
+   * 구독으로 돌릴 수 있다는 사실을 놓치게 된다.
+   */
+  const picked = selectProvider({ cwd: paths.root });
+  rows.push(["error" in picked ? false : true, "실행 경로", "error" in picked ? "없음 — 아래 안내 참조" : picked.note]);
 
   rows.push([state.initialized ? true : "warn", "CLI 설정", state.initialized ? paths.configPath : "없음 — axnavi init"]);
 
@@ -123,6 +124,8 @@ export async function cmdDoctor(root) {
     process.stdout.write(`  ${mark} ${label.padEnd(10)} ${ui.dim(detail)}\n`);
   }
   process.stdout.write("\n");
+  // 실행 경로가 없으면 무엇을 하면 되는지까지 알려 준다.
+  if ("error" in picked) process.stdout.write(`${picked.error}\n\n`);
   return rows.some(([ok]) => ok === false) ? 1 : 0;
 }
 
@@ -193,8 +196,9 @@ export async function cmdIndex(root, sub, opts) {
 /**
  * @param {string} root
  * @param {string[]} argv
+ * @param {import("./provider.mjs").ProviderName} [providerName]
  */
-export async function cmdAgent(root, argv) {
+export async function cmdAgent(root, argv, providerName) {
   const sub = argv[0] ?? "list";
   if (sub === "list") {
     const agents = await loadAllAgents(AGENTS_DIR, AGENT_ENV);
@@ -220,7 +224,7 @@ export async function cmdAgent(root, argv) {
       process.stderr.write(`그런 에이전트가 없다: ${name} (axnavi agent list)\n`);
       return 2;
     }
-    return executeAgent({ root, agentName: name, prompt });
+    return executeAgent({ root, agentName: name, prompt, ...(providerName ? { providerName } : {}) });
   }
   process.stderr.write(`알 수 없는 하위 명령: agent ${sub} (list | run)\n`);
   return 2;
@@ -231,8 +235,9 @@ export async function cmdAgent(root, argv) {
 /**
  * @param {string} root
  * @param {string[]} argv
+ * @param {import("./provider.mjs").ProviderName} [providerName]
  */
-export async function cmdSkill(root, argv) {
+export async function cmdSkill(root, argv, providerName) {
   const sub = argv[0] ?? "list";
   if (sub === "list") {
     const skills = await loadAllSkills(SKILLS_DIR);
@@ -258,7 +263,7 @@ export async function cmdSkill(root, argv) {
       process.stderr.write("사용법: axnavi skill run <이름> <요청>\n");
       return 2;
     }
-    return runSkill(root, name, prompt);
+    return runSkill(root, name, prompt, providerName);
   }
   process.stderr.write(`알 수 없는 하위 명령: skill ${sub} (list | run)\n`);
   return 2;
@@ -273,8 +278,9 @@ export async function cmdSkill(root, argv) {
  * @param {string} root
  * @param {string} name
  * @param {string} prompt
+ * @param {import("./provider.mjs").ProviderName} [providerName]
  */
-export async function runSkill(root, name, prompt) {
+export async function runSkill(root, name, prompt, providerName) {
   if (!existsSync(join(SKILLS_DIR, name, "SKILL.md"))) {
     process.stderr.write(`그런 스킬이 없다: ${name} (axnavi skill list)\n`);
     return 2;
@@ -302,5 +308,11 @@ export async function runSkill(root, name, prompt) {
     `절차에 이 런타임에 없는 기능이 나오면 건너뛰고, 그 사실을 결과에 밝혀라.\n\n` +
     skill.body;
 
-  return executeAgent({ root, agentName, prompt: prompt || "(요청 없음)", extraInstruction: instruction });
+  return executeAgent({
+    root,
+    agentName,
+    prompt: prompt || "(요청 없음)",
+    extraInstruction: instruction,
+    ...(providerName ? { providerName } : {}),
+  });
 }

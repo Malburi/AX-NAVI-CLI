@@ -6,8 +6,12 @@
  * - 모델 종속 Core가 아니다: 이 파일은 LLMProvider 인터페이스만 알고 Claude를 모른다.
  *
  * 도구를 "언제 실행할지·실행해도 되는지"를 여기가 정하기 때문에 Tool Gateway가
- * 장식이 아니라 실제 통제점이 된다. Provider가 자기 루프를 도는 경우
- * (capabilities.ownsAgentLoop === true)에는 그 통제가 성립하지 않으므로 거부한다.
+ * 장식이 아니라 실제 통제점이 된다.
+ *
+ * 예외가 하나 있다. capabilities.ownsAgentLoop === true인 Provider(설치된 claude CLI를
+ * 위임 실행하는 경우 등)는 프롬프트 하나를 받아 자기가 루프를 돌고 도구까지 스스로
+ * 실행하므로 Gateway가 끼어들 자리가 없다. 그 경로는 runDelegated로 분리해 두었다 —
+ * 제약이 사라지는 게 아니라 강제하는 주체가 옮겨간다는 사실을 타입과 이벤트로 드러낸다.
  */
 
 /** @typedef {import("../types/llm.js").LLMProvider} LLMProvider */
@@ -18,7 +22,7 @@
 
 /**
  * @typedef {object} LoopEvent
- * @property {"text" | "tool_call" | "tool_result" | "usage" | "turn" | "done" | "error"} type
+ * @property {"text" | "tool_call" | "tool_result" | "usage" | "turn" | "done" | "error" | "delegated"} type
  * @property {string} [text]
  * @property {string} [tool]
  * @property {unknown} [input]
@@ -45,19 +49,52 @@ const DEFAULT_MAX_TURNS = 12;
  * @returns {AsyncGenerator<LoopEvent, { turns: Turn[], stopReason: string }>}
  */
 export async function* runAgent({ provider, agent, registry, gateway, ctx, userPrompt, maxTurns = DEFAULT_MAX_TURNS }) {
-  if (provider.capabilities.ownsAgentLoop) {
-    // 이 Provider는 자기가 도구를 실행하므로 Gateway의 허용목록·경로 검사가 통하지 않는다.
-    // 조용히 열어 주는 대신 사유를 밝히고 멈춘다.
-    yield {
-      type: "error",
-      reason:
-        `Provider '${provider.id}'는 자체 에이전트 루프를 돈다(ownsAgentLoop). ` +
-        `그 경우 Tool Gateway가 통제점이 아니므로 역할 '${agent.name}'의 도구 제약을 보장할 수 없다.`,
-    };
-    return { turns: [], stopReason: "refusal" };
-  }
-
   const tools = registry.definitionsFor(agent.role);
+
+  if (provider.capabilities.ownsAgentLoop) {
+    /*
+     * 자체 루프를 도는 Provider(claude CLI 래핑 등)로 위임한다.
+     *
+     * 이 경로에서는 ToolGateway가 통제점이 아니다. 역할 제약이 사라지는 것은 아니고
+     * 강제하는 주체가 옮겨간다 — Provider가 자기 런타임의 수단으로(예: --disallowedTools)
+     * 같은 불변식을 걸어야 한다. 사용자가 이 사실을 모르고 지나가지 않도록 이벤트로 알린다.
+     */
+    if (!provider.runDelegated) {
+      yield {
+        type: "error",
+        reason:
+          `Provider '${provider.id}'는 ownsAgentLoop인데 runDelegated를 구현하지 않았다. ` +
+          `이 상태로는 역할 '${agent.name}'의 도구 제약을 누구도 강제하지 않는다.`,
+      };
+      return { turns: [], stopReason: "refusal" };
+    }
+
+    yield {
+      type: "delegated",
+      reason:
+        `Provider '${provider.id}'가 루프를 직접 돈다 — 도구 제약은 Gateway가 아니라 ` +
+        `그쪽 런타임이 강제한다.`,
+    };
+
+    let stopReason = "end_turn";
+    for await (const event of provider.runDelegated(
+      { system: agent.systemPrompt, tools, tier: agent.tier, label: agent.name },
+      userPrompt,
+      ctx.signal,
+    )) {
+      if (event.type === "text_delta") yield { type: "text", text: event.text };
+      else if (event.type === "tool_use") yield { type: "tool_call", tool: event.name, input: event.input };
+      else if (event.type === "tool_result") {
+        yield { type: "tool_result", tool: "(위임)", result: event.content, isError: event.isError };
+      } else if (event.type === "usage") yield { type: "usage", usage: event.usage };
+      else if (event.type === "error") {
+        yield { type: "error", reason: `${event.error.kind}: ${event.error.message}` };
+        return { turns: [], stopReason: "error" };
+      } else if (event.type === "turn_end") stopReason = event.stopReason;
+    }
+    yield { type: "done", reason: stopReason };
+    return { turns: [], stopReason };
+  }
   const session = await provider.createSession({
     system: agent.systemPrompt,
     tools,

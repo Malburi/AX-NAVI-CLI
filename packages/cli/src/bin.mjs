@@ -34,19 +34,28 @@ ${ui.bold("옵션")}
   --root <경로>       프로젝트 루트 (기본: 현재 폴더)
   --index-dir <경로>  인덱스 위치 (기본: <root>/_workspace/index)
   --tier <등급>       Auto | Standard | Full
+  --provider <이름>   auto | anthropic | claude-cli
+                      auto(기본): 키가 있으면 anthropic, 없으면 claude 구독
   -h, --help          도움말
   -v, --version       버전
 `;
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  /** @type {{ root: string, indexDir?: string, tier?: string, help?: boolean, version?: boolean, rest: string[] }} */
+  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, help?: boolean, version?: boolean, rest: string[] }} */
   const out = { root: process.cwd(), rest: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--root") out.root = argv[++i] ?? out.root;
     else if (arg === "--index-dir") out.indexDir = argv[++i];
     else if (arg === "--tier") out.tier = argv[++i];
+    else if (arg === "--provider") {
+      const value = argv[++i];
+      if (value !== "auto" && value !== "anthropic" && value !== "claude-cli") {
+        throw new Error(`--provider 값이 올바르지 않다: ${value} (auto | anthropic | claude-cli)`);
+      }
+      out.provider = value;
+    }
     else if (arg === "-h" || arg === "--help") out.help = true;
     else if (arg === "-v" || arg === "--version") out.version = true;
     else if (arg !== undefined && arg.startsWith("--")) throw new Error(`알 수 없는 옵션: ${arg}`);
@@ -91,9 +100,9 @@ async function main() {
         ...(args.indexDir ? { indexDir: args.indexDir } : {}),
       });
     case "agent":
-      return cmdAgent(args.root, rest);
+      return cmdAgent(args.root, rest, args.provider);
     case "skill":
-      return cmdSkill(args.root, rest);
+      return cmdSkill(args.root, rest, args.provider);
     case "ask": {
       const prompt = rest.join(" ");
       if (!prompt) {
@@ -102,7 +111,12 @@ async function main() {
       }
       // 기본 실행자는 feature-finder다 — 인덱스가 없어도 grep 전략으로 답할 수 있어
       // 첫 실행에서 막히지 않는다(agents/feature-finder.md의 전략 2~4).
-      return executeAgent({ root: args.root, agentName: "feature-finder", prompt });
+      return executeAgent({
+        root: args.root,
+        agentName: "feature-finder",
+        prompt,
+        ...(args.provider ? { providerName: args.provider } : {}),
+      });
     }
     default:
       process.stderr.write(`${ui.red(`알 수 없는 명령: ${command}`)}\n  axnavi --help\n`);

@@ -93,6 +93,13 @@ export class FakeProvider {
   }
 
   /**
+   * ownsAgentLoop인 Provider 자리. 기본은 미구현이고 테스트에서 필요할 때만 채운다 —
+   * 비워 둔 상태가 곧 "루프를 위임할 수도, Gateway로 통제할 수도 없는" 경우의 검증이다.
+   * @type {((spec: import("../types/llm.js").SessionSpec, prompt: string, signal?: AbortSignal) => AsyncIterable<ProviderEvent>) | undefined}
+   */
+  runDelegated = undefined;
+
+  /**
    * @param {string} id
    * @returns {Promise<import("../types/llm.js").LLMSession>}
    */

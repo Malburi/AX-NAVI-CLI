@@ -1,0 +1,10 @@
+{
+  "name": "@ax-navi/provider-claude-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "LLMProvider 구현 (설치된 claude CLI 위임). 구독 인증을 그대로 재사용한다 — API 키가 필요 없다.",
+  "exports": { ".": "./src/index.mjs" },
+  "main": "./src/index.mjs",
+  "dependencies": { "@ax-navi/core": "*" }
+}

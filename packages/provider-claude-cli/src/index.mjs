@@ -1,0 +1,351 @@
+/*
+ * LLMProvider 구현 — 설치된 `claude` CLI 위임.
+ *
+ * 존재 이유는 인증 하나다. Anthropic은 제3자 제품이 claude.ai 구독 로그인을 쓰는 것을
+ * 허용하지 않으므로, Messages API 경로는 반드시 ANTHROPIC_API_KEY가 있어야 한다.
+ * 사용자가 이미 `claude`에 로그인해 둔 환경에서는 그 프로세스를 부르는 것이
+ * **구독으로 AX-NAVI를 돌릴 수 있는 유일한 길**이다.
+ *
+ * 브리프 §17은 `spawn("claude", [prompt])` 수준의 thin wrapper가 최종 Core가 되는 것을
+ * 금지한다. 여기서는 그 금지를 이렇게 지킨다.
+ * - Core는 여전히 LLMProvider 인터페이스만 안다. 이 파일을 빼도 나머지가 그대로 돈다.
+ * - 이 Provider는 `ownsAgentLoop: true`로 자기 성격을 정직하게 신고하고, 그 때문에
+ *   Core의 ToolGateway 경로가 아니라 runDelegated라는 **다른 경로**로만 실행된다.
+ *   "Gateway가 막고 있다"는 착각이 남지 않게 하려는 것이다.
+ * - 역할 제약은 버리지 않는다. frontmatter의 `tools:`를 `--disallowedTools`로 번역해
+ *   같은 불변식을 claude 쪽 권한 체계로 강제한다(실측: Edit·Write가 도구 목록에서 사라진다).
+ *
+ * 한계는 숨기지 않는다.
+ * - claude Code 자신의 시스템 프롬프트·MCP·스킬이 매 호출에 얹힌다. 실측으로 한 단어
+ *   답변에 cache_read 40K 토큰이 붙었다. 같은 작업이 Messages API 경로보다 비싸다.
+ * - `--bare`로 그 부담을 줄일 수 있지만 그 플래그는 OAuth를 읽지 않는다고 명시돼 있어
+ *   (도움말 원문: "OAuth and keychain are never read") 구독 인증과 양립하지 않는다. 쓰지 않는다.
+ */
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { createInterface } from "node:readline";
+
+/** @typedef {import("@ax-navi/core").ProviderEvent} ProviderEvent */
+/** @typedef {import("@ax-navi/core").SessionSpec} SessionSpec */
+/** @typedef {import("@ax-navi/core").LLMProvider} LLMProvider */
+/** @typedef {import("@ax-navi/core").LLMSession} LLMSession */
+/** @typedef {import("@ax-navi/core").ProviderCapabilities} ProviderCapabilities */
+
+/** 등급 → `--model` 인자. claude가 별칭을 받아 실제 id로 푼다(실측: sonnet → claude-sonnet-5). */
+const MODEL_BY_TIER = { fast: "haiku", standard: "sonnet", deep: "opus" };
+
+/** claude Code 내장 도구 중 소스를 고치는 것들. 역할이 허용하지 않으면 전부 끈다. */
+const MUTATING = ["Edit", "MultiEdit", "NotebookEdit", "Write"];
+
+/*
+ * AX-NAVI의 도구 계약에 없는 claude Code 기능. 켜 두면 에이전트가 우리 계약 밖으로
+ * 새어 나간다 — 특히 Task/Skill은 우리가 관측할 수 없는 서브에이전트를 띄우고,
+ * Web* 는 프로젝트 컨텍스트를 외부로 내보낸다(브리프 §12).
+ */
+const OUT_OF_CONTRACT = [
+  "Task", "Skill", "SlashCommand", "WebSearch", "WebFetch",
+  "Workflow", "Monitor", "CronCreate", "CronDelete", "CronList",
+  "SendMessage", "ListAgents", "PushNotification", "RemoteTrigger",
+];
+
+/**
+ * 역할이 허용한 도구를 claude 쪽 `--disallowedTools` 목록으로 번역한다.
+ * 켤 것을 고르는 게 아니라 끌 것을 고른다 — claude는 내장 도구를 기본 제공하므로
+ * 화이트리스트만으로는 나머지가 남는다.
+ * @param {readonly import("@ax-navi/core").ToolDefinition[]} tools
+ * @returns {string[]}
+ */
+export function toDisallowedTools(tools) {
+  const allowed = new Set(tools.map((t) => t.name));
+  const off = [...OUT_OF_CONTRACT];
+  for (const name of MUTATING) {
+    if (!allowed.has(name)) off.push(name);
+  }
+  return off;
+}
+
+/*
+ * 실행 파일 해석.
+ *
+ * 윈도우에서 `claude`는 npm이 만든 셈(.cmd/.ps1)이고, Node는 .cmd를 shell 없이 띄우지
+ * 못한다. 그렇다고 shell:true로 띄우면 인자가 한 줄의 명령 문자열로 합쳐지는데,
+ * 우리는 690줄짜리 에이전트 본문을 --append-system-prompt로 넘겨야 한다 —
+ * 따옴표·줄바꿈·백틱이 섞인 그 문자열은 명령줄에서 반드시 깨진다
+ * (실측: "option '--append-system-prompt <prompt>' argument missing").
+ *
+ * 그래서 셈이 가리키는 진짜 실행 파일을 찾아 shell 없이 띄운다. 인자가 배열 그대로
+ * 전달되므로 길이·특수문자 문제가 사라진다.
+ */
+/** @type {string | null} */
+let cachedBin = null;
+
+/** @returns {string | null} */
+export function resolveClaudeBin() {
+  if (cachedBin) return cachedBin;
+
+  if (process.platform !== "win32") {
+    cachedBin = "claude";
+    return cachedBin;
+  }
+
+  const lookup = spawnSync("where.exe", ["claude"], { encoding: "utf8" });
+  const hits = (lookup.stdout || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  // 셈이 있는 디렉터리 옆에 실제 .exe가 설치돼 있다.
+  for (const hit of hits) {
+    const exe = join(dirname(hit), "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
+    if (existsSync(exe)) {
+      cachedBin = exe;
+      return cachedBin;
+    }
+  }
+  const directExe = hits.find((h) => h.toLowerCase().endsWith(".exe"));
+  if (directExe) {
+    cachedBin = directExe;
+    return cachedBin;
+  }
+  return null;
+}
+
+/**
+ * claude 실행 파일이 있는지 확인한다.
+ * @returns {{ ok: true, version: string, bin: string } | { ok: false, reason: string }}
+ */
+export function probeClaudeCli() {
+  const bin = resolveClaudeBin();
+  if (!bin) return { ok: false, reason: "claude 실행 파일을 찾지 못했다 (npm i -g @anthropic-ai/claude-code)" };
+  try {
+    const out = spawnSync(bin, ["--version"], { encoding: "utf8" });
+    if (out.status !== 0) {
+      return { ok: false, reason: `claude --version 실패 (exit ${out.status})` };
+    }
+    return { ok: true, version: (out.stdout || "").trim(), bin };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * stream-json 한 줄을 ProviderEvent들로 옮긴다.
+ * claude의 이벤트 형태는 실측으로 확인한 것만 다룬다 — 추측한 필드는 넣지 않는다.
+ * @param {any} msg
+ * @returns {ProviderEvent[]}
+ */
+export function translateEvent(msg) {
+  /** @type {ProviderEvent[]} */
+  const out = [];
+
+  if (msg.type === "assistant" && msg.message?.content) {
+    for (const block of msg.message.content) {
+      if (block.type === "text" && block.text) out.push({ type: "text_delta", text: block.text });
+      else if (block.type === "tool_use") {
+        out.push({ type: "tool_use", id: block.id, name: block.name, input: block.input });
+      }
+    }
+    return out;
+  }
+
+  if (msg.type === "user" && msg.message?.content) {
+    for (const block of msg.message.content) {
+      if (block.type === "tool_result") {
+        const content = typeof block.content === "string" ? block.content : JSON.stringify(block.content);
+        out.push({
+          type: "tool_result",
+          toolUseId: block.tool_use_id,
+          content: content.slice(0, 2000),
+          isError: block.is_error === true,
+        });
+      }
+    }
+    return out;
+  }
+
+  if (msg.type === "result") {
+    const u = msg.usage ?? {};
+    out.push({
+      type: "usage",
+      usage: {
+        inputTokens: u.input_tokens ?? 0,
+        outputTokens: u.output_tokens ?? 0,
+        cacheReadTokens: u.cache_read_input_tokens ?? 0,
+        cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+        // 이 경로는 비용을 실제로 돌려준다. 추정치가 아니다.
+        ...(typeof msg.total_cost_usd === "number" ? { costUsd: msg.total_cost_usd } : {}),
+      },
+    });
+
+    // 권한 거부를 조용히 넘기지 않는다 — 역할 제약이 실제로 걸렸다는 증거이자,
+    // 에이전트가 필요한 도구를 못 써서 결과가 부실해졌을 수 있다는 신호다.
+    if (Array.isArray(msg.permission_denials) && msg.permission_denials.length) {
+      const names = msg.permission_denials.map((/** @type {any} */ d) => d.tool_name ?? d.tool ?? "?");
+      out.push({
+        type: "tool_result",
+        toolUseId: "(권한)",
+        content: `권한으로 거부된 도구 ${msg.permission_denials.length}건: ${names.join(", ")}`,
+        isError: true,
+      });
+    }
+
+    if (msg.is_error || msg.subtype !== "success") {
+      out.push({
+        type: "error",
+        error: {
+          kind: msg.api_error_status ? "unknown" : "invalid_request",
+          message: msg.result || msg.subtype || "claude 실행이 실패로 끝났다",
+          retryable: false,
+        },
+      });
+      return out;
+    }
+
+    out.push({ type: "turn_end", stopReason: msg.stop_reason === "max_tokens" ? "max_tokens" : "end_turn", content: [] });
+    out.push({ type: "done" });
+    return out;
+  }
+
+  return out;
+}
+
+/** @implements {LLMProvider} */
+export class ClaudeCliProvider {
+  /** @param {{ extraArgs?: string[], cwd?: string }} [options] */
+  constructor(options = {}) {
+    this.id = "claude-cli";
+    this.options = options;
+    /** @type {ProviderCapabilities} */
+    this.capabilities = {
+      // 정직하게 신고한다. 이 한 줄이 Core를 다른 실행 경로로 보낸다.
+      ownsAgentLoop: true,
+      streaming: true,
+      promptCaching: true,
+      // result 이벤트가 total_cost_usd를 실제로 준다.
+      reportsCost: true,
+      resumable: false,
+      maxContextTokens: 1_000_000,
+    };
+  }
+
+  /**
+   * @param {SessionSpec} spec
+   * @param {string} prompt
+   * @param {AbortSignal} [signal]
+   * @returns {AsyncIterable<ProviderEvent>}
+   */
+  async *runDelegated(spec, prompt, signal) {
+    const args = [
+      "-p", prompt,
+      "--output-format", "stream-json",
+      "--verbose",
+      "--model", MODEL_BY_TIER[spec.tier],
+      // 에이전트 본문을 그대로 얹는다. claude 기본 프롬프트를 지우지는 못하지만
+      // 역할 지침은 전달된다.
+      "--append-system-prompt", spec.system,
+      // 사용자의 MCP 서버가 끼어들지 않게 한다 — 우리 도구 계약 밖이다.
+      "--strict-mcp-config",
+      ...this.options.extraArgs ?? [],
+    ];
+    const disallowed = toDisallowedTools(spec.tools);
+    if (disallowed.length) args.push("--disallowedTools", ...disallowed);
+
+    const bin = resolveClaudeBin();
+    if (!bin) {
+      yield {
+        type: "error",
+        error: { kind: "invalid_request", message: "claude 실행 파일을 찾지 못했다", retryable: false },
+      };
+      return;
+    }
+
+    // shell:false — 인자를 배열 그대로 넘겨야 긴 시스템 프롬프트가 보존된다.
+    const child = spawn(bin, args, {
+      cwd: this.options.cwd ?? process.cwd(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const onAbort = () => child.kill();
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+
+    /** @type {ProviderEvent[]} */
+    const pending = [];
+    /** @type {Array<() => void>} */
+    const wakeups = [];
+    let finished = false;
+    /** @type {number | null} */
+    let exitCode = null;
+
+    const wake = () => { for (const w of wakeups.splice(0)) w(); };
+    const rl = createInterface({ input: child.stdout });
+
+    rl.on("line", (line) => {
+      const text = line.trim();
+      if (!text.startsWith("{")) return;
+      try {
+        pending.push(...translateEvent(JSON.parse(text)));
+        wake();
+      } catch {
+        // 파싱 실패한 줄은 버리되 조용히 넘어가지 않도록 stderr에 남긴다.
+        stderr += `\n[파싱 실패] ${text.slice(0, 200)}`;
+      }
+    });
+
+    child.on("close", (code) => { finished = true; exitCode = code; wake(); });
+    child.on("error", (error) => {
+      finished = true;
+      stderr += `\n${error.message}`;
+      wake();
+    });
+
+    try {
+      for (;;) {
+        if (pending.length) {
+          yield /** @type {ProviderEvent} */ (pending.shift());
+          continue;
+        }
+        if (finished) break;
+        await new Promise((resolve) => wakeups.push(/** @type {() => void} */ (resolve)));
+      }
+
+      // 정상 종료가 아닌데 result 이벤트도 없었다면 실패를 성공으로 보고하지 않는다.
+      if (exitCode !== 0 && exitCode !== null) {
+        yield {
+          type: "error",
+          error: {
+            kind: /not (logged in|authenticated)|login/i.test(stderr) ? "auth" : "unknown",
+            message: `claude 종료 코드 ${exitCode}${stderr ? `: ${stderr.trim().slice(0, 500)}` : ""}`,
+            retryable: false,
+          },
+        };
+      }
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
+      rl.close();
+      if (!finished) child.kill();
+    }
+  }
+
+  /**
+   * @param {SessionSpec} _spec
+   * @returns {Promise<LLMSession>}
+   */
+  async createSession(_spec) {
+    // 이 Provider는 턴 단위로 부를 수 없다. 할 수 있는 척하지 않는다.
+    throw new Error(
+      "claude-cli Provider는 턴 단위 세션을 제공하지 않는다 — runDelegated 경로로만 실행된다.",
+    );
+  }
+
+  /**
+   * @param {string} sessionId
+   * @returns {Promise<LLMSession>}
+   */
+  async resume(sessionId) {
+    throw new Error(`세션 재개는 아직 구현하지 않았다 (${sessionId}).`);
+  }
+
+  /** @returns {Promise<void>} */
+  async cancel() {}
+}

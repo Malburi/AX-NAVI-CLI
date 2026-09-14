@@ -168,3 +168,31 @@ test("역할 도구 목록이 SessionSpec으로 전달된다", async () => {
   assert.equal(provider.lastSpec?.system, AGENT.systemPrompt);
   assert.equal(provider.lastSpec?.tier, "standard");
 });
+
+test("runDelegated가 있으면 위임 실행되고 통제 이전을 알린다", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axnavi-"));
+  const { ctx } = makeContext(dir, AGENT.role);
+  const provider = new FakeProvider([], { ownsAgentLoop: true });
+  /** 위임 Provider 흉내 — claude CLI 자리를 대신한다. */
+  provider.runDelegated = async function* (/** @type {any} */ spec) {
+    yield { type: "text_delta", text: `도구 ${spec.tools.length}종을 받았다` };
+    yield { type: "usage", usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 0, costUsd: 0.05 } };
+    yield { type: "turn_end", stopReason: "end_turn", content: [] };
+  };
+  const registry = createDefaultRegistry();
+
+  const { events, result } = await drain(
+    runAgent({ provider, agent: AGENT, registry, gateway: new ToolGateway(registry), ctx, userPrompt: "x" }),
+  );
+
+  assert.equal(result.stopReason, "end_turn");
+  // 통제 주체가 옮겨간 사실이 이벤트로 드러나야 한다 — 조용히 넘어가면 안 된다.
+  const notice = events.find((e) => e.type === "delegated");
+  assert.ok(notice, "delegated 이벤트가 없다");
+  assert.match(notice.reason, /Gateway가 아니라/);
+  // 역할이 허용한 도구 목록은 그대로 전달된다.
+  assert.ok(events.some((e) => e.type === "text" && /3종/.test(e.text)));
+  // 비용도 정규화돼 올라온다.
+  const usage = events.find((e) => e.type === "usage");
+  assert.equal(usage.usage.costUsd, 0.05);
+});

@@ -111,4 +111,16 @@ export interface LLMProvider {
   createSession(spec: SessionSpec): Promise<LLMSession>;
   resume(sessionId: string): Promise<LLMSession>;
   cancel(sessionId: string): Promise<void>;
+
+  /*
+   * ownsAgentLoop=true인 Provider의 실행 경로.
+   *
+   * 이런 Provider(예: claude CLI 래핑)는 턴 단위로 부를 수 없다 — 프롬프트 하나를 받아
+   * 자기가 루프를 돌고 도구까지 스스로 실행한다. 그래서 Core의 ToolGateway는 통제점이
+   * 아니며, 역할 제약은 Provider가 자기 런타임의 수단으로 강제해야 한다.
+   *
+   * 이 메서드를 별도로 둔 이유는 그 사실을 타입에 드러내기 위해서다. run()으로 몰래
+   * 흉내 내면 "Gateway가 막고 있다"는 착각이 남는다.
+   */
+  runDelegated?(spec: SessionSpec, prompt: string, signal?: AbortSignal): AsyncIterable<ProviderEvent>;
 }
