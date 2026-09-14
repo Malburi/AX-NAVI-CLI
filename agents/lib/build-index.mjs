@@ -196,6 +196,7 @@ function parseArgs(argv) {
     else if (arg === "--mode") result.mode = argv[++i];
     else if (arg === "--tier") result.tier = argv[++i];
     else if (arg === "--config") result.config = argv[++i];
+    else if (arg === "--index-dir") result.indexDir = argv[++i];
     else if (arg === "--apply-ai-patch") result.applyAiPatch = argv[++i];
     else if (arg === "--quiet") result.quiet = true;
     else if (arg === "--check-stale") result.checkStale = true;
@@ -1785,9 +1786,18 @@ function sourceFingerprint(root, includePaths, files) {
   return digest("content", indexed.map((rel) => `${rel}:${contentHash(rel)}`).join("\n"));
 }
 
+/*
+ * 인덱스 출력 위치. 기본값은 지금까지와 같은 `<root>/_workspace/index`다.
+ * `--index-dir`(또는 options.indexDir)는 기본값을 바꾸려는 것이 아니라, 같은 인덱서를 다른 상태
+ * 디렉터리(예: CLI의 `.axnavi/index`)에 겨눌 수 있게 열어 두기 위한 것이다. 넘기지 않으면 동작이 같다.
+ */
+export function resolveIndexDir(root, indexDir) {
+  return indexDir ? (isAbsolute(indexDir) ? indexDir : join(resolve(root), indexDir)) : join(resolve(root), "_workspace", "index");
+}
+
 /* 커밋된 인덱스를 받은 팀원이 "다시 인덱싱해야 하나"를 LLM 없이 판정한다. */
-export function indexStaleness(root) {
-  const metaPath = join(resolve(root), "_workspace", "index", "_meta.json");
+export function indexStaleness(root, indexDir) {
+  const metaPath = join(resolveIndexDir(root, indexDir), "_meta.json");
   if (!existsSync(metaPath)) return { stale: true, reason: "인덱스 없음" };
   const meta = readJson(metaPath, {});
   if (meta.version !== INDEXER_VERSION) return { stale: true, reason: `인덱서 버전 변경 (${meta.version} → ${INDEXER_VERSION})` };
@@ -2891,7 +2901,7 @@ function validateOutput(name, value) {
 export function buildIndex(options) {
   const root = resolve(options.root);
   const normalized = { ...options, root, requestedTier: options.tier || "Auto" };
-  const existingPatchPath = join(root, "_workspace", "index", "_ai_patch.json");
+  const existingPatchPath = join(resolveIndexDir(root, options.indexDir), "_ai_patch.json");
   const preservePatch = options.mode === "incremental" && existsSync(existingPatchPath);
   const config = loadConfig(root, options.config);
   const { files, excluded: excludedSources } = listFiles(root, config.include_paths, config);
@@ -2912,7 +2922,7 @@ export function buildIndex(options) {
   const coverage = buildAdapterCoverage(facts, unsupportedFiles);
   normalized.tier = normalized.requestedTier === "Auto" ? complexity.recommended_tier : normalized.requestedTier;
   const { output, globalMeta, unresolved } = aggregate(facts, normalized, config, generatedAt, files.length, latestMtime, complexity, coverage, excludedSources, files);
-  const indexDir = join(root, "_workspace", "index");
+  const indexDir = resolveIndexDir(root, options.indexDir);
   mkdirSync(indexDir, { recursive: true });
   const stalePatch = join(indexDir, "_ai_patch.json");
   /*
@@ -3267,10 +3277,10 @@ function mergeAiPatchOutput(output, patch, groups, appliedAt, changed = new Set(
   return result;
 }
 
-export function applyAiPatch(rootArg, patchArg) {
+export function applyAiPatch(rootArg, patchArg, indexDirArg) {
   const root = resolve(rootArg);
   const patchPath = isAbsolute(patchArg) ? patchArg : join(root, patchArg);
-  const indexDir = join(root, "_workspace", "index");
+  const indexDir = resolveIndexDir(root, indexDirArg);
   const patch = readJson(patchPath);
   const names = ["call_graph", "api_contract", "sql_usage", "external_io", "client_index", "data_flow", "dead_code"];
   const output = {};
@@ -3310,7 +3320,8 @@ function printHelp() {
   process.stdout.write(`AX-Harness deterministic indexer\n\n` +
     `node scripts/build-index.mjs --root <project> --check-stale   # 재인덱싱 필요 여부만 판정(exit 0=최신, 1=필요)\n` +
     `node scripts/build-index.mjs --root <project> [--mode init|incremental|feature-scoped] [--tier Standard|Full] [--config <json>]\n` +
-    `node scripts/build-index.mjs --root <project> --apply-ai-patch _workspace/index/_ai_patch.json\n`);
+    `node scripts/build-index.mjs --root <project> --apply-ai-patch _workspace/index/_ai_patch.json\n` +
+    `\n  --index-dir <dir>   인덱스 출력/조회 위치 (기본 <root>/_workspace/index)\n`);
 }
 
 function main() {
@@ -3320,11 +3331,11 @@ function main() {
     if (options.checkStale) {
       /* 팀원이 공유 하네스를 받은 뒤 "인덱싱을 다시 해야 하나"를 LLM 없이 묻는 경로.
        * exit 0 = 그대로 써도 됨, exit 1 = 재인덱싱 필요. */
-      const state = indexStaleness(options.root);
+      const state = indexStaleness(options.root, options.indexDir);
       process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
       return state.stale ? 1 : 0;
     }
-    const result = options.applyAiPatch ? applyAiPatch(options.root, options.applyAiPatch) : buildIndex(options);
+    const result = options.applyAiPatch ? applyAiPatch(options.root, options.applyAiPatch, options.indexDir) : buildIndex(options);
     if (!options.quiet) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     /*
      * 조용한 실패 금지.

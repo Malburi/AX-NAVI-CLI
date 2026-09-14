@@ -36,24 +36,35 @@ function parseArgs(argv) {
     else if (argv[i] === "--depth") args.depth = Math.max(1, Number(argv[++i]) || 1);
     else if (argv[i] === "--limit") args.limit = Math.min(MAX_LIMIT, Math.max(1, Number(argv[++i]) || DEFAULT_LIMIT));
     else if (argv[i] === "--json") args.json = argv[++i];
+    else if (argv[i] === "--index-dir") args.indexDir = argv[++i];
     else throw new Error(`알 수 없는 인자: ${argv[i]}`);
   }
   args.root = resolve(args.root);
   return args;
 }
 
-function indexPath(root, name) {
-  return join(root, "_workspace", "index", `${name}.json`);
+/*
+ * 인덱스 위치. 기본값은 지금까지와 같은 `_workspace/index`다.
+ * `--index-dir`는 이 기본값을 바꾸기 위한 것이 아니라, 같은 인덱서를 다른 상태 디렉터리
+ * (예: CLI의 `.axnavi/index`)에 겨눌 수 있게 열어 두기 위한 것이다. 넘기지 않으면 동작이 같다.
+ */
+function indexDirOf(root, indexDir) {
+  return indexDir ? resolve(indexDir) : join(root, "_workspace", "index");
+}
+
+function indexPath(root, name, indexDir) {
+  return join(indexDirOf(root, indexDir), `${name}.json`);
 }
 
 /* 인덱스는 파일당 한 번만 읽어 재사용한다 — 한 실행에서 같은 파일을 두 번 파싱하지 않기 위함. */
 const cache = new Map();
-function loadIndex(root, name) {
-  const key = `${root}::${name}`;
+function loadIndex(root, name, indexDir) {
+  const dir = indexDirOf(root, indexDir);
+  const key = `${dir}::${name}`;
   if (cache.has(key)) return cache.get(key);
-  const path = indexPath(root, name);
+  const path = indexPath(root, name, indexDir);
   if (!existsSync(path)) {
-    const error = new Error(`인덱스가 없습니다: _workspace/index/${name}.json — build-index.mjs를 먼저 실행하세요.`);
+    const error = new Error(`인덱스가 없습니다: ${path} — build-index.mjs를 먼저 실행하세요.`);
     error.missingIndex = name;
     throw error;
   }
@@ -73,32 +84,32 @@ const idMatches = (id, query) => id === query || String(id).split(".").at(-1) ==
 
 const COMMANDS = {
   /* 심볼 위치 조회 — "이 클래스·메서드 어디 있나" */
-  symbol({ root, name, file, limit }) {
-    const symbols = loadIndex(root, "symbols").symbols || [];
+  symbol({ root, indexDir, name, file, limit }) {
+    const symbols = loadIndex(root, "symbols", indexDir).symbols || [];
     const hits = symbols.filter((item) => (name ? idMatches(item.id, name) : true) && (file ? matches(item.file, file) : true));
     return { query: { name, file }, ...cap(hits.map(({ id, type, file: f, line, package: pkg }) => ({ id, type, file: f, line, package: pkg })), limit) };
   },
 
   /* 이 심볼을 누가 부르는가 — 영향도 분석의 출발점 */
-  callers({ root, id, limit }) {
+  callers({ root, indexDir, id, limit }) {
     if (!id) throw new Error("callers에는 --id가 필요합니다.");
-    const graph = loadIndex(root, "call_graph");
+    const graph = loadIndex(root, "call_graph", indexDir);
     const hits = (graph.edges || []).filter((edge) => idMatches(edge.to, id));
     return { query: { id }, ...cap(hits.map(({ from, to, type, file, line }) => ({ from, to, type, file, line })), limit) };
   },
 
   /* 이 심볼이 무엇을 부르는가 */
-  callees({ root, id, limit }) {
+  callees({ root, indexDir, id, limit }) {
     if (!id) throw new Error("callees에는 --id가 필요합니다.");
-    const graph = loadIndex(root, "call_graph");
+    const graph = loadIndex(root, "call_graph", indexDir);
     const hits = (graph.edges || []).filter((edge) => idMatches(edge.from, id));
     return { query: { id }, ...cap(hits.map(({ from, to, type, file, line }) => ({ from, to, type, file, line })), limit) };
   },
 
   /* 진입점에서 출발하는 호출 경로 — "이 화면 누르면 뭐가 도나" */
-  trace({ root, id, depth = 3, limit }) {
+  trace({ root, indexDir, id, depth = 3, limit }) {
     if (!id) throw new Error("trace에는 --id가 필요합니다.");
-    const edges = loadIndex(root, "call_graph").edges || [];
+    const edges = loadIndex(root, "call_graph", indexDir).edges || [];
     const byFrom = new Map();
     for (const edge of edges) {
       const bucket = byFrom.get(edge.from);
@@ -123,8 +134,8 @@ const COMMANDS = {
   },
 
   /* SQL id·테이블로 조회 — sql_usage.json은 실측 143MB라 직접 열면 안 된다 */
-  sql({ root, id, table, file, limit }) {
-    const usage = loadIndex(root, "sql_usage");
+  sql({ root, indexDir, id, table, file, limit }) {
+    const usage = loadIndex(root, "sql_usage", indexDir);
     const sqls = (usage.sqls || []).filter((item) => (id ? idMatches(item.id, id) : true)
       && (table ? (item.tables || []).some((name) => matches(name, table)) : true)
       && (file ? matches(item.file, file) : true));
@@ -138,9 +149,9 @@ const COMMANDS = {
   },
 
   /* 테이블을 건드리는 곳 전부 — 스키마 변경 영향도 */
-  table({ root, table, limit }) {
+  table({ root, indexDir, table, limit }) {
     if (!table) throw new Error("table에는 --table이 필요합니다.");
-    const usage = loadIndex(root, "sql_usage");
+    const usage = loadIndex(root, "sql_usage", indexDir);
     const sqls = (usage.sqls || []).filter((item) => (item.tables || []).some((name) => String(name).toLowerCase() === table.toLowerCase()));
     const ids = new Set(sqls.map((item) => item.id));
     const usages = (usage.usages || []).filter((item) => ids.has(item.sql_id));
@@ -155,22 +166,22 @@ const COMMANDS = {
   },
 
   /* HTTP 엔드포인트 조회 */
-  endpoint({ root, path: pathQuery, limit }) {
-    const contract = loadIndex(root, "api_contract");
+  endpoint({ root, indexDir, path: pathQuery, limit }) {
+    const contract = loadIndex(root, "api_contract", indexDir);
     const hits = (contract.endpoints || []).filter((item) => (pathQuery ? matches(item.path_pattern || item.path, pathQuery) : true));
     return { query: { path: pathQuery }, ...cap(hits.map(({ method, path, path_pattern, handler, file, line }) => ({ method, path, path_pattern, handler, file, line })), limit) };
   },
 
   /* 트랜잭션 경계 조회 */
-  transaction({ root, id, file, limit }) {
-    const boundaries = loadIndex(root, "transactions").boundaries || [];
+  transaction({ root, indexDir, id, file, limit }) {
+    const boundaries = loadIndex(root, "transactions", indexDir).boundaries || [];
     const hits = boundaries.filter((item) => (id ? idMatches(item.entry_method, id) : true) && (file ? matches(item.file, file) : true));
     return { query: { id, file }, ...cap(hits.map(({ entry_method, file: f, line, marker, propagation, isolation }) => ({ entry_method, file: f, line, marker, propagation, isolation })), limit) };
   },
 
   /* 테이블 정의 — 컬럼·PK·FK. "이 테이블이 무엇과 엮여 있나"는 온보딩 1번 질문이다. */
-  schema({ root, table, limit }) {
-    const tables = loadIndex(root, "schema").tables || [];
+  schema({ root, indexDir, table, limit }) {
+    const tables = loadIndex(root, "schema", indexDir).tables || [];
     const hits = table ? tables.filter((item) => matches(item.name, table)) : tables;
     /* 테이블을 지목했으면 정의 전체를, 목록 조회면 이름·컬럼 수만 준다(수백 개면 그것만으로도 크다). */
     const shaped = table
@@ -185,15 +196,15 @@ const COMMANDS = {
   },
 
   /* 데드 코드 후보 (실측 38MB — 페이지 단위로만 준다) */
-  dead({ root, file, limit }) {
-    const dead = loadIndex(root, "dead_code").unused_methods || [];
+  dead({ root, indexDir, file, limit }) {
+    const dead = loadIndex(root, "dead_code", indexDir).unused_methods || [];
     const hits = dead.filter((item) => (file ? matches(item.file, file) : true));
     return { query: { file }, ...cap(hits.map(({ id, file: f, line, reason }) => ({ id, file: f, line, reason })), limit) };
   },
 
   /* 규모만 먼저 확인 — 무엇을 열지 정하기 전에 보는 화면 */
-  summary({ root }) {
-    const meta = loadIndex(root, "_meta");
+  summary({ root, indexDir }) {
+    const meta = loadIndex(root, "_meta", indexDir);
     const sizes = {};
     for (const name of meta.indexes || []) {
       const path = indexPath(root, name);
@@ -228,6 +239,7 @@ function printHelp() {
   dead        [--file <경로>]                데드 코드 후보
 
   공통: --limit N (기본 ${DEFAULT_LIMIT}, 최대 ${MAX_LIMIT}). 응답에 total·truncated가 함께 온다.
+        --index-dir <dir>  인덱스 위치 (기본 <root>/_workspace/index).
 `);
 }
 
