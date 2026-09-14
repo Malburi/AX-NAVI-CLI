@@ -6,11 +6,13 @@
  * 하나 더 붙는데, MVP에서 그 비용을 정당화할 근거가 없다.
  */
 import { createInterface } from "node:readline/promises";
+import { emitKeypressEvents } from "node:readline";
+import { basename } from "node:path";
 import { indexStaleness } from "@ax-navi/indexer";
 import { loadAllAgents, loadAllSkills } from "@ax-navi/core";
-import { basename } from "node:path";
 import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
+import { buildCommands, complete, renderCommandMenu } from "./completion.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { cmdIndex, runSkill } from "./commands.mjs";
@@ -33,6 +35,79 @@ const ROUTES = [
 export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
   process.stdout.write(renderBanner(version));
 
+  // 명령 목록과 자동완성에 쓰려고 시작할 때 한 번만 읽는다.
+  const agentEnv = { pluginRoot: REPO_ROOT, projectRoot: paths.root };
+  const [agents, skills] = await Promise.all([loadAllAgents(AGENTS_DIR, agentEnv), loadAllSkills(SKILLS_DIR)]);
+  const commands = buildCommands(skills);
+  const agentNames = agents.map((a) => a.name);
+  const skillByName = new Map(skills.map((s) => [s.name, s]));
+
+  process.stdout.write(block(statusLines(paths, state)));
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    completer: (/** @type {string} */ line) => complete(line, { commands, agentNames }),
+  });
+
+  const PROMPT = `${ui.cyan("AX-NAVI")} ${ui.dim(">")} `;
+
+  /*
+   * `/` 를 치는 순간 목록을 보여 준다.
+   *
+   * keypress는 readline이 버퍼를 갱신하기 전에 올 수도 있어서, setImmediate로
+   * 한 틱 미룬 뒤 실제 입력이 `/` 하나인지 확인한다. 목록을 찍으면 프롬프트 줄이
+   * 밀려나므로 직접 다시 그린다.
+   */
+  if (process.stdin.isTTY) {
+    emitKeypressEvents(process.stdin);
+    process.stdin.on("keypress", (str) => {
+      if (str !== "/") return;
+      setImmediate(() => {
+        if (rl.line !== "/") return;
+        process.stdout.write("\n");
+        process.stdout.write(renderCommandMenu(commands, ui));
+        process.stdout.write(PROMPT + rl.line);
+      });
+    });
+  }
+
+  let code = 0;
+
+  for (;;) {
+    let line;
+    try {
+      line = (await rl.question(PROMPT)).trim();
+    } catch {
+      break; // Ctrl+C / EOF
+    }
+    if (!line) continue;
+    if (line === "/exit" || line === "/quit") break;
+
+    try {
+      if (line.startsWith("/")) {
+        code = await handleSlash({ paths, line, commands, skillByName });
+      } else {
+        const agent = route(line);
+        process.stderr.write(ui.dim(`  라우팅 → ${agent}\n`));
+        code = await executeAgent({ root: paths.root, agentName: agent, prompt: line });
+      }
+    } catch (error) {
+      process.stderr.write(`${ui.red("실패")}: ${/** @type {Error} */ (error).message}\n`);
+      code = 1;
+    }
+  }
+
+  rl.close();
+  return code;
+}
+
+/**
+ * @param {import("@ax-navi/core").ProjectPaths} paths
+ * @param {import("@ax-navi/core").ProjectState} state
+ * @returns {string[]}
+ */
+function statusLines(paths, state) {
   /** @type {string[]} */
   const lines = [];
   lines.push(row("Project", `${ui.bold(basename(paths.root))}  ${ui.dim(paths.root)}`));
@@ -44,7 +119,9 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
 
   if (state.hasIndex) {
     const st = indexStaleness(paths.root);
-    lines.push(row("Index", st.stale ? `${ui.yellow("갱신 필요")}  ${ui.dim(st.reason)}` : `${ui.green("Ready")}  ${ui.dim(st.reason)}`));
+    lines.push(
+      row("Index", st.stale ? `${ui.yellow("갱신 필요")}  ${ui.dim(st.reason)}` : `${ui.green("Ready")}  ${ui.dim(st.reason)}`),
+    );
   } else {
     lines.push(row("Index", `${ui.yellow("없음")}  ${ui.dim("— /index build 로 만드세요 (LLM·API 키 불필요)")}`));
   }
@@ -68,45 +145,14 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
 
   lines.push("");
   if ("error" in picked) {
-    lines.push(`${picked.error}`);
+    lines.push(picked.error);
     lines.push("");
   }
   lines.push(
-    `  ${ui.dim("자연어로 물어보세요.")}   ${ui.cyan("/help")} ${ui.dim("명령 목록")}   ${ui.cyan("/exit")} ${ui.dim("종료")}`,
+    `  ${ui.dim("자연어로 물어보세요.")}   ${ui.cyan("/")} ${ui.dim("명령 목록")}   ${ui.dim("Tab 자동완성")}   ${ui.cyan("/exit")} ${ui.dim("종료")}`,
   );
   lines.push("");
-  process.stdout.write(block(lines));
-
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  let code = 0;
-
-  for (;;) {
-    let line;
-    try {
-      line = (await rl.question(`${ui.cyan("AX-NAVI")} ${ui.dim(">")} `)).trim();
-    } catch {
-      break; // Ctrl+C / EOF
-    }
-    if (!line) continue;
-    if (line === "/exit" || line === "/quit") break;
-
-    try {
-      if (line.startsWith("/")) {
-        const [cmd, ...rest] = line.slice(1).split(/\s+/);
-        code = await handleSlash(paths, cmd ?? "", rest);
-      } else {
-        const agent = route(line);
-        process.stderr.write(ui.dim(`  라우팅 → ${agent}\n`));
-        code = await executeAgent({ root: paths.root, agentName: agent, prompt: line });
-      }
-    } catch (error) {
-      process.stderr.write(`${ui.red("실패")}: ${/** @type {Error} */ (error).message}\n`);
-      code = 1;
-    }
-  }
-
-  rl.close();
-  return code;
+  return lines;
 }
 
 /** @param {string} input */
@@ -118,73 +164,86 @@ function route(input) {
 }
 
 /**
- * @param {import("@ax-navi/core").ProjectPaths} paths
- * @param {string} cmd
- * @param {string[]} rest
+ * @param {object} args
+ * @param {import("@ax-navi/core").ProjectPaths} args.paths
+ * @param {string} args.line
+ * @param {import("./completion.mjs").SlashCommand[]} args.commands
+ * @param {Map<string, { name: string }>} args.skillByName
  * @returns {Promise<number>}
  */
-async function handleSlash(paths, cmd, rest) {
+async function handleSlash({ paths, line, commands, skillByName }) {
+  const spaceAt = line.indexOf(" ");
+  const cmd = spaceAt === -1 ? line.slice(1) : line.slice(1, spaceAt);
+  const argText = spaceAt === -1 ? "" : line.slice(spaceAt + 1).trim();
+  const rest = argText ? argText.split(/\s+/) : [];
+
   switch (cmd) {
+    // `/` 만 치고 엔터 — 목록을 보여 준다. "알 수 없는 명령"으로 내쫓지 않는다.
+    case "":
     case "help":
-      process.stdout.write(
-        `\n  ${ui.bold("명령")}\n` +
-          `    /agents                에이전트 목록\n` +
-          `    /agent <이름> <요청>    에이전트 직접 실행\n` +
-          `    /skills                스킬 목록\n` +
-          `    /skill <이름> <요청>    스킬 실행\n` +
-          `    /index [build|status]  인덱스\n` +
-          `    /status                현재 상태\n` +
-          `    /exit                  종료\n\n` +
-          `  ${ui.dim("슬래시 없이 그냥 물으면 요청 내용으로 에이전트를 고른다.")}\n\n`,
-      );
+      process.stdout.write(renderCommandMenu(commands, ui));
       return 0;
+
     case "agents": {
       const agents = await loadAllAgents(AGENTS_DIR, { pluginRoot: REPO_ROOT, projectRoot: paths.root });
       process.stdout.write("\n");
       for (const a of agents) {
-        process.stdout.write(`  ${ui.cyan(a.name.padEnd(22))} ${ui.dim(a.tier)}\n`);
+        const tools = a.role.allowedTools ? a.role.allowedTools.filter((t) => t !== "TaskUpdate").join(",") : "(전체)";
+        process.stdout.write(`  ${ui.cyan(a.name.padEnd(22))} ${ui.dim(a.tier.padEnd(9))} ${ui.dim(tools)}\n`);
       }
       process.stdout.write("\n");
       return 0;
     }
+
     case "skills": {
       const skills = await loadAllSkills(SKILLS_DIR);
       process.stdout.write("\n");
       for (const s of skills.filter((x) => !x.delegatesTo)) {
         process.stdout.write(`  ${ui.cyan(s.name.padEnd(22))} ${ui.dim(s.agents.join(",") || "-")}\n`);
       }
+      const alias = skills.filter((s) => s.delegatesTo);
+      if (alias.length) {
+        process.stdout.write(`\n  ${ui.dim(`별칭: ${alias.map((a) => `/${a.name}→${a.delegatesTo}`).join("  ")}`)}\n`);
+      }
       process.stdout.write("\n");
       return 0;
     }
+
     case "agent": {
       const name = rest[0];
       const prompt = rest.slice(1).join(" ");
       if (!name || !prompt) {
-        process.stderr.write("사용법: /agent <이름> <요청>\n");
+        process.stderr.write(`사용법: /agent <이름> <요청>   ${ui.dim("(Tab 으로 이름 자동완성)")}\n`);
         return 2;
       }
       return executeAgent({ root: paths.root, agentName: name, prompt });
     }
-    case "skill": {
-      const name = rest[0];
-      if (!name) {
-        process.stderr.write("사용법: /skill <이름> <요청>\n");
-        return 2;
-      }
-      return runSkill(paths.root, name, rest.slice(1).join(" "));
-    }
+
     case "index":
       return cmdIndex(paths.root, rest[0] ?? "status", {});
+
     case "status": {
       const st = indexStaleness(paths.root);
       process.stdout.write(
-        `\n  ${ui.dim("Project")}  ${paths.root}\n` +
-          `  ${ui.dim("Index")}    ${st.stale ? ui.yellow(st.reason) : ui.green(st.reason)}\n\n`,
+        `\n  ${ui.dim("Project")}  ${paths.root}\n  ${ui.dim("Index")}    ${st.stale ? ui.yellow(st.reason) : ui.green(st.reason)}\n\n`,
       );
       return 0;
     }
-    default:
-      process.stderr.write(`알 수 없는 명령: /${cmd} — /help\n`);
+
+    default: {
+      // 스킬 이름이면 그대로 실행한다 — 원래 플러그인의 /modify·/impact 와 같은 감각.
+      if (skillByName.has(cmd)) return runSkill(paths.root, cmd, argText);
+
+      const near = commands
+        .map((c) => c.name)
+        .filter((n) => n.startsWith(cmd.slice(0, 3)))
+        .slice(0, 5);
+      process.stderr.write(
+        `알 수 없는 명령: ${ui.cyan(`/${cmd}`)}\n` +
+          (near.length ? `  ${ui.dim(`혹시: ${near.map((n) => `/${n}`).join("  ")}`)}\n` : "") +
+          `  ${ui.dim("/ 를 치면 전체 목록이 나온다.")}\n`,
+      );
       return 2;
+    }
   }
 }
