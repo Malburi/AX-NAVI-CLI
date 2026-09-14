@@ -23,6 +23,23 @@ import { AGENTS_DIR, REPO_ROOT, createAuditSink, createElicitor, createProgressS
  * @returns {Promise<number>} 프로세스 종료 코드
  */
 export async function executeAgent({ root, agentName, prompt, extraInstruction, signal }) {
+  /*
+   * 자격 증명 사전 점검.
+   *
+   * SDK는 키가 없으면 요청 시점에 일반 Error를 던지는데, 그걸 오류 메시지 문자열로
+   * 판별하면 SDK가 문구를 바꿀 때 조용히 깨진다. 부를 수 없다는 것을 부르기 전에 확인한다.
+   */
+  if (!process.env["ANTHROPIC_API_KEY"] && !process.env["ANTHROPIC_AUTH_TOKEN"]) {
+    const lines = [
+      `${ui.red("인증 정보가 없다")} — ANTHROPIC_API_KEY를 설정해야 에이전트를 실행할 수 있다.`,
+      ui.dim(`  PowerShell:  $env:ANTHROPIC_API_KEY = "sk-ant-..."`),
+      ui.dim("  bash:        export ANTHROPIC_API_KEY=sk-ant-..."),
+      ui.dim("  키 없이 쓸 수 있는 명령: axnavi index build | status | refresh, axnavi doctor"),
+    ];
+    process.stderr.write(`${lines.join("\n")}\n`);
+    return 1;
+  }
+
   const paths = resolveProjectPaths(root);
   const agent = await loadAgent(join(AGENTS_DIR, `${agentName}.md`), {
     pluginRoot: REPO_ROOT,
