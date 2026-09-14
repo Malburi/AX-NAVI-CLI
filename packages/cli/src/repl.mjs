@@ -8,7 +8,16 @@
 import { createInterface } from "node:readline";
 import { basename } from "node:path";
 import { indexStaleness } from "@ax-navi/indexer";
-import { loadAllAgents, loadAllSkills } from "@ax-navi/core";
+import {
+  latestSession,
+  listSessions,
+  loadAllAgents,
+  loadAllSkills,
+  loadSession,
+  newSessionId,
+  saveSession,
+  toTitle,
+} from "@ax-navi/core";
 import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
 import { buildCommands, menuItems, renderCommandMenu } from "./completion.mjs";
@@ -30,9 +39,10 @@ const ROUTES = [
  * @param {import("@ax-navi/core").ProjectPaths} paths
  * @param {import("@ax-navi/core").ProjectState} state
  * @param {string} [version]
+ * @param {{ continueLatest?: boolean, resumeId?: string }} [opts]
  * @returns {Promise<number>}
  */
-export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
+export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = {}) {
   process.stdout.write(renderBanner(version));
 
   // 명령 목록과 자동완성에 쓰려고 시작할 때 한 번만 읽는다.
@@ -63,28 +73,6 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
         ui,
       })
     : null;
-
-  /*
-   * 대화 상태.
-   *
-   * 이게 없으면 매 입력이 새 대화라 "그거 수정하면 어디 영향가?" 에서 "그거"를 잃는다.
-   * 에이전트가 바뀌면(라우팅이 다른 역할을 고르면) 대화를 새로 시작한다 —
-   * 다른 역할의 대화를 이어 붙이면 지침이 섞인다.
-   *
-   * 턴 수는 따로 센다 — 위임 경로에서는 대화를 그쪽이 들고 있어
-   * conversation.turns 가 비어 있기 때문이다.
-   */
-  /** @type {{ agent: string, turns: number, conversation: import("@ax-navi/core").Conversation } | null} */
-  let thread = null;
-
-  /** @param {string} agentName */
-  const threadFor = (agentName) => {
-    if (!thread || thread.agent !== agentName) {
-      thread = { agent: agentName, turns: 0, conversation: { turns: [] } };
-    }
-    thread.turns += 1;
-    return thread;
-  };
 
   /*
    * 입력을 직접 큐로 받는다.
@@ -123,6 +111,81 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
     return new Promise((resolve) => { waiter = resolve; });
   };
 
+  /*
+   * 대화 상태.
+   *
+   * 이게 없으면 매 입력이 새 대화라 "그거 수정하면 어디 영향가?" 에서 "그거"를 잃는다.
+   * 에이전트가 바뀌면(라우팅이 다른 역할을 고르면) 대화를 새로 시작한다 —
+   * 다른 역할의 대화를 이어 붙이면 지침이 섞인다.
+   *
+   * 턴 수는 따로 센다 — 위임 경로에서는 대화를 그쪽이 들고 있어
+   * conversation.turns 가 비어 있기 때문이다.
+   */
+  /** @type {{ id: string, agent: string, turns: number, title?: string, createdAt?: string, conversation: import("@ax-navi/core").Conversation } | null} */
+  let thread = null;
+
+  /*
+   * 이어서 시작하기.
+   *
+   * --continue 는 마지막 세션, --resume <id> 는 지정한 세션을 연다.
+   * 없으면 조용히 새 대화로 시작한다 — 이어갈 게 없다고 실행을 막을 이유는 없다.
+   */
+  if (opts.resumeId || opts.continueLatest) {
+    const record = opts.resumeId
+      ? await loadSession(paths, opts.resumeId)
+      : await latestSession(paths);
+    if (record) {
+      thread = {
+        id: record.id,
+        agent: record.agent,
+        turns: record.turns,
+        title: record.title,
+        createdAt: record.createdAt,
+        conversation: record.conversation,
+      };
+      process.stdout.write(
+        `  ${ui.green("이어서 시작")}  ${ui.dim(`${record.agent} · ${record.turns}턴 · ${record.title}`)}\n\n`,
+      );
+    } else {
+      process.stdout.write(`  ${ui.yellow("이어갈 세션이 없다")} ${ui.dim("— 새 대화로 시작한다.")}\n\n`);
+    }
+  }
+
+  /** @param {string} agentName @param {string} firstLine */
+  const threadFor = (agentName, firstLine) => {
+    if (!thread || thread.agent !== agentName) {
+      thread = {
+        id: newSessionId(),
+        agent: agentName,
+        turns: 0,
+        conversation: { turns: [] },
+        title: toTitle(firstLine),
+        createdAt: new Date().toISOString(),
+      };
+    }
+    thread.turns += 1;
+    return thread;
+  };
+
+  /** 한 턴이 끝날 때마다 저장한다 — 마지막에 한 번 저장하면 죽는 순간 전부 잃는다. */
+  const persist = async () => {
+    if (!thread) return;
+    try {
+      await saveSession(paths, {
+        id: thread.id,
+        root: paths.root,
+        agent: thread.agent,
+        turns: thread.turns,
+        createdAt: thread.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        title: thread.title ?? "",
+        conversation: thread.conversation,
+      });
+    } catch {
+      // 세션 저장 실패가 대화를 끊을 이유는 아니다.
+    }
+  };
+
   let code = 0;
 
   for (;;) {
@@ -142,6 +205,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
           onReset: () => { thread = null; },
           onContext: () => (thread
             ? {
+                id: thread.id,
                 agent: thread.agent,
                 turns: thread.turns,
                 sessionId: thread.conversation.providerSessionId,
@@ -150,7 +214,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
         });
       } else {
         const agent = route(line);
-        const t = threadFor(agent);
+        const t = threadFor(agent, line);
         process.stderr.write(ui.dim(`  ⋯ ${agent}${t.turns > 1 ? ` · ${t.turns}번째 턴` : ""}\n`));
         code = await executeAgent({
           root: paths.root,
@@ -158,6 +222,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
           prompt: line,
           conversation: t.conversation,
         });
+        await persist();
       }
     } catch (error) {
       process.stderr.write(`${ui.red("실패")}: ${/** @type {Error} */ (error).message}\n`);
@@ -238,7 +303,7 @@ function route(input) {
  * @param {import("./completion.mjs").SlashCommand[]} args.commands
  * @param {Map<string, { name: string }>} args.skillByName
  * @param {() => void} [args.onReset]
- * @param {() => ({ agent: string, turns: number, sessionId?: string } | null)} [args.onContext]
+ * @param {() => ({ id: string, agent: string, turns: number, sessionId?: string } | null)} [args.onContext]
  * @returns {Promise<number>}
  */
 async function handleSlash({ paths, line, commands, skillByName, onReset, onContext }) {
@@ -257,6 +322,24 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onCont
       process.stdout.write(`  ${ui.dim("새 대화를 시작한다.")}\n`);
       return 0;
 
+    case "sessions": {
+      const records = await listSessions(paths, 10);
+      if (!records.length) {
+        process.stdout.write(`  ${ui.dim("저장된 세션 없음.")}\n`);
+        return 0;
+      }
+      const out = [""];
+      for (const r of records) {
+        out.push(`  ${ui.cyan(r.id)}  ${ui.dim(`${r.agent} · ${r.turns}턴`)}`);
+        out.push(`  ${" ".repeat(r.id.length)}  ${ui.dim(r.title || "(제목 없음)")}`);
+      }
+      out.push("");
+      out.push(`  ${ui.dim("axnavi --resume <id> 로 이어서 시작한다. --continue 는 가장 최근 것.")}`);
+      out.push("", "");
+      process.stdout.write(out.join("\n"));
+      return 0;
+    }
+
     case "context": {
       const info = onContext?.();
       if (!info) {
@@ -269,6 +352,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onCont
       process.stdout.write(
         [
           "",
+          `  ${ui.dim("세션")}      ${info.id}`,
           `  ${ui.dim("에이전트")}  ${info.agent}`,
           `  ${ui.dim("턴")}        ${info.turns}`,
           `  ${ui.dim("이어가기")}  ${resume}`,

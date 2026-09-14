@@ -18,6 +18,8 @@ const HELP = `${renderBanner(VERSION)}
 
 ${ui.bold("사용법")}
   axnavi                          대화형 모드
+  axnavi --continue               마지막 대화를 이어서
+  axnavi --resume <세션id>         특정 대화를 이어서
   axnavi ask <요청>               한 번 묻고 답받기 (읽기 전용)
   axnavi init                     .axnavi/ 설정 생성
   axnavi doctor                   실행 환경 진단
@@ -37,6 +39,8 @@ ${ui.bold("옵션")}
   --tier <등급>       Auto | Standard | Full
   --provider <이름>   auto | anthropic | claude-cli
                       auto(기본): 키가 있으면 anthropic, 없으면 claude 구독
+  -c, --continue      마지막 대화를 이어서 시작
+  --resume <id>       특정 대화를 이어서 시작 (/sessions 로 id 확인)
   --verbose           내부 진단 출력 (도구 목록·토큰 내역·감사기록 경로)
   -h, --help          도움말
   -v, --version       버전
@@ -44,7 +48,7 @@ ${ui.bold("옵션")}
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, help?: boolean, version?: boolean, rest: string[] }} */
+  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, continueLatest?: boolean, resumeId?: string, help?: boolean, version?: boolean, rest: string[] }} */
   const out = { root: process.cwd(), rest: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -59,6 +63,8 @@ function parseArgs(argv) {
       out.provider = value;
     }
     // runtime.mjs가 process.argv에서 직접 읽는다. 여기서는 "알 수 없는 옵션"으로 막히지만 않으면 된다.
+    else if (arg === "-c" || arg === "--continue") out.continueLatest = true;
+    else if (arg === "--resume") out.resumeId = argv[++i];
     else if (arg === "--verbose") { /* no-op */ }
     else if (arg === "-h" || arg === "--help") out.help = true;
     else if (arg === "-v" || arg === "--version") out.version = true;
@@ -90,7 +96,10 @@ async function main() {
 
   if (!command) {
     const paths = resolveProjectPaths(args.root);
-    return startRepl(paths, inspectProject(paths), VERSION);
+    return startRepl(paths, inspectProject(paths), VERSION, {
+      ...(args.continueLatest ? { continueLatest: true } : {}),
+      ...(args.resumeId ? { resumeId: args.resumeId } : {}),
+    });
   }
 
   switch (command) {

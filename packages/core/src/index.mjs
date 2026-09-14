@@ -6,3 +6,6 @@ export { createDefaultRegistry } from "./tools/builtin/index.mjs";
 export { loadAgent, loadAllAgents, parseFrontmatter, applyPromptShim } from "./agents/loader.mjs";
 export { runAgent } from "./loop.mjs";
 export { loadSkill, resolveSkill, loadAllSkills } from "./skills/loader.mjs";
+export { estimateTokens, compactTurns } from "./context/compaction.mjs";
+export { buildProjectContext, indexAgeNote } from "./context/project.mjs";
+export { newSessionId, toTitle, saveSession, loadSession, listSessions, latestSession } from "./context/sessions.mjs";

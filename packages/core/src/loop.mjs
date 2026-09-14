@@ -37,7 +37,7 @@
 
 /**
  * @typedef {object} LoopEvent
- * @property {"text" | "tool_call" | "tool_result" | "usage" | "turn" | "done" | "error" | "delegated"} type
+ * @property {"text" | "tool_call" | "tool_result" | "usage" | "turn" | "done" | "error" | "delegated" | "compacted"} type
  * @property {string} [text]
  * @property {string} [tool]
  * @property {unknown} [input]
@@ -48,7 +48,12 @@
  * @property {string} [reason]
  */
 
+import { compactTurns } from "./context/compaction.mjs";
+
 const DEFAULT_MAX_TURNS = 12;
+
+/* 이 값을 넘으면 오래된 도구 결과부터 들어낸다. 1M 컨텍스트라도 비용이 선형으로 늘어난다. */
+const COMPACT_AT_TOKENS = 120_000;
 
 /**
  * 에이전트를 한 번 실행하고 진행 상황을 스트리밍한다.
@@ -134,8 +139,22 @@ export async function* runAgent({ provider, agent, registry, gateway, ctx, userP
    * conversation 객체를 그대로 쓰므로 호출부가 결과를 따로 받아 저장할 필요가 없다.
    */
   /** @type {Turn[]} */
-  const turns = conversation?.turns ?? [];
+  let turns = conversation?.turns ?? [];
   turns.push({ role: "user", content: [{ type: "text", text: userPrompt }] });
+
+  /*
+   * 압축은 새 요청을 붙인 뒤에 한다 — 지금 막 들어온 요청까지 포함한 크기로 판단해야
+   * 이번 턴에 실제로 보낼 양을 맞출 수 있다.
+   */
+  const compacted = compactTurns(turns, { maxTokens: COMPACT_AT_TOKENS });
+  if (compacted.changed) {
+    turns = compacted.turns;
+    if (conversation) conversation.turns = turns;
+    yield {
+      type: "compacted",
+      reason: `컨텍스트 압축 — ${compacted.note} (약 ${compacted.before} → ${compacted.after} 토큰)`,
+    };
+  }
 
   try {
     for (let turn = 1; turn <= maxTurns; turn += 1) {

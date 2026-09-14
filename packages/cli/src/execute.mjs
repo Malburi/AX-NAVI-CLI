@@ -3,7 +3,9 @@
  * ask / agent run / skill run이 전부 여기로 모인다.
  */
 import {
+  buildProjectContext,
   createDefaultRegistry,
+  indexAgeNote,
   loadAgent,
   resolveProjectPaths,
   runAgent,
@@ -58,7 +60,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    *   agent      — 호출부가 만들어 넘긴다 (오케스트레이터 스킬처럼 대응하는 .md 가 없을 때)
    */
   if (!preset && !agentName) throw new Error("agentName 또는 agent 중 하나는 필요하다");
-  const agent = preset
+  let agent = preset
     ?? (await loadAgent(join(AGENTS_DIR, `${agentName}.md`), { pluginRoot: REPO_ROOT, projectRoot: paths.root }));
 
   // 경로 치환 같은 내부 적응 기록은 사용자가 볼 것이 아니다.
@@ -83,7 +85,28 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     signal: controller.signal,
   };
 
+  /*
+   * 프로젝트 컨텍스트를 첫 턴에만 얹는다.
+   *
+   * 이어가는 턴에는 이미 대화에 남아 있어 다시 실을 이유가 없다.
+   * 위임 경로는 claude 가 CLAUDE.md 를 스스로 읽으므로 본문 중복을 피한다 —
+   * 대신 인덱스 사실은 그쪽이 모르므로 항상 싣는다.
+   */
   const provider = picked.provider;
+  const isFirstTurn = !conversation
+    || (conversation.turns.length <= 1 && !conversation.providerSessionId);
+  if (isFirstTurn) {
+    const projectContext = buildProjectContext({
+      paths,
+      includeClaudeMd: !provider.capabilities.ownsAgentLoop,
+    });
+    const ageNote = indexAgeNote(paths);
+    agent = {
+      ...agent,
+      systemPrompt: [agent.systemPrompt, "", projectContext, ...(ageNote ? [ageNote] : [])].join("\n"),
+    };
+  }
+
   const allowed = registry.definitionsFor(agent.role).map((d) => d.name);
   debug(ui.dim(`  provider=${picked.note}\n`));
   debug(ui.dim(`  agent=${agent.name} tier=${agent.tier} tools=${allowed.join(",")}\n`));
@@ -97,7 +120,10 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   try {
     for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt: prompt, ...(conversation ? { conversation } : {}) })) {
       if (event.type === "text") process.stdout.write(event.text ?? "");
-      else if (event.type === "delegated") {
+      else if (event.type === "compacted") {
+        // 컨텍스트를 줄였다는 사실은 숨기지 않는다 — 답이 앞 내용을 잊은 이유가 될 수 있다.
+        process.stderr.write(`${ui.yellow("  ⤵ ")}${ui.dim(event.reason ?? "")}\n`);
+      } else if (event.type === "delegated") {
         /*
          * 통제 주체가 옮겨간 사실은 시작 화면의 Runtime 줄이 이미 밝히고 있다.
          * 호출마다 되풀이하면 그건 공지가 아니라 소음이다.
