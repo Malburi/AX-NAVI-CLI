@@ -25,10 +25,9 @@ import { attachAutocomplete } from "./autocomplete.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { cmdIndex, runSkill } from "./commands.mjs";
-import { createNaviPersona } from "./persona.mjs";
-import { createScreen } from "./screen.mjs";
 import { renderStatus } from "./status.mjs";
 import { estimateTokens } from "@ax-navi/core";
+import { createNaviPersona } from "./persona.mjs";
 
 /*
  * 자연어 → 전문 역할.
@@ -122,42 +121,11 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     waiter = null;
   });
 
-  /*
-   * 바닥에 붙는 입력·상태 영역.
-   *
-   * 이게 있어야 작업이 도는 중에도 프롬프트가 화면에서 사라지지 않는다 —
-   * 큐가 이미 입력을 받고 있었지만 칠 자리가 안 보이면 받는 줄 모른다.
-   */
-  const screen = createScreen({
-    output: process.stdout,
-    prompt: PROMPT,
-    currentInput: () => /** @type {{ line?: string }} */ (rl).line ?? "",
-  });
-
-  /** 누적 비용. 상태줄에 보여 준다. */
+  /** 이 대화에 쓴 누적 비용. */
   let sessionCost = 0;
+  /** 마지막 턴이 실제로 실어 보낸 컨텍스트 크기. 위임 경로는 우리가 turns 를 안 들고 있다. */
+  let lastContextTokens = 0;
 
-  screen.setStatus(() =>
-    renderStatus({
-      root: paths.root,
-      runtime: "error" in providerInfo ? "런타임 없음" : providerInfo.short.split(" · ")[0] ?? "",
-      contextTokens: thread ? estimateTokens(thread.conversation.turns) : 0,
-      maxTokens: 120_000,
-      turns: thread?.turns ?? 0,
-      costUsd: sessionCost > 0 ? sessionCost : null,
-      queued: queued.length,
-      ui,
-      width: process.stdout.columns ?? 100,
-    }),
-  );
-
-  /*
-   * 상태줄은 키 입력마다 다시 그리지 않는다.
-   *
-   * 처음엔 대기 건수를 즉시 보여 주려고 keypress 마다 redraw 했는데, 한글 IME의
-   * 조합 중인 글자를 매번 지웠다 다시 그려 입력이 깨졌다(실측). 상태줄이 바뀌는
-   * 시점은 턴 시작·종료뿐이라 그때만 그리면 충분하다.
-   */
 
   /** @returns {Promise<string | null>} null이면 입력 끝. */
   const nextLine = () => {
@@ -246,7 +214,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
 
   for (;;) {
     // 큐에 이미 쌓여 있으면 프롬프트를 다시 그리지 않는다 — 붙여넣기가 어지러워진다.
-    if (!queued.length) screen.redraw();
+    if (!queued.length) process.stdout.write(PROMPT);
     const raw = await nextLine();
     if (raw === null) break; // Ctrl+C / EOF
     const line = raw.trim();
@@ -271,7 +239,8 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
       } else {
         const agent = route(line);
         const t = threadFor(agent, line);
-        screen.print(ui.dim(`  ⋯ ${agent}${t.turns > 1 ? ` · ${t.turns}번째 턴` : ""}`));
+        process.stdout.write(ui.dim(`  ⋯ ${agent}${t.turns > 1 ? ` · ${t.turns}번째 턴` : ""}
+`));
         code = await executeAgent({
           root: paths.root,
           // AX-NAVI 본인이면 내장 인격을, 전문 역할이면 agents/<이름>.md 를 쓴다.
@@ -279,10 +248,32 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
           prompt: line,
           conversation: t.conversation,
           onCost: (usd) => { sessionCost += usd; },
-          screen,
+          onContextSize: (n) => { lastContextTokens = n; },
+          queuedCount: () => queued.length,
         });
         await persist();
-        screen.redraw();
+        /*
+         * 턴이 끝나면 상태를 한 줄 남긴다.
+         *
+         * 프롬프트에 붙박이로 달지 않는 이유는 Enter 가 커서를 한 줄 내려 우리 계산과
+         * 어긋나기 때문이다(실측: 출력마다 상태줄이 쌓였다). 기록으로 흘려보내면
+         * 그 다툼이 없고, 되돌아봐도 그 시점의 상태가 남아 있다.
+         */
+        process.stdout.write(
+          `${renderStatus({
+            root: paths.root,
+            runtime: "error" in providerInfo ? "런타임 없음" : providerInfo.short.split(" · ")[0] ?? "",
+            // 직접 경로는 우리가 turns 를 들고 있고, 위임 경로는 실제 사용량이 유일한 근거다.
+            contextTokens: Math.max(estimateTokens(t.conversation.turns), lastContextTokens),
+            maxTokens: 120_000,
+            turns: t.turns,
+            costUsd: sessionCost > 0 ? sessionCost : null,
+            queued: queued.length,
+            ui,
+            width: process.stdout.columns ?? 100,
+          })}
+`,
+        );
       }
     } catch (error) {
       process.stderr.write(`${ui.red("실패")}: ${/** @type {Error} */ (error).message}\n`);
@@ -290,7 +281,6 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     }
   }
 
-  screen.clear();
   menu?.dispose();
   rl.close();
   return code;

@@ -13,6 +13,7 @@ import {
 } from "@ax-navi/core";
 import { selectProvider } from "./provider.mjs";
 import { startMcpBridge } from "./mcp/bridge.mjs";
+import { createActivity } from "./activity.mjs";
 import { join } from "node:path";
 import { AGENTS_DIR, REPO_ROOT, createAuditSink, createElicitor, createProgressSink, debug, ui } from "./runtime.mjs";
 
@@ -24,12 +25,13 @@ import { AGENTS_DIR, REPO_ROOT, createAuditSink, createElicitor, createProgressS
  * @param {string} args.prompt
  * @param {import("@ax-navi/core").Conversation} [args.conversation]  주면 대화를 이어간다
  * @param {(usd: number) => void} [args.onCost]  이번 실행의 비용을 호출부에 알린다
- * @param {{ print: (t: string) => void }} [args.screen]  주면 이쪽으로 출력한다(프롬프트를 밀지 않게)
+ * @param {(tokens: number) => void} [args.onContextSize]  이번 턴이 실제로 실어 보낸 컨텍스트 크기
+ * @param {() => number} [args.queuedCount]  대기 중인 입력 줄 수 (상태 표시에 쓴다)
  * @param {import("./provider.mjs").ProviderName} [args.providerName]
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<number>} 프로세스 종료 코드
  */
-export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, onCost, screen, providerName, signal }) {
+export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, onCost, onContextSize, queuedCount, providerName, signal }) {
   /*
    * Provider를 먼저 고른다.
    *
@@ -124,21 +126,26 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   debug(ui.dim(`  agent=${agent.name} tier=${agent.tier} tools=${allowed.join(",")}\n`));
 
   /*
-   * 출력 경로. screen 이 있으면 프롬프트 영역을 피해 흘리고, 없으면 그냥 쓴다.
-   * 스트리밍 텍스트는 줄 단위로 모아 내보낸다 — 토큰마다 화면을 다시 그리면 깜빡인다.
+   * 출력과 상태 표시.
+   *
+   * 상태 표시는 한 줄 제자리 갱신이라, 무언가를 찍기 전에 그 줄을 지우고 찍은 뒤 되살린다.
+   * 스트리밍 텍스트는 줄 단위로 모아 내보낸다 — 토큰마다 화면을 건드리면 깜빡인다.
    */
+  const activity = createActivity({ output: process.stdout, ui });
+
   /** @param {string} text */
-  const emit = (text) => (screen ? screen.print(text) : process.stderr.write(`${text}\n`));
+  const emit = (text) => {
+    activity.suspend();
+    process.stdout.write(`${text}\n`);
+    activity.resume();
+  };
+
   let textBuffer = "";
   /** @param {string} chunk */
   const emitText = (chunk) => {
-    if (!screen) {
-      process.stdout.write(chunk);
-      return;
-    }
     textBuffer += chunk;
     for (let nl = textBuffer.indexOf("\n"); nl !== -1; nl = textBuffer.indexOf("\n")) {
-      screen.print(textBuffer.slice(0, nl));
+      emit(textBuffer.slice(0, nl));
       textBuffer = textBuffer.slice(nl + 1);
     }
   };
@@ -155,6 +162,11 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   /** @type {{ input: number, output: number, cacheRead: number, costUsd: number | null }} */
   const totals = { input: 0, output: 0, cacheRead: 0, costUsd: null };
 
+  activity.start(agent.name);
+  /** 대기 입력이 늘면 상태줄에 반영한다 — 사라진 게 아니라 줄 섰다는 신호다. */
+  const queueWatch = setInterval(() => activity.set({ queued: queuedCount?.() ?? 0 }), 500);
+  queueWatch.unref?.();
+
   try {
     for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt: prompt, ...(conversation ? { conversation } : {}) })) {
       if (event.type === "text") emitText(event.text ?? "");
@@ -169,6 +181,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         debug(`${ui.yellow("  ! ")}${ui.dim(event.reason ?? "")}\n`);
       } else if (event.type === "tool_call") {
         flushText();
+        activity.set({ tool: event.tool ?? "" });
         emit(`${ui.cyan(`  → ${event.tool}`)} ${ui.dim(summarize(event.input))}`);
       } else if (event.type === "tool_result") {
         const head = (event.result ?? "").split("\n")[0] ?? "";
@@ -185,6 +198,13 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         totals.input += event.usage.inputTokens;
         totals.output += event.usage.outputTokens;
         totals.cacheRead += event.usage.cacheReadTokens;
+        activity.bump(event.usage.outputTokens);
+        /*
+         * 위임 경로에서는 대화를 그쪽이 들고 있어 우리 turns 가 비어 있다 —
+         * 그대로 두면 상태줄이 늘 "Ctx 0" 이라 쓸모가 없다.
+         * 실제로 실어 보낸 양(새 입력 + 캐시에서 읽은 양)이 곧 컨텍스트 크기다.
+         */
+        onContextSize?.(event.usage.inputTokens + event.usage.cacheReadTokens);
         // 비용은 Provider가 실제로 줄 때만 표시한다. 추정치를 지어내지 않는다.
         if (typeof event.usage.costUsd === "number") {
           totals.costUsd = (totals.costUsd ?? 0) + event.usage.costUsd;
@@ -203,11 +223,11 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     }
   } finally {
     flushText();
+    clearInterval(queueWatch);
+    activity.stop();
     process.off("SIGINT", onSigint);
     await audit.flush();
   }
-
-  if (!screen) process.stdout.write("\n");
 
   /*
    * 마무리 한 줄.

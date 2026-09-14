@@ -10,7 +10,7 @@
  * git 조회는 매번 하지 않는다. 프로세스를 띄우는 비용이 한 줄 그리는 값보다 크다.
  */
 import { spawnSync } from "node:child_process";
-import { visibleLength } from "./screen.mjs";
+import { visibleLength } from "./width.mjs";
 
 /** @typedef {{ branch: string, added: number, removed: number } | null} GitInfo */
 
