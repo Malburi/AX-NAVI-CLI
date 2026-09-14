@@ -15,7 +15,7 @@ import { selectProvider } from "./provider.mjs";
 import { startMcpBridge } from "./mcp/bridge.mjs";
 import { createActivity } from "./activity.mjs";
 import { join } from "node:path";
-import { AGENTS_DIR, REPO_ROOT, createAuditSink, createHostElicitor, createProgressSink, debug, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, debug, ui } from "./runtime.mjs";
 
 /**
  * @param {object} args
@@ -105,7 +105,14 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   const registry = createDefaultRegistry();
   const gateway = new ToolGateway(registry);
   const audit = createAuditSink(paths);
-  const controller = new AbortController();
+  /*
+   * 취소 손잡이를 전역에 등록한다 — REPL 이 Ctrl+C / ESC 로 여기를 끊을 수 있어야 한다.
+   *
+   * process.on("SIGINT") 만으로는 REPL 안에서 아무 일도 일어나지 않는다. readline 이
+   * TTY 에서  을 가로채 자기 close() 로 처리하고 프로세스 시그널을 올리지 않기
+   * 때문이다(실측: 중단해도 턴이 끝까지 돌았다). 단발 실행에는 여전히 필요하므로 둘 다 건다.
+   */
+  const controller = beginTurn();
   if (signal) signal.addEventListener("abort", () => controller.abort(), { once: true });
   const onSigint = () => controller.abort();
   process.on("SIGINT", onSigint);
@@ -249,6 +256,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     clearInterval(queueWatch);
     activity.stop();
     process.off("SIGINT", onSigint);
+    endTurn(controller);
     await audit.flush();
   }
 
@@ -262,13 +270,22 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   const cost = totals.costUsd === null ? "" : ` · $${totals.costUsd.toFixed(4)}`;
   const recovered = toolErrors ? ` · 도구 실패 ${toolErrors}건(복구됨)` : "";
   const asked = bridge.askedCount() ? ` · 질문 ${bridge.askedCount()}회` : "";
-  process.stderr.write(ui.dim(`  ${seconds}s${cost}${recovered}${asked}\n`));
+  /*
+   * 중단은 실패가 아니라 사용자의 결정이다. 다만 **끝난 것처럼 보이면 안 된다** —
+   * 여기까지의 산출물은 절차 중간이라 불완전하기 때문이다. 그 사실을 그대로 적는다.
+   */
+  process.stderr.write(
+    controller.signal.aborted
+      ? `${ui.yellow("  ⛔ 중단됨")} ${ui.dim(`— 여기까지만 진행됐다 · ${seconds}s${cost}${asked}`)}\n`
+      : ui.dim(`  ${seconds}s${cost}${recovered}${asked}\n`),
+  );
   debug(
     ui.dim(
       `  토큰 in=${totals.input} out=${totals.output} cache_read=${totals.cacheRead}` +
         ` · 감사기록 ${audit.file}\n`,
     ),
   );
+  if (controller.signal.aborted) return 130; // 관례: 128 + SIGINT(2)
   return failed ? 1 : 0;
   }
 }

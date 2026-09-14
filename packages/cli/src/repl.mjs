@@ -18,7 +18,7 @@ import {
   saveSession,
   toTitle,
 } from "@ax-navi/core";
-import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, setLineReader, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, interruptTurn, setLineReader, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
 import { buildCommands, menuItems, renderCommandMenu } from "./completion.mjs";
 import { attachAutocomplete } from "./autocomplete.mjs";
@@ -145,6 +145,58 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
   setLineReader(nextLine);
 
   /*
+   * 중단 — Ctrl+C 또는 ESC.
+   *
+   * 예전엔 execute.mjs 가 process.on("SIGINT") 만 걸었는데, REPL 안에서는 그게
+   * 전혀 불리지 않는다. TTY 에서 readline 이 Ctrl+C 바이트를 먼저 가로채서
+   * 자기 close() 로 처리하고 프로세스 시그널을 올리지 않기 때문이다. 그래서
+   * 중단을 눌러도 도는 턴이 끝까지 갔다(실측). 여기서 직접 받아 끊는다.
+   */
+  let exitArmed = false;
+
+  /** @param {"Ctrl+C" | "ESC"} how */
+  const interrupt = (how) => {
+    if (!interruptTurn()) return false;
+    /*
+     * 질문을 기다리던 중이었다면 그 약속도 풀어 준다.
+     * 안 그러면 elicitor 가 영원히 기다려 턴이 끝나지 않는다.
+     */
+    if (waiter) {
+      const resolve = waiter;
+      waiter = null;
+      resolve(null);
+    }
+    process.stdout.write(`\n${ui.yellow(`  ⛔ 중단 (${how})`)}\n`);
+    return true;
+  };
+
+  rl.on("SIGINT", () => {
+    if (interrupt("Ctrl+C")) return;
+    // 도는 게 없을 때 — 친 줄이 있으면 지우고, 빈 줄에서 두 번이면 나간다.
+    if (rl.line) {
+      rl.write(null, { ctrl: true, name: "u" });
+      exitArmed = false;
+      return;
+    }
+    if (exitArmed) {
+      rl.close();
+      return;
+    }
+    exitArmed = true;
+    process.stdout.write(`\n${ui.dim("  한 번 더 Ctrl+C 를 누르면 나간다 (또는 /exit)")}\n${PROMPT}`);
+  });
+
+  /*
+   * ESC 는 keypress 로만 온다 — 줄이 아니라 line 이벤트가 안 난다.
+   * 도는 턴이 없을 때는 건드리지 않는다 — 자동완성 메뉴가 ESC 를 쓰기 때문이다.
+   */
+  if (process.stdin.isTTY) {
+    process.stdin.on("keypress", (/** @type {string} */ _ch, /** @type {{ name?: string }} */ key) => {
+      if (key?.name === "escape") interrupt("ESC");
+    });
+  }
+
+  /*
    * 대화 상태.
    *
    * 이게 없으면 매 입력이 새 대화라 "그거 수정하면 어디 영향가?" 에서 "그거"를 잃는다.
@@ -227,6 +279,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     const raw = await nextLine();
     if (raw === null) break; // Ctrl+C / EOF
     const line = raw.trim();
+    exitArmed = false;
     menu?.close();
     if (!line) continue;
     if (line === "/exit" || line === "/quit") break;

@@ -152,6 +152,43 @@ export function setLineReader(fn) {
   lineReader = fn;
 }
 
+/*
+ * 지금 도는 턴의 취소 손잡이.
+ *
+ * stdin 과 같은 성격이다 — 전면에서 도는 턴은 언제나 하나뿐이다. 그래서 자리도 하나만
+ * 둔다. 실행 경로가 넷(/skill, 오케스트레이터, /agent, 일반 대화)이라 인자로 끌고
+ * 다니면 배관만 늘고, 한 곳이라도 빠뜨리면 그 경로만 조용히 안 멈춘다.
+ */
+/** @type {AbortController | null} */
+let currentTurn = null;
+
+/**
+ * 턴을 시작하며 취소 손잡이를 등록한다. 끝나면 반드시 endTurn 으로 돌려준다.
+ * @returns {AbortController}
+ */
+export function beginTurn() {
+  currentTurn = new AbortController();
+  return currentTurn;
+}
+
+/**
+ * @param {AbortController} controller
+ */
+export function endTurn(controller) {
+  // 이미 다음 턴이 등록됐으면 건드리지 않는다.
+  if (currentTurn === controller) currentTurn = null;
+}
+
+/**
+ * 도는 턴이 있으면 중단시킨다.
+ * @returns {boolean} 실제로 멈출 게 있었는지. 없으면 호출자가 다른 뜻(종료 등)으로 해석한다.
+ */
+export function interruptTurn() {
+  if (!currentTurn || currentTurn.signal.aborted) return false;
+  currentTurn.abort();
+  return true;
+}
+
 /**
  * 지금 환경에 맞는 질문 통로를 만든다.
  * 등록된 독자가 있으면 그쪽으로, 없으면(단발 실행) 직접 readline 을 연다.

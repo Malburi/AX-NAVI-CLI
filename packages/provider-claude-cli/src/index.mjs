@@ -355,7 +355,7 @@ export class ClaudeCliProvider {
     });
     child.stdin.end(payload, "utf8");
 
-    const onAbort = () => child.kill();
+    const onAbort = () => terminateTree(child);
     signal?.addEventListener("abort", onAbort, { once: true });
 
     let stderr = "";
@@ -401,8 +401,12 @@ export class ClaudeCliProvider {
         await new Promise((resolve) => wakeups.push(/** @type {() => void} */ (resolve)));
       }
 
-      // 정상 종료가 아닌데 result 이벤트도 없었다면 실패를 성공으로 보고하지 않는다.
-      if (exitCode !== 0 && exitCode !== null) {
+      /*
+       * 정상 종료가 아닌데 result 이벤트도 없었다면 실패를 성공으로 보고하지 않는다.
+       * 단, 사용자가 끊은 경우는 제외한다 — 우리가 죽여 놓고 "claude 종료 코드 1"을
+       * 오류라고 알리는 것은 사실이 아니다(실측: 중단할 때마다 불필요한 오류가 찍혔다).
+       */
+      if (exitCode !== 0 && exitCode !== null && !signal?.aborted) {
         yield {
           type: "error",
           error: {
@@ -415,7 +419,7 @@ export class ClaudeCliProvider {
     } finally {
       signal?.removeEventListener("abort", onAbort);
       rl.close();
-      if (!finished) child.kill();
+      if (!finished) terminateTree(child);
     }
   }
 
@@ -440,4 +444,26 @@ export class ClaudeCliProvider {
 
   /** @returns {Promise<void>} */
   async cancel() {}
+}
+
+/**
+ * 자식 프로세스를 트리째 끝낸다.
+ *
+ * child.kill() 은 claude 하나만 죽인다. 그 밑에는 우리가 붙여 준 MCP 서버가
+ * 손자로 떠 있고, Windows 에서는 부모가 죽어도 그게 살아남는다 — 그러면
+ * 파이프가 닫히지 않아 중단이 체감되지 않는다. taskkill /T 로 트리를 끝는다.
+ *
+ * @param {import("node:child_process").ChildProcess} child
+ */
+function terminateTree(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === "win32" && child.pid) {
+    try {
+      spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+      return;
+    } catch {
+      // taskkill 이 없거나 이미 죽은 경우 — 아래 기본 경로로 내려간다.
+    }
+  }
+  child.kill();
 }
