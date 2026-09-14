@@ -11,7 +11,7 @@ import {
 } from "@ax-navi/core";
 import { selectProvider } from "./provider.mjs";
 import { join } from "node:path";
-import { AGENTS_DIR, REPO_ROOT, createAuditSink, createElicitor, createProgressSink, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, createAuditSink, createElicitor, createProgressSink, debug, ui } from "./runtime.mjs";
 
 /**
  * @param {object} args
@@ -49,7 +49,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, pro
   const agent = preset
     ?? (await loadAgent(join(AGENTS_DIR, `${agentName}.md`), { pluginRoot: REPO_ROOT, projectRoot: paths.root }));
 
-  for (const warning of agent.warnings) process.stderr.write(ui.dim(`  ! ${warning}\n`));
+  // 경로 치환 같은 내부 적응 기록은 사용자가 볼 것이 아니다.
+  for (const warning of agent.warnings ?? []) debug(ui.dim(`  ! ${warning}\n`));
 
   const registry = createDefaultRegistry();
   const gateway = new ToolGateway(registry);
@@ -72,9 +73,10 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, pro
 
   const provider = picked.provider;
   const allowed = registry.definitionsFor(agent.role).map((d) => d.name);
-  process.stderr.write(ui.dim(`  provider=${picked.note}\n`));
-  process.stderr.write(`${ui.dim(`  agent=${agent.name} tier=${agent.tier} tools=${allowed.join(",")}`)}\n\n`);
+  debug(ui.dim(`  provider=${picked.note}\n`));
+  debug(ui.dim(`  agent=${agent.name} tier=${agent.tier} tools=${allowed.join(",")}\n`));
 
+  const startedAt = Date.now();
   let failed = false;
   let toolErrors = 0;
   /** @type {{ input: number, output: number, cacheRead: number, costUsd: number | null }} */
@@ -84,8 +86,11 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, pro
     for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt: prompt })) {
       if (event.type === "text") process.stdout.write(event.text ?? "");
       else if (event.type === "delegated") {
-        // 통제 주체가 옮겨간 사실을 조용히 넘기지 않는다.
-        process.stderr.write(`${ui.yellow("  ! ")}${ui.dim(event.reason ?? "")}\n`);
+        /*
+         * 통제 주체가 옮겨간 사실은 시작 화면의 Runtime 줄이 이미 밝히고 있다.
+         * 호출마다 되풀이하면 그건 공지가 아니라 소음이다.
+         */
+        debug(`${ui.yellow("  ! ")}${ui.dim(event.reason ?? "")}\n`);
       } else if (event.type === "tool_call") {
         process.stderr.write(`\n${ui.cyan(`  → ${event.tool}`)} ${ui.dim(summarize(event.input))}\n`);
       } else if (event.type === "tool_result") {
@@ -123,12 +128,21 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, pro
   }
 
   process.stdout.write("\n");
-  const cost = totals.costUsd === null ? "" : `  ·  $${totals.costUsd.toFixed(4)}`;
-  const recovered = toolErrors ? `  ·  도구 실패 ${toolErrors}건(복구됨)` : "";
-  process.stderr.write(
+
+  /*
+   * 마무리 한 줄.
+   *
+   * 사용자가 매번 알고 싶은 것은 "얼마나 걸렸고 얼마 들었나"뿐이다.
+   * 토큰 내역·감사기록 경로는 필요할 때만 --verbose 로 본다.
+   */
+  const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+  const cost = totals.costUsd === null ? "" : ` · $${totals.costUsd.toFixed(4)}`;
+  const recovered = toolErrors ? ` · 도구 실패 ${toolErrors}건(복구됨)` : "";
+  process.stderr.write(ui.dim(`  ${seconds}s${cost}${recovered}\n`));
+  debug(
     ui.dim(
-      `\n  토큰 in=${totals.input} out=${totals.output} cache_read=${totals.cacheRead}${cost}${recovered}` +
-        `  ·  감사기록 ${audit.file}\n`,
+      `  토큰 in=${totals.input} out=${totals.output} cache_read=${totals.cacheRead}` +
+        ` · 감사기록 ${audit.file}\n`,
     ),
   );
   return failed ? 1 : 0;

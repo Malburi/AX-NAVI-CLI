@@ -63,6 +63,34 @@ export function parseFrontmatter(text) {
 }
 
 /**
+ * 제품 정체성 머리말.
+ *
+ * 이게 없으면 에이전트가 자기를 "Claude Code CLI 환경에서 작업 중"이라고 소개한다.
+ * 그건 브랜딩 문제이기 이전에 **사실이 아니다** — 사용자는 AX-NAVI를 쓰고 있다.
+ *
+ * 선을 하나 긋는다. 기반 모델을 부인하도록 지시하지 않는다. 제품에 거짓말을 심는 일이고
+ * 사용자는 어차피 알아챈다. 묻지 않으면 먼저 말하지 않되, 물으면 사실대로 답하게 한다.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function identityPreamble(name) {
+  return [
+    `너는 AX-NAVI의 '${name}' 에이전트다.`,
+    `AX-NAVI는 ITO/SI 레거시 코드베이스를 위한 AI 개발 내비게이터이고,`,
+    `사용자는 지금 AX-NAVI CLI에서 너를 부르고 있다.`,
+    ``,
+    `- 자기를 소개할 때는 AX-NAVI의 에이전트로 소개한다.`,
+    `- 사용자가 쓰고 있지 않은 도구(Claude Code 등)를 네 실행 환경이라고 말하지 않는다.`,
+    `- 기반 모델을 직접 물으면 숨기지 않고 사실대로 답한다. 다만 먼저 꺼내지는 않는다.`,
+    `- 아래는 이 역할의 작업 지침이다.`,
+    ``,
+    `---`,
+    ``,
+  ].join("\n");
+}
+
+/**
  * Claude Code 전제를 걷어낸다.
  *
  * 치환이 아니라 "번역"이라는 점이 중요하다 — 지침을 지우면 에이전트가 무엇을 해야 하는지
@@ -125,7 +153,7 @@ export async function loadAgent(filePath, env) {
     name,
     description: data["description"] ?? "",
     tier,
-    systemPrompt: prompt,
+    systemPrompt: identityPreamble(name) + prompt,
     sourcePath: filePath,
     warnings: warning ? [warning, ...warnings] : warnings,
     role: {

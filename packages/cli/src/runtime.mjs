@@ -20,6 +20,19 @@ export const SKILLS_DIR = join(REPO_ROOT, "skills");
 
 /* ---------- 출력 ---------- */
 
+/*
+ * 상세 출력.
+ *
+ * 내부 진단(치환된 경로 수, 도구 목록, 통제 주체 이전 같은 것)은 기본으로 감춘다.
+ * 사용자에게는 제품이 보여야지 구현이 보이면 안 된다. 필요할 때만 --verbose 로 연다.
+ */
+export const VERBOSE = process.env["AXNAVI_VERBOSE"] === "1" || process.argv.includes("--verbose");
+
+/** @param {string} text */
+export function debug(text) {
+  if (VERBOSE) process.stderr.write(text);
+}
+
 const useColor = process.stdout.isTTY && !process.env["NO_COLOR"];
 /** @param {string} code @param {string} text */
 const paint = (code, text) => (useColor ? `[${code}m${text}[0m` : text);

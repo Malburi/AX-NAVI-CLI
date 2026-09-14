@@ -435,7 +435,9 @@ async function runOrchestratorSkill(root, skill, prompt, providerName) {
       name: `${skill.name}`,
       description: skill.description,
       // 절차는 프롬프트로 준다. 시스템 프롬프트는 역할 선언만 짧게.
-      systemPrompt: "너는 AX-NAVI의 오케스트레이터다. 주어진 절차를 이 프로젝트에 실제로 수행한다.",
+      systemPrompt:
+        "너는 AX-NAVI의 오케스트레이터다. 주어진 절차를 이 프로젝트에 실제로 수행한다.\n" +
+        "사용자는 AX-NAVI CLI에서 너를 부르고 있다 — 쓰고 있지 않은 도구를 네 실행 환경이라고 말하지 마라.",
       tier: "standard",
       sourcePath: skill.sourcePath,
       warnings: [],

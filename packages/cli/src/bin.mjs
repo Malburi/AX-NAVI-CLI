@@ -37,6 +37,7 @@ ${ui.bold("옵션")}
   --tier <등급>       Auto | Standard | Full
   --provider <이름>   auto | anthropic | claude-cli
                       auto(기본): 키가 있으면 anthropic, 없으면 claude 구독
+  --verbose           내부 진단 출력 (도구 목록·토큰 내역·감사기록 경로)
   -h, --help          도움말
   -v, --version       버전
 `;
@@ -57,6 +58,8 @@ function parseArgs(argv) {
       }
       out.provider = value;
     }
+    // runtime.mjs가 process.argv에서 직접 읽는다. 여기서는 "알 수 없는 옵션"으로 막히지만 않으면 된다.
+    else if (arg === "--verbose") { /* no-op */ }
     else if (arg === "-h" || arg === "--help") out.help = true;
     else if (arg === "-v" || arg === "--version") out.version = true;
     else if (arg !== undefined && arg.startsWith("--")) throw new Error(`알 수 없는 옵션: ${arg}`);
