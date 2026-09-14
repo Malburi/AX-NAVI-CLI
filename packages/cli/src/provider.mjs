@@ -20,37 +20,49 @@ export function hasApiKey() {
 
 /**
  * @param {{ provider?: ProviderName, cwd?: string }} opts
- * @returns {{ provider: import("@ax-navi/core").LLMProvider, note: string } | { error: string }}
+ * @returns {{ provider: import("@ax-navi/core").LLMProvider, note: string, short: string } | { error: string }}
  */
 export function selectProvider(opts = {}) {
   const wanted = opts.provider ?? "auto";
 
   if (wanted === "anthropic") {
     if (!hasApiKey()) return { error: authHelp("anthropic Provider를 지정했지만 ANTHROPIC_API_KEY가 없다.") };
-    return { provider: new AnthropicProvider(), note: "anthropic · Messages API · Gateway가 도구를 통제한다" };
+    return ANTHROPIC();
   }
 
   if (wanted === "claude-cli") {
     const probe = probeClaudeCli();
     if (!probe.ok) return { error: `claude CLI를 쓸 수 없다 — ${probe.reason}` };
-    return {
-      provider: new ClaudeCliProvider(opts.cwd ? { cwd: opts.cwd } : {}),
-      note: `claude-cli ${probe.version} · 구독 인증 · 도구 제약은 claude 권한 체계가 강제한다`,
-    };
+    return CLAUDE_CLI(probe.version, opts.cwd);
   }
 
   // auto — 키가 있으면 통제력이 더 큰 쪽을 먼저 택한다.
-  if (hasApiKey()) {
-    return { provider: new AnthropicProvider(), note: "anthropic · Messages API · Gateway가 도구를 통제한다" };
-  }
+  if (hasApiKey()) return ANTHROPIC();
   const probe = probeClaudeCli();
-  if (probe.ok) {
-    return {
-      provider: new ClaudeCliProvider(opts.cwd ? { cwd: opts.cwd } : {}),
-      note: `claude-cli ${probe.version} · 구독 인증 · 도구 제약은 claude 권한 체계가 강제한다`,
-    };
-  }
+  if (probe.ok) return CLAUDE_CLI(probe.version, opts.cwd);
   return { error: authHelp("ANTHROPIC_API_KEY도 없고 claude CLI도 찾지 못했다.") };
+}
+
+/* 짧은 라벨(시작 화면용)과 긴 설명(실행 로그용)을 나눠 둔다. */
+function ANTHROPIC() {
+  return {
+    provider: new AnthropicProvider(),
+    short: "anthropic · Messages API",
+    note: "anthropic · Messages API · Gateway가 도구를 통제한다",
+  };
+}
+
+/**
+ * @param {string} version
+ * @param {string} [cwd]
+ */
+function CLAUDE_CLI(version, cwd) {
+  const v = version.replace(/\s*\(Claude Code\)\s*$/, "");
+  return {
+    provider: new ClaudeCliProvider(cwd ? { cwd } : {}),
+    short: `claude-cli ${v} · 구독 인증`,
+    note: `claude-cli ${v} · 구독 인증 · 도구 제약은 claude 권한 체계가 강제한다`,
+  };
 }
 
 /** @param {string} headline */

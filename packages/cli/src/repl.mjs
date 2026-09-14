@@ -8,7 +8,10 @@
 import { createInterface } from "node:readline/promises";
 import { indexStaleness } from "@ax-navi/indexer";
 import { loadAllAgents, loadAllSkills } from "@ax-navi/core";
-import { AGENTS_DIR, BANNER, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
+import { basename } from "node:path";
+import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
+import { block, readStack, renderBanner, row } from "./banner.mjs";
+import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { cmdIndex, runSkill } from "./commands.mjs";
 
@@ -24,25 +27,55 @@ const ROUTES = [
 /**
  * @param {import("@ax-navi/core").ProjectPaths} paths
  * @param {import("@ax-navi/core").ProjectState} state
+ * @param {string} [version]
  * @returns {Promise<number>}
  */
-export async function startRepl(paths, state) {
-  process.stdout.write(`${BANNER}\n\n`);
-  process.stdout.write(`  ${ui.dim("Project")}  ${paths.root}\n`);
+export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
+  process.stdout.write(renderBanner(version));
+
+  /** @type {string[]} */
+  const lines = [];
+  lines.push(row("Project", `${ui.bold(basename(paths.root))}  ${ui.dim(paths.root)}`));
+
+  const stack = state.hasIndex ? readStack(paths.indexDir) : null;
+  if (stack) {
+    lines.push(row("Stack", `${stack.stack}  ${ui.dim(`· ${stack.files} files · tier ${stack.tier}`)}`));
+  }
 
   if (state.hasIndex) {
     const st = indexStaleness(paths.root);
-    process.stdout.write(`  ${ui.dim("Index")}    ${st.stale ? ui.yellow(st.reason) : ui.green("Ready")}\n`);
+    lines.push(row("Index", st.stale ? `${ui.yellow("갱신 필요")}  ${ui.dim(st.reason)}` : `${ui.green("Ready")}  ${ui.dim(st.reason)}`));
   } else {
-    process.stdout.write(`  ${ui.dim("Index")}    ${ui.yellow("없음")} ${ui.dim("— /index build")}\n`);
+    lines.push(row("Index", `${ui.yellow("없음")}  ${ui.dim("— /index build 로 만드세요 (LLM·API 키 불필요)")}`));
   }
+
+  /*
+   * 실행 경로를 실제로 확인해서 보여 준다.
+   * 예전에는 여기서 ANTHROPIC_API_KEY만 보고 "키 미설정 — /index 외 명령은 실패한다"고
+   * 썼는데, claude 구독으로 도는 경우에는 그게 거짓말이다.
+   */
+  const picked = selectProvider({ cwd: paths.root });
+  if ("error" in picked) {
+    lines.push(row("Runtime", `${ui.red("없음")}  ${ui.dim("— 아래 안내 참고")}`));
+  } else {
+    const [head, ...tail] = picked.short.split(" · ");
+    lines.push(row("Runtime", `${ui.green(head ?? "")}  ${ui.dim(tail.join(" · "))}`));
+  }
+
   if (state.hasPluginHarness) {
-    process.stdout.write(`  ${ui.dim("Harness")}  ${ui.green("플러그인 하네스 감지됨")}\n`);
+    lines.push(row("Harness", `${ui.green("플러그인 하네스 감지됨")}  ${ui.dim("· CLAUDE.md + .claude/")}`));
   }
-  if (!process.env["ANTHROPIC_API_KEY"] && !process.env["ANTHROPIC_AUTH_TOKEN"]) {
-    process.stdout.write(`  ${ui.yellow("!")}        ${ui.dim("API 키 미설정 — /index 외 명령은 실패한다")}\n`);
+
+  lines.push("");
+  if ("error" in picked) {
+    lines.push(`${picked.error}`);
+    lines.push("");
   }
-  process.stdout.write(`\n  ${ui.dim("/help 로 명령 목록, Ctrl+C 로 종료")}\n\n`);
+  lines.push(
+    `  ${ui.dim("자연어로 물어보세요.")}   ${ui.cyan("/help")} ${ui.dim("명령 목록")}   ${ui.cyan("/exit")} ${ui.dim("종료")}`,
+  );
+  lines.push("");
+  process.stdout.write(block(lines));
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   let code = 0;

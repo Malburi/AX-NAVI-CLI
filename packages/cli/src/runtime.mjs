@@ -33,11 +33,6 @@ export const ui = {
   /** @param {string} s */ red: (s) => paint("31", s),
 };
 
-export const BANNER = `
-${ui.cyan("╔══════════════════════════════════════════╗")}
-${ui.cyan("║")}            ${ui.bold("AX-NAVI CLI")}                   ${ui.cyan("║")}
-${ui.cyan("║")}   ${ui.dim("Enterprise AI Development Navigator")}    ${ui.cyan("║")}
-${ui.cyan("╚══════════════════════════════════════════╝")}`;
 
 /* ---------- 감사 기록 ---------- */
 

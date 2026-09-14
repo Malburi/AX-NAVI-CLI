@@ -9,11 +9,12 @@ import { inspectProject, resolveProjectPaths } from "@ax-navi/core";
 import { cmdAgent, cmdDoctor, cmdIndex, cmdInit, cmdSkill } from "./commands.mjs";
 import { executeAgent } from "./execute.mjs";
 import { startRepl } from "./repl.mjs";
-import { BANNER, ui } from "./runtime.mjs";
+import { ui } from "./runtime.mjs";
+import { renderBanner } from "./banner.mjs";
 
 const VERSION = "0.1.0-alpha.0";
 
-const HELP = `${BANNER}
+const HELP = `${renderBanner(VERSION)}
 
 ${ui.bold("사용법")}
   axnavi                          대화형 모드
@@ -86,7 +87,7 @@ async function main() {
 
   if (!command) {
     const paths = resolveProjectPaths(args.root);
-    return startRepl(paths, inspectProject(paths));
+    return startRepl(paths, inspectProject(paths), VERSION);
   }
 
   switch (command) {
