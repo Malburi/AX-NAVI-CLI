@@ -10,6 +10,7 @@ import {
   ToolGateway,
 } from "@ax-navi/core";
 import { selectProvider } from "./provider.mjs";
+import { startMcpBridge } from "./mcp/bridge.mjs";
 import { join } from "node:path";
 import { AGENTS_DIR, REPO_ROOT, createAuditSink, createElicitor, createProgressSink, debug, ui } from "./runtime.mjs";
 
@@ -30,16 +31,26 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, pro
    * 키가 없어도 claude CLI가 있으면 구독으로 돌아간다 — 이 분기가 있어야
    * API 키를 못 받는 환경에서도 에이전트 경로를 쓸 수 있다.
    */
+  const paths = resolveProjectPaths(root);
+  const elicitor = createElicitor();
+
+  /*
+   * 위임 실행이 사용자에게 되묻고 우리 인덱스를 쓸 수 있게 MCP 브리지를 띄운다.
+   * 이게 없으면 "물을 수단이 없다"고 가정하고 기본값으로 넘어간다(실측).
+   */
+  const bridge = await startMcpBridge({ paths, elicitor });
+
   const picked = selectProvider({
     ...(providerName ? { provider: providerName } : {}),
     cwd: root,
+    mcp: { configPath: bridge.configPath, env: bridge.env },
   });
   if ("error" in picked) {
     process.stderr.write(`${picked.error}\n`);
+    await bridge.dispose();
     return 1;
   }
 
-  const paths = resolveProjectPaths(root);
   /*
    * 실행자는 두 가지로 온다.
    *   agentName  — agents/<이름>.md 를 읽는다 (일반 경로)
@@ -66,7 +77,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, pro
     allowedRoots: [paths.root],
     role: agent.role,
     audit,
-    elicitor: createElicitor(),
+    elicitor,
     progress: createProgressSink(),
     signal: controller.signal,
   };
@@ -124,6 +135,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, pro
     }
   } finally {
     process.off("SIGINT", onSigint);
+    await bridge.dispose();
     await audit.flush();
   }
 
@@ -138,7 +150,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, pro
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
   const cost = totals.costUsd === null ? "" : ` · $${totals.costUsd.toFixed(4)}`;
   const recovered = toolErrors ? ` · 도구 실패 ${toolErrors}건(복구됨)` : "";
-  process.stderr.write(ui.dim(`  ${seconds}s${cost}${recovered}\n`));
+  const asked = bridge.askedCount() ? ` · 질문 ${bridge.askedCount()}회` : "";
+  process.stderr.write(ui.dim(`  ${seconds}s${cost}${recovered}${asked}\n`));
   debug(
     ui.dim(
       `  토큰 in=${totals.input} out=${totals.output} cache_read=${totals.cacheRead}` +

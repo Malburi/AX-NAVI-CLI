@@ -19,7 +19,7 @@ export function hasApiKey() {
 }
 
 /**
- * @param {{ provider?: ProviderName, cwd?: string }} opts
+ * @param {{ provider?: ProviderName, cwd?: string, mcp?: { configPath: string, env: Record<string, string> } }} opts
  * @returns {{ provider: import("@ax-navi/core").LLMProvider, note: string, short: string } | { error: string }}
  */
 export function selectProvider(opts = {}) {
@@ -33,13 +33,13 @@ export function selectProvider(opts = {}) {
   if (wanted === "claude-cli") {
     const probe = probeClaudeCli();
     if (!probe.ok) return { error: `claude CLI를 쓸 수 없다 — ${probe.reason}` };
-    return CLAUDE_CLI(probe.version, opts.cwd);
+    return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp);
   }
 
   // auto — 키가 있으면 통제력이 더 큰 쪽을 먼저 택한다.
   if (hasApiKey()) return ANTHROPIC();
   const probe = probeClaudeCli();
-  if (probe.ok) return CLAUDE_CLI(probe.version, opts.cwd);
+  if (probe.ok) return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp);
   return { error: authHelp("ANTHROPIC_API_KEY도 없고 claude CLI도 찾지 못했다.") };
 }
 
@@ -55,11 +55,15 @@ function ANTHROPIC() {
 /**
  * @param {string} version
  * @param {string} [cwd]
+ * @param {{ configPath: string, env: Record<string, string> }} [mcp]
  */
-function CLAUDE_CLI(version, cwd) {
+function CLAUDE_CLI(version, cwd, mcp) {
   const v = version.replace(/\s*\(Claude Code\)\s*$/, "");
   return {
-    provider: new ClaudeCliProvider(cwd ? { cwd } : {}),
+    provider: new ClaudeCliProvider({
+      ...(cwd ? { cwd } : {}),
+      ...(mcp ? { mcpConfigPath: mcp.configPath, env: mcp.env } : {}),
+    }),
     short: `claude-cli ${v} · 구독 인증`,
     note: `claude-cli ${v} · 구독 인증 · 도구 제약은 claude 권한 체계가 강제한다`,
   };

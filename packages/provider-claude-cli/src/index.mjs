@@ -39,13 +39,25 @@ const MODEL_BY_TIER = { fast: "haiku", standard: "sonnet", deep: "opus" };
 const MUTATING = ["Edit", "MultiEdit", "NotebookEdit", "Write"];
 
 /*
- * AX-NAVI의 도구 계약에 없는 claude Code 기능. 켜 두면 에이전트가 우리 계약 밖으로
- * 새어 나간다 — Web* 는 프로젝트 컨텍스트를 외부로 내보낸다(브리프 §12).
+ * 우리가 쓰는 도구. 이 목록에 없는 claude Code 기능은 전부 끈다.
+ *
+ * 처음에는 반대로 "끌 것"만 나열했는데 그러면 빠뜨린 것이 새어 나온다 —
+ * 실측에서 ScheduleWakeup·ToolSearch·PowerShell 이 그렇게 튀어나왔다.
+ * 허용할 것을 적고 나머지를 끄는 쪽이 빠뜨릴 여지가 없다.
  */
-const OUT_OF_CONTRACT = [
-  "Skill", "SlashCommand", "WebSearch", "WebFetch",
-  "Workflow", "Monitor", "CronCreate", "CronDelete", "CronList",
-  "SendMessage", "ListAgents", "PushNotification", "RemoteTrigger",
+const KEEP = ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "Bash", "Task", "TaskOutput", "TaskStop"];
+
+/*
+ * claude Code 2.1.x 가 제공하는 도구 전체(init 이벤트에서 실측).
+ * 새 버전에서 도구가 늘면 여기 없는 것은 못 끄므로, 주기적으로 --verbose 로 확인해야 한다.
+ */
+const CLAUDE_CODE_TOOLS = [
+  "Task", "Bash", "CronCreate", "CronDelete", "CronList", "DesignSync", "Edit",
+  "EnterWorktree", "ExitWorktree", "Glob", "Grep", "ListAgents", "ListMcpResourcesTool",
+  "Monitor", "MultiEdit", "NotebookEdit", "PowerShell", "PushNotification", "Read",
+  "ReadMcpResourceDirTool", "ReadMcpResourceTool", "RemoteTrigger", "ReportFindings",
+  "ScheduleWakeup", "SendMessage", "ShareOnboardingGuide", "Skill", "SlashCommand",
+  "TaskOutput", "TaskStop", "ToolSearch", "WebFetch", "WebSearch", "Workflow", "Write",
 ];
 
 /*
@@ -55,7 +67,10 @@ const OUT_OF_CONTRACT = [
  * 절차의 본체라, 이걸 막으면 스킬 자체가 성립하지 않는다. spec.allowDelegation이
  * 요청될 때만 연다.
  */
-const DELEGATION_TOOLS = ["Task"];
+const DELEGATION_TOOLS = ["Task", "TaskOutput", "TaskStop"];
+
+/** AX-NAVI MCP 서버가 노출하는 도구. claude 쪽에서는 이 이름으로 보인다. */
+const MCP_TOOLS = ["mcp__axnavi__AskUserQuestion", "mcp__axnavi__QueryIndex"];
 
 /**
  * 역할이 허용한 도구를 claude 쪽 `--disallowedTools` 목록으로 번역한다.
@@ -67,12 +82,20 @@ const DELEGATION_TOOLS = ["Task"];
  */
 export function toDisallowedTools(tools, allowDelegation = false) {
   const allowed = new Set(tools.map((t) => t.name));
-  const off = [...OUT_OF_CONTRACT];
-  if (!allowDelegation) off.push(...DELEGATION_TOOLS);
-  for (const name of MUTATING) {
-    if (!allowed.has(name)) off.push(name);
-  }
-  return off;
+  /** 이 실행에서 살려 둘 도구. */
+  const keep = new Set(
+    KEEP.filter((name) => {
+      if (DELEGATION_TOOLS.includes(name)) return allowDelegation;
+      /*
+       * 수정 도구는 역할이 **그 도구를 콕 집어** 허용했을 때만 연다.
+       * "Write가 있으면 Edit도" 식으로 묶으면 13개 에이전트의 불변식이 깨진다 —
+       * 그들은 리포트를 쓰되 소스는 고치지 않는 역할이라 Write만 갖고 Edit은 없다.
+       */
+      if (MUTATING.includes(name)) return allowed.has(name);
+      return true;
+    }),
+  );
+  return CLAUDE_CODE_TOOLS.filter((name) => !keep.has(name));
 }
 
 /*
@@ -219,7 +242,13 @@ export function translateEvent(msg) {
 
 /** @implements {LLMProvider} */
 export class ClaudeCliProvider {
-  /** @param {{ extraArgs?: string[], cwd?: string }} [options] */
+/**
+   * @param {object} [options]
+   * @param {string[]} [options.extraArgs]
+   * @param {string} [options.cwd]
+   * @param {string} [options.mcpConfigPath]  AX-NAVI MCP 서버 설정 파일
+   * @param {Record<string, string>} [options.env]  MCP 서버에 넘길 환경변수
+   */
   constructor(options = {}) {
     this.id = "claude-cli";
     this.options = options;
@@ -264,12 +293,25 @@ export class ClaudeCliProvider {
       "--output-format", "stream-json",
       "--verbose",
       "--model", MODEL_BY_TIER[spec.tier],
-      // 사용자의 MCP 서버가 끼어들지 않게 한다 — 우리 도구 계약 밖이다.
+      /*
+       * 사용자가 개인적으로 붙여 둔 MCP 서버는 우리 도구 계약 밖이다.
+       * --strict-mcp-config 로 그것들을 끊고, --mcp-config 로 우리 것만 올린다.
+       */
       "--strict-mcp-config",
+      ...(this.options.mcpConfigPath ? ["--mcp-config", this.options.mcpConfigPath] : []),
       ...this.options.extraArgs ?? [],
     ];
+
     const disallowed = toDisallowedTools(spec.tools, spec.allowDelegation === true);
     if (disallowed.length) args.push("--disallowedTools", ...disallowed);
+
+    /*
+     * 우리 MCP 도구는 미리 승인해 둔다. -p 모드에는 승인해 줄 사람이 없어서
+     * 승인 대기 = 거부가 되기 때문이다.
+     */
+    if (this.options.mcpConfigPath) {
+      args.push("--allowedTools", ...MCP_TOOLS);
+    }
 
     const bin = resolveClaudeBin();
     if (!bin) {
@@ -284,6 +326,8 @@ export class ClaudeCliProvider {
     const child = spawn(bin, args, {
       cwd: this.options.cwd ?? process.cwd(),
       stdio: ["pipe", "pipe", "pipe"],
+      // MCP 서버는 claude 의 자식으로 뜨므로 환경변수가 거기까지 상속된다.
+      env: { ...process.env, ...this.options.env },
     });
     child.stdin.end(payload, "utf8");
 
