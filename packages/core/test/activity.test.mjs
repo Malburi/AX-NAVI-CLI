@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createActivity } from "../../cli/src/activity.mjs";
+import { createActivity, elapsed } from "../../cli/src/activity.mjs";
 import { clipToWidth, visibleLength } from "../../cli/src/width.mjs";
 import { renderStatus } from "../../cli/src/status.mjs";
 
@@ -109,7 +109,7 @@ test("진행 정보가 줄에 반영된다", () => {
   const text = out.text();
   assert.match(text, /analyzer/);
   assert.match(text, /QueryIndex/);
-  assert.match(text, /↓2\.5k/);
+  assert.match(text, /↓ 2\.5k tokens/);
   // 작업 중에 친 입력이 사라진 게 아니라 줄 서 있다는 신호.
   assert.match(text, /2건 대기/);
 });
@@ -202,4 +202,13 @@ test("멈춰 세우면 회전자 타이머가 다시 그리지 않는다", async
   activity.resume();
   assert.ok(out.text().includes("harness-init"), "되살리지 않았다");
   activity.stop();
+});
+
+test("경과 시간은 분·시로 끈는다 — 898s 는 암산해야 읽힌다", () => {
+  assert.equal(elapsed(0), "0s");
+  assert.equal(elapsed(58_000), "58s");
+  assert.equal(elapsed(898_000), "14m 58s");
+  assert.equal(elapsed(3_661_000), "1h 1m 1s");
+  // 음수는 시계가 뒤로 갔을 때 생긴다. 0 으로 본다.
+  assert.equal(elapsed(-5_000), "0s");
 });

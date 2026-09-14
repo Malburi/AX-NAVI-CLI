@@ -13,7 +13,8 @@ import {
 } from "@ax-navi/core";
 import { selectProvider } from "./provider.mjs";
 import { startMcpBridge } from "./mcp/bridge.mjs";
-import { createActivity } from "./activity.mjs";
+import { createActivity, elapsed } from "./activity.mjs";
+import { renderCall } from "./transcript.mjs";
 import { join } from "node:path";
 import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, debug, ui } from "./runtime.mjs";
 
@@ -160,6 +161,9 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 상태 표시는 한 줄 제자리 갱신이라, 무언가를 찍기 전에 그 줄을 지우고 찍은 뒤 되살린다.
    * 스트리밍 텍스트는 줄 단위로 모아 내보낸다 — 토큰마다 화면을 건드리면 깜빡인다.
    */
+  /** 결과를 기다리는 호출들. @type {Map<string, { tool: string, input: unknown }>} */
+  const pending = new Map();
+
   /** @param {string} text */
   const emit = (text) => {
     activity.suspend();
@@ -210,13 +214,29 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         flushText();
         const tool = toolLabel(event.tool ?? "");
         activity.set({ tool });
-        // 질문 도구는 곧바로 질문지를 그리므로, 인자를 미리 풀면 같은 말을 두 번 한다.
-        const args = tool === "AskUserQuestion" ? "" : summarize(event.input);
-        emit(`${ui.cyan(`  → ${tool}`)} ${args ? ui.dim(args) : ""}`);
+        /*
+         * 바로 찍지 않고 결과가 올 때까지 든다.
+         *
+         * claude 는 도구를 병렬로 돌린다. 호출 대여섯 개가 먼저 쌏아지고 결과가 뒤늫게
+         * 따라오니, 오는 대로 흘리면 어느 결과가 어느 호출의 것인지 모른다(실측).
+         * 지금 무엇이 도는지는 상태 표시 줄이 보여 주므로 기다리는 동안 깜깜하지 않다.
+         */
+        pending.set(event.id ?? `익명${pending.size}`, { tool, input: event.input });
       } else if (event.type === "tool_result") {
-        const head = (event.result ?? "").split("\n")[0] ?? "";
-        const mark = event.isError ? ui.red("  ✗") : ui.green("  ←");
-        emit(`${mark} ${ui.dim(head.slice(0, 160))}`);
+        const key = event.id ?? [...pending.keys()][0];
+        const call = key === undefined ? undefined : pending.get(key);
+        if (key !== undefined) pending.delete(key);
+        emit(
+          renderCall({
+            tool: call?.tool ?? toolLabel(event.tool ?? ""),
+            input: call?.input,
+            result: event.result ?? "",
+            isError: event.isError === true,
+            root: paths.root,
+            width: process.stdout.columns ?? 100,
+            ui,
+          }).join("\n"),
+        );
         /*
          * 도구 실패 하나를 실행 전체의 실패로 보지 않는다.
          * 에이전트는 잘못된 경로로 grep했다가 고쳐 다시 부르는 식으로 스스로 복구한다 —
@@ -253,6 +273,19 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     }
   } finally {
     flushText();
+    /*
+     * 짝을 못 찾은 호출은 그대로 밝힌다. 중단하면 결과가 오지 않는데,
+     * 조용히 버리면 무엇을 하다 멈컴는지가 기록에서 사라진다.
+     */
+    for (const [, call] of pending) {
+      emit(
+        renderCall({
+          tool: call.tool, input: call.input, pending: true,
+          root: paths.root, width: process.stdout.columns ?? 100, ui,
+        }).join("\n"),
+      );
+    }
+    pending.clear();
     clearInterval(queueWatch);
     activity.stop();
     process.off("SIGINT", onSigint);
@@ -266,7 +299,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 사용자가 매번 알고 싶은 것은 "얼마나 걸렸고 얼마 들었나"뿐이다.
    * 토큰 내역·감사기록 경로는 필요할 때만 --verbose 로 본다.
    */
-  const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+  const seconds = elapsed(Date.now() - startedAt);
   const cost = totals.costUsd === null ? "" : ` · $${totals.costUsd.toFixed(4)}`;
   const recovered = toolErrors ? ` · 도구 실패 ${toolErrors}건(복구됨)` : "";
   const asked = bridge.askedCount() ? ` · 질문 ${bridge.askedCount()}회` : "";
@@ -276,8 +309,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    */
   process.stderr.write(
     controller.signal.aborted
-      ? `${ui.yellow("  ⛔ 중단됨")} ${ui.dim(`— 여기까지만 진행됐다 · ${seconds}s${cost}${asked}`)}\n`
-      : ui.dim(`  ${seconds}s${cost}${recovered}${asked}\n`),
+      ? `${ui.yellow("  ⛔ 중단됨")} ${ui.dim(`— 여기까지만 진행됐다 · ${seconds}${cost}${asked}`)}\n`
+      : ui.dim(`  ${seconds}${cost}${recovered}${asked}\n`),
   );
   debug(
     ui.dim(

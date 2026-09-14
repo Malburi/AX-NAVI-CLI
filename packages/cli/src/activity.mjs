@@ -63,9 +63,8 @@ export function createActivity({ output, ui }) {
   let state = { label: "", outputTokens: 0 };
 
   function line() {
-    const seconds = ((Date.now() - startedAt) / 1000).toFixed(0);
-    const bits = [ui.cyan(state.label), ui.dim(`${seconds}s`)];
-    if (state.outputTokens > 0) bits.push(ui.dim(`↓${compact(state.outputTokens)}`));
+    const bits = [ui.cyan(state.label), ui.dim(elapsed(Date.now() - startedAt))];
+    if (state.outputTokens > 0) bits.push(ui.dim(`↓ ${compact(state.outputTokens)} tokens`));
     if (state.tool) bits.push(ui.dim(state.tool));
     // 작업 중에 친 입력이 사라진 게 아니라 줄 서 있다는 것을 보여 준다.
     if (state.queued) bits.push(ui.yellow(`⌨ ${state.queued}건 대기`));
@@ -126,6 +125,25 @@ export function createActivity({ output, ui }) {
       erase();
     },
   };
+}
+
+/**
+ * 경과 시간.
+ *
+ * 초로만 보여 주면 긴 작업에서 읽히지 않는다 — 898s 가 얼마인지 암산해야 한다.
+ * harness-init 은 실측으로 10분을 넘기는 일이 흔하다.
+ *
+ * @param {number} ms
+ * @returns {string}
+ */
+export function elapsed(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const seconds = total % 60;
+  const minutes = Math.floor(total / 60) % 60;
+  const hours = Math.floor(total / 3600);
+  if (hours) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 /**

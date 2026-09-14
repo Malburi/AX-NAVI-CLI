@@ -40,6 +40,7 @@
  * @property {"text" | "tool_call" | "tool_result" | "usage" | "turn" | "done" | "error" | "delegated" | "compacted"} type
  * @property {string} [text]
  * @property {string} [tool]
+ * @property {string} [id]        호출과 결과를 짝짓는다. 병렬로 돌면 순서가 섞여 이게 없으면 못 맞춘다.
  * @property {unknown} [input]
  * @property {string} [result]
  * @property {boolean} [isError]
@@ -114,9 +115,9 @@ export async function* runAgent({ provider, agent, registry, gateway, ctx, userP
       else if (event.type === "session") {
         // 다음 턴이 이어 붙일 수 있게 기억한다.
         if (conversation) conversation.providerSessionId = event.id;
-      } else if (event.type === "tool_use") yield { type: "tool_call", tool: event.name, input: event.input };
+      } else if (event.type === "tool_use") yield { type: "tool_call", id: event.id, tool: event.name, input: event.input };
       else if (event.type === "tool_result") {
-        yield { type: "tool_result", tool: "(위임)", result: event.content, isError: event.isError };
+        yield { type: "tool_result", id: event.toolUseId, tool: "(위임)", result: event.content, isError: event.isError };
       } else if (event.type === "usage") yield { type: "usage", usage: event.usage };
       else if (event.type === "error") {
         yield { type: "error", reason: `${event.error.kind}: ${event.error.message}` };
@@ -196,9 +197,9 @@ export async function* runAgent({ provider, agent, registry, gateway, ctx, userP
       /** @type {ContentBlock[]} */
       const results = [];
       for (const call of pendingCalls) {
-        yield { type: "tool_call", tool: call.name, input: call.input };
+        yield { type: "tool_call", id: call.id, tool: call.name, input: call.input };
         const outcome = await gateway.execute(call, ctx);
-        yield { type: "tool_result", tool: call.name, result: outcome.content, isError: outcome.isError === true };
+        yield { type: "tool_result", id: call.id, tool: call.name, result: outcome.content, isError: outcome.isError === true };
         results.push({
           type: "tool_result",
           toolUseId: call.id,
