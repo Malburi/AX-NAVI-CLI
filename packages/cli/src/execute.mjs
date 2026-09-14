@@ -18,12 +18,11 @@ import { AGENTS_DIR, REPO_ROOT, createAuditSink, createElicitor, createProgressS
  * @param {string} args.root
  * @param {string} args.agentName
  * @param {string} args.prompt
- * @param {string} [args.extraInstruction]  스킬 절차처럼 앞에 덧붙일 지시
  * @param {import("./provider.mjs").ProviderName} [args.providerName]
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<number>} 프로세스 종료 코드
  */
-export async function executeAgent({ root, agentName, prompt, extraInstruction, providerName, signal }) {
+export async function executeAgent({ root, agentName, prompt, providerName, signal }) {
   /*
    * Provider를 먼저 고른다.
    *
@@ -71,15 +70,13 @@ export async function executeAgent({ root, agentName, prompt, extraInstruction, 
   process.stderr.write(ui.dim(`  provider=${picked.note}\n`));
   process.stderr.write(`${ui.dim(`  agent=${agent.name} tier=${agent.tier} tools=${allowed.join(",")}`)}\n\n`);
 
-  const userPrompt = extraInstruction ? `${extraInstruction}\n\n---\n\n${prompt}` : prompt;
-
   let failed = false;
   let toolErrors = 0;
   /** @type {{ input: number, output: number, cacheRead: number, costUsd: number | null }} */
   const totals = { input: 0, output: 0, cacheRead: 0, costUsd: null };
 
   try {
-    for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt })) {
+    for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt: prompt })) {
       if (event.type === "text") process.stdout.write(event.text ?? "");
       else if (event.type === "delegated") {
         // 통제 주체가 옮겨간 사실을 조용히 넘기지 않는다.

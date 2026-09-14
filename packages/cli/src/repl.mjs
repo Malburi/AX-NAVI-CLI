@@ -6,13 +6,13 @@
  * 하나 더 붙는데, MVP에서 그 비용을 정당화할 근거가 없다.
  */
 import { createInterface } from "node:readline/promises";
-import { emitKeypressEvents } from "node:readline";
 import { basename } from "node:path";
 import { indexStaleness } from "@ax-navi/indexer";
 import { loadAllAgents, loadAllSkills } from "@ax-navi/core";
 import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
-import { buildCommands, complete, renderCommandMenu } from "./completion.mjs";
+import { buildCommands, menuItems, renderCommandMenu } from "./completion.mjs";
+import { attachAutocomplete } from "./autocomplete.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { cmdIndex, runSkill } from "./commands.mjs";
@@ -47,30 +47,22 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
-    completer: (/** @type {string} */ line) => complete(line, { commands, agentNames }),
+    // Tab은 아래 자동완성 메뉴가 처리한다. readline 기본 completer가 끼어들면
+    // 후보를 제멋대로 채워 넣으므로 빈 결과를 돌려 비활성화한다.
+    completer: (/** @type {string} */ line) => /** @type {[string[], string]} */ ([[], line]),
   });
 
   const PROMPT = `${ui.cyan("AX-NAVI")} ${ui.dim(">")} `;
 
-  /*
-   * `/` 를 치는 순간 목록을 보여 준다.
-   *
-   * keypress는 readline이 버퍼를 갱신하기 전에 올 수도 있어서, setImmediate로
-   * 한 틱 미룬 뒤 실제 입력이 `/` 하나인지 확인한다. 목록을 찍으면 프롬프트 줄이
-   * 밀려나므로 직접 다시 그린다.
-   */
-  if (process.stdin.isTTY) {
-    emitKeypressEvents(process.stdin);
-    process.stdin.on("keypress", (str) => {
-      if (str !== "/") return;
-      setImmediate(() => {
-        if (rl.line !== "/") return;
-        process.stdout.write("\n");
-        process.stdout.write(renderCommandMenu(commands, ui));
-        process.stdout.write(PROMPT + rl.line);
-      });
-    });
-  }
+  const menu = process.stdin.isTTY
+    ? attachAutocomplete({
+        rl,
+        input: process.stdin,
+        output: process.stdout,
+        source: (line) => menuItems(line, { commands, agentNames }),
+        ui,
+      })
+    : null;
 
   let code = 0;
 
@@ -81,6 +73,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
     } catch {
       break; // Ctrl+C / EOF
     }
+    menu?.close();
     if (!line) continue;
     if (line === "/exit" || line === "/quit") break;
 
@@ -98,6 +91,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0") {
     }
   }
 
+  menu?.dispose();
   rl.close();
   return code;
 }

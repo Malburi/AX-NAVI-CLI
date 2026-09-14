@@ -303,16 +303,50 @@ export async function runSkill(root, name, prompt, providerName) {
     );
   }
 
-  const instruction =
-    `다음은 스킬 '${skill.name}'의 절차다. 이 절차를 따라 사용자의 요청을 처리하라.\n` +
-    `절차에 이 런타임에 없는 기능이 나오면 건너뛰고, 그 사실을 결과에 밝혀라.\n\n` +
-    skill.body;
+  if (!prompt) {
+    // 요청 없이 스킬만 부르면 무엇을 해야 할지 알 수 없다. 지어내지 않고 사용법을 알린다.
+    process.stderr.write(
+      `${ui.yellow("요청이 비어 있다")} — /${name} 뒤에 무엇을 찾을지 쓰세요.\n` +
+        ui.dim(`  예: /${name} 결제 승인 처리\n`),
+    );
+    return 2;
+  }
+
+  /*
+   * 프롬프트 조립 순서가 결과를 좌우한다.
+   *
+   * 처음에는 SKILL.md 본문을 앞에 두고 사용자 요청을 뒤에 붙였는데, 그러면 모델이
+   * 66줄짜리 절차 문서를 주된 내용으로 읽고 "이 스킬이 무엇인지" 설명해 버린다
+   * (실측: `/find 이 시스템 뭐야` → 검색 대신 find-feature 스킬 소개).
+   *
+   * 게다가 SKILL.md는 *오케스트레이터용* 문서다 — `Agent(subagent_type=...)`로
+   * 실행자를 부르는 절차가 적혀 있다. 그 실행자 본인에게 통째로 주면 자기를
+   * 호출하라는 지시를 읽고 혼란에 빠진다.
+   *
+   * 그래서 사용자 요청을 맨 앞에 두고, 스킬 본문은 "산출물 규약 참고"로 격하한다.
+   */
+  const instruction = [
+    `# 요청`,
+    prompt,
+    ``,
+    `---`,
+    ``,
+    `위 요청은 '${skill.name}' 스킬 경로로 들어왔다. 너는 그 스킬이 호출하는 실행자(${agentName})다.`,
+    `아래는 그 스킬의 오케스트레이션 절차이며 **참고 자료**다.`,
+    ``,
+    `- 절차 자체를 설명하지 마라. 요청을 수행하라.`,
+    `- 절차 중 네 역할에 해당하는 부분만 하고, 산출물 경로·형식 규약은 지켜라.`,
+    `- 이 런타임에 없는 기능(서브에이전트 호출 등)은 네가 직접 수행하고, 그 사실만 짧게 밝혀라.`,
+    ``,
+    `<스킬 절차: ${skill.name}>`,
+    skill.body,
+    `</스킬 절차>`,
+  ].join("\n");
 
   return executeAgent({
     root,
     agentName,
-    prompt: prompt || "(요청 없음)",
-    extraInstruction: instruction,
+    prompt: instruction,
     ...(providerName ? { providerName } : {}),
   });
 }

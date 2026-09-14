@@ -10,7 +10,8 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { loadAllSkills } from "../src/skills/loader.mjs";
-import { buildCommands, complete, renderCommandMenu } from "../../cli/src/completion.mjs";
+import { buildCommands, complete, menuItems, renderCommandMenu } from "../../cli/src/completion.mjs";
+import { computeWindow } from "../../cli/src/autocomplete.mjs";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const SKILLS = join(REPO, "skills");
@@ -95,4 +96,38 @@ test("모든 스킬이 비지 않은 요약을 갖는다", async () => {
   const commands = buildCommands(await loadAllSkills(SKILLS));
   const empty = commands.filter((c) => c.kind === "skill" && c.summary.trim().length === 0);
   assert.deepEqual(empty.map((c) => c.name), [], "요약이 빈 스킬이 있다");
+});
+
+/* ---------- 인라인 메뉴 ---------- */
+
+test("메뉴 후보에 설명이 함께 온다", async () => {
+  const commands = buildCommands(await loadAllSkills(SKILLS));
+  const items = menuItems("/fi", { commands, agentNames: [] });
+  assert.deepEqual(items.map((i) => i.value).sort(), ["/find", "/find-feature"]);
+  assert.ok(items.every((i) => i.hint.length > 0), "설명이 빈 후보가 있다");
+});
+
+test("/agent 뒤 인자는 전체 입력으로 채워진다 — 부분 치환이 아니다", () => {
+  const items = menuItems("/agent an", { commands: buildCommands([]), agentNames: ["analyzer", "qa"] });
+  // 선택 = 입력 자체로 두는 설계라, 채울 값은 줄 전체여야 한다.
+  assert.deepEqual(items.map((i) => i.value), ["/agent analyzer"]);
+});
+
+test("인자에 공백이 들어가면 제안을 멈춘다 — 자유 입력을 방해하지 않는다", async () => {
+  const commands = buildCommands(await loadAllSkills(SKILLS));
+  assert.deepEqual(menuItems("/find 결제 승인", { commands, agentNames: [] }), []);
+});
+
+test("창 계산 — 후보가 적으면 전부, 많으면 선택을 가운데 둔다", () => {
+  assert.deepEqual(computeWindow(3, 0, 7), { start: 0, end: 3 });
+  assert.deepEqual(computeWindow(20, 0, 7), { start: 0, end: 7 }, "맨 위에서는 위로 넘치지 않는다");
+  assert.deepEqual(computeWindow(20, 10, 7), { start: 7, end: 14 }, "가운데 정렬");
+  assert.deepEqual(computeWindow(20, 19, 7), { start: 13, end: 20 }, "맨 아래에서는 아래로 넘치지 않는다");
+});
+
+test("창은 어느 선택에서도 그 항목을 포함한다", () => {
+  for (let i = 0; i < 24; i += 1) {
+    const { start, end } = computeWindow(24, i, 7);
+    assert.ok(i >= start && i < end, `선택 ${i}가 창 [${start},${end}) 밖이다`);
+  }
 });

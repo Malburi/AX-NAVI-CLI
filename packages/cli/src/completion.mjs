@@ -110,7 +110,42 @@ export function complete(line, ctx) {
 }
 
 /**
- * `/` 만 쳤을 때 보여 줄 목록. 내장 기능과 스킬을 나눠 보여 준다.
+ * 인라인 메뉴에 띄울 후보. complete()와 같은 규칙을 쓰되 설명을 함께 붙인다.
+ *
+ * @param {string} line
+ * @param {{ commands: SlashCommand[], agentNames: string[] }} ctx
+ * @returns {Array<{ value: string, hint: string }>}
+ */
+export function menuItems(line, ctx) {
+  if (!line.startsWith("/")) return [];
+  const spaceAt = line.indexOf(" ");
+
+  if (spaceAt === -1) {
+    return ctx.commands
+      .filter((c) => `/${c.name}`.startsWith(line))
+      .map((c) => ({ value: `/${c.name}`, hint: c.usage ?? c.summary }));
+  }
+
+  const head = line.slice(1, spaceAt);
+  const arg = line.slice(spaceAt + 1);
+  // 인자에 공백이 들어간 순간은 자유 입력이므로 더 이상 제안하지 않는다.
+  if (arg.includes(" ")) return [];
+
+  if (head === "agent") {
+    return ctx.agentNames
+      .filter((n) => n.startsWith(arg))
+      .map((n) => ({ value: `/agent ${n}`, hint: "에이전트" }));
+  }
+  if (head === "index") {
+    return ["build", "status", "refresh"]
+      .filter((n) => n.startsWith(arg))
+      .map((n) => ({ value: `/index ${n}`, hint: "인덱스" }));
+  }
+  return [];
+}
+
+/**
+ * `/help` 로 보여 줄 전체 목록. 내장 기능과 스킬을 나눠 보여 준다.
  * @param {SlashCommand[]} commands
  * @param {{ dim: (s: string) => string, cyan: (s: string) => string, bold: (s: string) => string }} ui
  * @returns {string}
