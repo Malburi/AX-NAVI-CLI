@@ -18,7 +18,7 @@ import {
   saveSession,
   toTitle,
 } from "@ax-navi/core";
-import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, interruptTurn, setLineReader, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, setLineReader, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
 import { buildCommands, menuItems, renderCommandMenu } from "./completion.mjs";
 import { attachAutocomplete } from "./autocomplete.mjs";
@@ -28,6 +28,8 @@ import { cmdIndex, runSkill } from "./commands.mjs";
 import { renderStatus } from "./status.mjs";
 import { estimateTokens } from "@ax-navi/core";
 import { createNaviPersona } from "./persona.mjs";
+
+const NL = String.fromCharCode(10);
 
 /*
  * 자연어 → 전문 역할.
@@ -289,6 +291,19 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
         code = await handleSlash({
           paths, line, commands, skillByName,
           onReset: () => { thread = null; },
+          onResume: (record) => {
+            thread = {
+              id: record.id,
+              agent: record.agent,
+              turns: record.turns,
+              title: record.title,
+              createdAt: record.createdAt,
+              conversation: record.conversation,
+            };
+            process.stdout.write(
+              `  ${ui.green("이어서 시작")}  ${ui.dim(`${record.agent} · ${record.turns}턴 · ${record.title}`)}${NL}`,
+            );
+          },
           onContext: () => (thread
             ? {
                 id: thread.id,
@@ -416,10 +431,11 @@ function route(input) {
  * @param {import("./completion.mjs").SlashCommand[]} args.commands
  * @param {Map<string, { name: string }>} args.skillByName
  * @param {() => void} [args.onReset]
+ * @param {(record: import("@ax-navi/core").SessionRecord) => void} [args.onResume]
  * @param {() => ({ id: string, agent: string, turns: number, sessionId?: string } | null)} [args.onContext]
  * @returns {Promise<number>}
  */
-async function handleSlash({ paths, line, commands, skillByName, onReset, onContext }) {
+async function handleSlash({ paths, line, commands, skillByName, onReset, onResume, onContext }) {
   const spaceAt = line.indexOf(" ");
   const cmd = spaceAt === -1 ? line.slice(1) : line.slice(1, spaceAt);
   const argText = spaceAt === -1 ? "" : line.slice(spaceAt + 1).trim();
@@ -435,6 +451,36 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onCont
       process.stdout.write(`  ${ui.dim("새 대화를 시작한다.")}\n`);
       return 0;
 
+    case "resume": {
+      /*
+       * 나갔다 --resume 으로 다시 켜야 되는 걸 없앤다.
+       * id 를 적어 주면 그걸 열고, 안 적으면 최근 것들을 방향키로 고르게 한다.
+       */
+      const wanted = rest[0];
+      if (wanted) {
+        const record = await loadSession(paths, wanted);
+        if (!record) {
+          process.stderr.write(`  ${ui.yellow("그런 세션이 없다")} ${ui.dim(`— ${wanted} (/sessions 로 확인)`)}${NL}`);
+          return 2;
+        }
+        onResume?.(record);
+        return 0;
+      }
+
+      const records = await listSessions(paths, 20);
+      if (!records.length) {
+        process.stdout.write(`  ${ui.dim("저장된 세션 없음.")}${NL}`);
+        return 0;
+      }
+      // 어느 대화였는지는 제목으로 기억한다. id 는 곴들이라 뒤에 흐리게 둔다.
+      const labels = records.map((r) => `${r.title || "(제목 없음)"}  · ${r.agent} · ${r.turns}턴 · ${r.id}`);
+      const [picked] = await createHostElicitor().ask("어느 대화로 돌아갈까요?", labels, {});
+      if (!picked) return 0;
+      const record = records[labels.indexOf(picked)];
+      if (record) onResume?.(record);
+      return 0;
+    }
+
     case "sessions": {
       const records = await listSessions(paths, 10);
       if (!records.length) {
@@ -447,7 +493,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onCont
         out.push(`  ${" ".repeat(r.id.length)}  ${ui.dim(r.title || "(제목 없음)")}`);
       }
       out.push("");
-      out.push(`  ${ui.dim("axnavi --resume <id> 로 이어서 시작한다. --continue 는 가장 최근 것.")}`);
+      out.push(`  ${ui.dim("/resume 으로 바로 돌아간다. 밖에서는 axnavi --resume <id> · --continue 는 가장 최근 것.")}`);
       out.push("", "");
       process.stdout.write(out.join("\n"));
       return 0;

@@ -32,6 +32,7 @@ const BUILTINS = [
   { name: "context", kind: "builtin", summary: "진행 중인 대화 상태" },
   { name: "new", kind: "builtin", summary: "대화를 끊고 새로 시작" },
   { name: "sessions", kind: "builtin", summary: "저장된 대화 목록" },
+  { name: "resume", kind: "builtin", summary: "이전 대화로 돌아가기" },
   { name: "exit", kind: "builtin", summary: "종료" },
 ];
 

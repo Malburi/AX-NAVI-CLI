@@ -13,6 +13,8 @@
  * 다시 일으킨다. 그래서 프로그램으로 줄을 고쳐 쓰는 구간에는 키 처리를 잠근다(writing).
  */
 
+import { clipToWidth } from "./width.mjs";
+
 const MAX_VISIBLE = 7;
 
 /**
@@ -31,10 +33,23 @@ export function computeWindow(total, selected, max = MAX_VISIBLE) {
   return { start, end: start + max };
 }
 
-/** ANSI — 커서 저장/복원, 화면 아래 지우기. */
-const SAVE = "7";
-const RESTORE = "8";
-const CLEAR_DOWN = "[J";
+/*
+ * ANSI — 전부 **상대** 이동으로 다룬다.
+ *
+ * 예전엔 커서 저장/복원(ESC 7 / ESC 8)을 썼는데, 그건 화면의 **절대 행**을 기억한다.
+ * 메뉴를 화면 밑쪽에서 그리면 터미널이 스크롤하고, 그순간 저장해 둔 행이 한 칸씩
+ * 밀려 복원이 엉뚱한 자리로 간다. 그 뒤로는 메뉴가 안 지워지고(쌓임), 새 메뉴가
+ * 이전 메뉴 위에 어긋나게 덮여져 글자가 섞인 것처럼 보인다 — 실측으로 `/context` 가
+ * `/pontext`·`/coetext` 처럼 보였다. 상대 이동은 스크롤과 함께 밀려서 안전하다.
+ */
+const ESC = String.fromCharCode(27);
+const NL = String.fromCharCode(10);
+const CR = String.fromCharCode(13);
+const CLEAR_DOWN = ESC + "[0J";
+/** @param {number} n */
+const up = (n) => (n > 0 ? ESC + "[" + n + "A" : "");
+/** @param {number} n */
+const right = (n) => (n > 0 ? ESC + "[" + n + "C" : "");
 
 /**
  * @typedef {object} MenuItem
@@ -68,12 +83,33 @@ export function attachAutocomplete({ rl, input, output, source, ui }) {
    */
   let writing = false;
 
+  /**
+   * 입력 줄에서 커서가 몇 칸째에 있는가.
+   * 메뉴를 그리고 돌아올 때 이 자리로 되돌려야 한다.
+   * @returns {number}
+   */
+  function column() {
+    try {
+      return rl.getCursorPos().cols;
+    } catch {
+      return (rl.getPrompt?.() ?? "").length + (rl.cursor ?? 0);
+    }
+  }
+
+  /**
+   * @param {number} rows
+   * @param {number} col
+   * @returns {string}
+   */
+  function backToInput(rows, col) {
+    return up(rows) + CR + right(col);
+  }
+
   function clear() {
     if (!painted) return;
-    output.write(SAVE);
-    output.write("\n");
-    output.write(CLEAR_DOWN);
-    output.write(RESTORE);
+    const col = column();
+    // 한 줄 내려가 거기서부터 아래를 다 지우고, 올라와 제자리로.
+    output.write(NL + CLEAR_DOWN + backToInput(1, col));
     painted = 0;
   }
 
@@ -90,6 +126,7 @@ export function attachAutocomplete({ rl, input, output, source, ui }) {
     const { start, end } = computeWindow(items.length, selected);
     const window = items.slice(start, end);
     const width = Math.max(...window.map((i) => i.value.length));
+    const cap = (output.columns ?? 80) - 1;
 
     /** @type {string[]} */
     const lines = [];
@@ -98,18 +135,18 @@ export function attachAutocomplete({ rl, input, output, source, ui }) {
       const on = index === selected;
       const mark = on ? ui.cyan("❯") : " ";
       const label = on ? ui.cyan(ui.bold(item.value.padEnd(width))) : ui.cyan(item.value.padEnd(width));
-      lines.push(`  ${mark} ${label}  ${ui.dim(item.hint)}`);
+      // 폭을 넘기면 줄이 접혀 올라올 줄 수가 틀리고, 그럼 메뉴가 똑같이 쌓인다.
+      lines.push(clipToWidth(`  ${mark} ${label}  ${ui.dim(item.hint)}`, cap));
     }
     const hidden = items.length - window.length;
-    if (hidden > 0) lines.push(`    ${ui.dim(`… ${hidden}개 더  (↑↓ 이동)`)}`);
+    if (hidden > 0) lines.push(clipToWidth(`    ${ui.dim(`… ${hidden}개 더  (↑↓ 이동)`)}`, cap));
 
-    output.write(SAVE);
-    output.write("\n");
-    output.write(CLEAR_DOWN);
-    output.write(lines.join("\n"));
-    output.write(RESTORE);
+    const col = column();
+    output.write(NL + CLEAR_DOWN + lines.join(NL) + backToInput(lines.length, col));
     painted = lines.length;
   }
+
+
 
   /**
    * 입력 줄을 통째로 바꾼다.

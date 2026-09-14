@@ -22,12 +22,18 @@ const plainUi = {
   bold: (/** @type {string} */ s) => s,
 };
 
-test("명령 목록 = 내장 10종 + 스킬 24종", async () => {
+test("스킬 24종이 전부 슬래시 명령으로 산다", async () => {
   const commands = buildCommands(await loadAllSkills(SKILLS));
-  const builtins = commands.filter((c) => c.kind === "builtin");
-  const skills = commands.filter((c) => c.kind === "skill");
-  assert.equal(builtins.length, 10);
-  assert.equal(skills.length, 24, "스킬이 전부 슬래시 명령이 돼야 한다");
+  assert.equal(commands.filter((c) => c.kind === "skill").length, 24);
+});
+
+test("대화를 다루는 내장 명령이 빠지지 않는다", async () => {
+  // 수를 고정하면 명령 하나 늘릴 때마다 테스트를 고쳐야 한다 — 있어야 할 것만 본다.
+  const names = new Set(buildCommands(await loadAllSkills(SKILLS))
+    .filter((c) => c.kind === "builtin").map((c) => c.name));
+  for (const need of ["help", "agents", "skills", "index", "status", "context", "new", "sessions", "resume"]) {
+    assert.ok(names.has(need), `/${need} 가 없다`);
+  }
 });
 
 test("원래 플러그인의 단축 7종이 그대로 슬래시 명령으로 산다", async () => {
