@@ -106,3 +106,18 @@ test("실패로 끝난 실행을 성공으로 옮기지 않는다", () => {
   assert.ok(events.some((e) => e.type === "error"));
   assert.ok(!events.some((e) => e.type === "done"), "done이 나오면 안 된다");
 });
+
+test("서브에이전트 호출은 기본으로 꺼져 있다", () => {
+  const off = toDisallowedTools(tools(["Read", "Grep", "Glob", "Bash", "Write"]));
+  assert.ok(off.includes("Task"), "관측할 수 없는 실행을 기본으로 열어 두면 안 된다");
+});
+
+test("오케스트레이터가 요청하면 서브에이전트를 연다", () => {
+  // harness-init 같은 절차는 여러 전문 에이전트를 부르는 것이 본체라, 막으면 성립하지 않는다.
+  const off = toDisallowedTools(tools(["Read", "Grep", "Glob", "Bash", "Write"]), true);
+  assert.ok(!off.includes("Task"), "Task가 여전히 막혀 있다");
+  // 열어 주는 것은 Task 하나뿐 — 나머지 계약 밖 기능은 그대로 닫혀 있어야 한다.
+  for (const name of ["Skill", "WebSearch", "WebFetch"]) {
+    assert.ok(off.includes(name), `${name}까지 열렸다`);
+  }
+});

@@ -126,3 +126,21 @@ test("frontmatter 파서가 여러 줄 description을 이어 붙인다", () => {
   assert.equal(data["model"], "sonnet");
   assert.equal(body.trim(), "본문");
 });
+
+test("오케스트레이터 스킬이 정확히 구분된다", async () => {
+  const skills = await loadAllSkills(SKILLS);
+  const byName = new Map(skills.map((s) => [s.name, s]));
+
+  /*
+   * 이 구분이 실행 경로를 가른다. 오케스트레이터는 스킬 본문 자체가 지휘자의 지침이라
+   * 특정 에이전트에게 넘기면 안 된다 — harness-init을 pipeline-runner에게 넘겼더니
+   * 자기가 뭘 해야 하는지 몰랐다.
+   */
+  for (const name of ["harness-init", "safe-modify", "scaffold-feature", "pair-init",
+                      "cross-repo-modify", "cross-repo-scaffold"]) {
+    assert.equal(byName.get(name)?.isOrchestrator, true, `${name}은 오케스트레이터여야 한다`);
+  }
+  for (const name of ["find-feature", "trace-logic", "analyze-impact", "review-sql"]) {
+    assert.equal(byName.get(name)?.isOrchestrator, false, `${name}은 단일 실행자여야 한다`);
+  }
+});

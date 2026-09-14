@@ -23,6 +23,7 @@ import { parseFrontmatter } from "../agents/loader.mjs";
  * @property {string} body                 SKILL.md 본문 (무수정)
  * @property {string | null} delegatesTo    별칭 스텁이면 위임 대상 스킬 이름
  * @property {string[]} agents              본문이 지목한 에이전트 이름 (등장 순)
+ * @property {boolean} isOrchestrator       여러 에이전트를 지휘하는 절차인가
  * @property {string} sourcePath
  */
 
@@ -59,12 +60,30 @@ export async function loadSkill(skillsDir, name) {
     if (agentName && !agents.includes(agentName)) agents.push(agentName);
   }
 
+  /*
+   * 오케스트레이터 판별.
+   *
+   * 스킬은 두 종류다. `find-feature`처럼 에이전트 하나에 일을 넘기는 얇은 층과,
+   * `harness-init`처럼 여러 에이전트를 순서대로 지휘하며 작업 그래프를 만드는 절차.
+   *
+   * 이 구분이 실행 방식을 가른다. 앞쪽은 그 에이전트를 실행자로 삼으면 되지만,
+   * 뒤쪽은 **스킬 본문 자체가 지휘자의 지침**이라 특정 에이전트에게 넘기면 안 된다.
+   * (실측: harness-init을 pipeline-runner에게 넘겼더니 자기가 뭘 해야 하는지 몰랐다.)
+   */
+  const isOrchestrator =
+    agents.length > 1 ||
+    /TaskCreate|작업 그래프/.test(body) ||
+    // general-purpose 서브에이전트를 띄우는 것도 지휘다. ax-navi: 접두사가 없어 위에서 안 잡힌다
+    // (cross-repo-scaffold가 그 경우였다).
+    /subagent_type\s*=\s*["']general-purpose["']/.test(body);
+
   return {
     name: selfName,
     description: data["description"] ?? "",
     body,
     delegatesTo,
     agents,
+    isOrchestrator,
     sourcePath,
   };
 }

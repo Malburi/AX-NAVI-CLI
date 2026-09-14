@@ -288,19 +288,27 @@ export async function runSkill(root, name, prompt, providerName) {
   const { skill, via } = await resolveSkill(SKILLS_DIR, name);
   if (via.length) process.stderr.write(ui.dim(`  별칭 ${via.join(" → ")} → ${skill.name}\n`));
 
+  /*
+   * 오케스트레이터 스킬은 실행자에게 넘기지 않는다.
+   *
+   * harness-init 같은 절차는 **스킬 본문 자체가 지휘자의 지침**이다. 이걸 pipeline-runner
+   * 같은 개별 에이전트에게 넘기면 자기가 뭘 해야 하는지 모른다(실측으로 확인).
+   * 그래서 지휘자 역할을 따로 만들어 본문을 그대로 시스템 프롬프트로 준다.
+   *
+   * 대신 서브에이전트를 띄울 수 있어야 한다 — 그게 절차의 본체이기 때문이다.
+   * 그건 ownsAgentLoop Provider(claude CLI 위임)에서만 가능하다.
+   */
+  if (skill.isOrchestrator) {
+    return runOrchestratorSkill(root, skill, prompt, providerName);
+  }
+
   const agentName = skill.agents[0];
   if (!agentName) {
     process.stderr.write(
       `${ui.red("실행할 수 없다")} — 스킬 '${skill.name}'은 담당 에이전트를 지목하지 않는다.\n` +
-        ui.dim("  이 스킬은 결정론적 스크립트나 다중 에이전트가 필요하다. MVP 범위 밖이다.\n"),
+        ui.dim("  결정론적 스크립트만 쓰는 스킬이라 CLI 명령으로 옮겨야 한다. 아직 미구현이다.\n"),
     );
     return 2;
-  }
-  if (skill.agents.length > 1) {
-    process.stderr.write(
-      ui.yellow(`  ! 스킬이 에이전트 ${skill.agents.length}개를 지목한다 (${skill.agents.join(", ")}).`) +
-        ui.dim(` MVP는 첫 번째(${agentName})만 실행한다.\n`),
-    );
   }
 
   if (!prompt) {
@@ -329,6 +337,8 @@ export async function runSkill(root, name, prompt, providerName) {
     `# 요청`,
     prompt,
     ``,
+    `프로젝트 루트: ${resolveProjectPaths(root).root}`,
+    ``,
     `---`,
     ``,
     `위 요청은 '${skill.name}' 스킬 경로로 들어왔다. 너는 그 스킬이 호출하는 실행자(${agentName})다.`,
@@ -347,6 +357,92 @@ export async function runSkill(root, name, prompt, providerName) {
     root,
     agentName,
     prompt: instruction,
+    ...(providerName ? { providerName } : {}),
+  });
+}
+
+/**
+ * 오케스트레이터 스킬 실행.
+ *
+ * 스킬 본문을 지휘자의 시스템 프롬프트로 주고, 서브에이전트 호출을 허용한다.
+ * 스킬 본문에는 이미 비-플러그인 호스트용 폴백이 문서화돼 있다 —
+ * `general-purpose`로 폴백하며 "agents/<이름>.md의 지침을 읽고 그대로 따른다"를
+ * 명시하라거나(harness-init/SKILL.md:239), TaskCreate가 없으면
+ * `_workspace/00_pipeline_status.md` 체크리스트를 쓰라는 식이다.
+ * 그 폴백을 타라고 지시해 주면 절차가 그대로 성립한다.
+ *
+ * @param {string} root
+ * @param {import("@ax-navi/core").SkillDefinition} skill
+ * @param {string} prompt
+ * @param {import("./provider.mjs").ProviderName} [providerName]
+ * @returns {Promise<number>}
+ */
+async function runOrchestratorSkill(root, skill, prompt, providerName) {
+  const picked = selectProvider({ ...(providerName ? { provider: providerName } : {}), cwd: root });
+  if ("error" in picked) {
+    process.stderr.write(`${picked.error}\n`);
+    return 1;
+  }
+  if (!picked.provider.capabilities.ownsAgentLoop) {
+    // 있는 척하지 않는다. 왜 안 되는지와 무엇을 하면 되는지를 같이 말한다.
+    process.stderr.write(
+      `${ui.red(`'${skill.name}'은 아직 이 실행 경로에서 돌릴 수 없다`)}\n` +
+        ui.dim(`  이 스킬은 에이전트 ${skill.agents.length}종(${skill.agents.join(", ")})을 순서대로 지휘한다.\n`) +
+        ui.dim("  서브에이전트 호출이 필요한데 anthropic Provider 경로에는 아직 그 기능이 없다.\n") +
+        ui.dim("  대안: --provider claude-cli (구독 인증, claude CLI의 서브에이전트를 빌려 쓴다)\n"),
+    );
+    return 2;
+  }
+
+  process.stderr.write(
+    ui.dim(`  오케스트레이터 스킬 — 에이전트 ${skill.agents.length}종을 지휘한다 (${skill.agents.join(", ")})\n`),
+  );
+
+  const instruction = [
+    `# 실행 지시`,
+    ``,
+    `아래 절차(${skill.name})를 **지금 이 프로젝트에 실제로 수행**하라. 절차를 설명하지 마라.`,
+    `프로젝트 루트: ${resolveProjectPaths(root).root}`,
+    prompt ? `사용자가 덧붙인 조건: ${prompt}` : `사용자가 덧붙인 조건: 없음`,
+    ``,
+    `## 이 런타임의 제약 — 절차에 적힌 폴백을 그대로 타라`,
+    ``,
+    `- 플러그인 네임스페이스(\`ax-navi:<에이전트>\`)를 쓸 수 없다.`,
+    `  → \`Task\`로 \`general-purpose\` 서브에이전트를 띄우고, 프롬프트에`,
+    `    "\`${AGENTS_DIR}\<에이전트이름>.md\`의 지침을 읽고 그대로 따른다"를 반드시 명시하라.`,
+    `- \`TaskCreate\`/\`TaskUpdate\`가 없다.`,
+    `  → 절차에 적힌 대로 \`_workspace/00_pipeline_status.md\` 체크리스트로 진행 상황을 관리하라.`,
+    `- \`AskUserQuestion\`이 없고 되묻을 수 없다.`,
+    `  → 기본값으로 진행하고, 무엇을 가정했는지 최종 보고에 반드시 적어라.`,
+    `    (구성이 불확실하면 단일 프로젝트로 가정한다. 사용자가 위에 조건을 적었으면 그것을 우선한다.)`,
+    `- 스크립트 경로는 이미 절대경로로 치환돼 있다. 그대로 \`Bash\`로 실행하라.`,
+    ``,
+    `## 절차: ${skill.name}`,
+    ``,
+    skill.body,
+  ].join("\n");
+
+  /*
+   * 지휘자 역할.
+   *
+   * frontmatter가 없는 자리라 도구를 직접 정한다. 하네스 파일을 만들어야 하므로
+   * 쓰기가 필요하고, 서브에이전트도 띄워야 한다. 대신 이 사실을 화면에 밝힌다.
+   */
+  return executeAgent({
+    root,
+    prompt: instruction,
+    agent: {
+      name: `${skill.name}`,
+      description: skill.description,
+      // 절차는 프롬프트로 준다. 시스템 프롬프트는 역할 선언만 짧게.
+      systemPrompt: "너는 AX-NAVI의 오케스트레이터다. 주어진 절차를 이 프로젝트에 실제로 수행한다.",
+      tier: "standard",
+      sourcePath: skill.sourcePath,
+      warnings: [],
+      allowDelegation: true,
+      // 하네스 파일을 만들어야 하므로 쓰기가 필요하다. 이 사실은 화면에 드러난다.
+      role: { name: skill.name, allowedTools: null, allowMutations: true },
+    },
     ...(providerName ? { providerName } : {}),
   });
 }

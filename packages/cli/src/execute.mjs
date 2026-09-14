@@ -16,13 +16,14 @@ import { AGENTS_DIR, REPO_ROOT, createAuditSink, createElicitor, createProgressS
 /**
  * @param {object} args
  * @param {string} args.root
- * @param {string} args.agentName
+ * @param {string} [args.agentName]        agents/<이름>.md 를 읽어 실행자로 쓴다
+ * @param {import("@ax-navi/core").AgentDefinition} [args.agent]  미리 만든 실행자 (오케스트레이터 등)
  * @param {string} args.prompt
  * @param {import("./provider.mjs").ProviderName} [args.providerName]
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<number>} 프로세스 종료 코드
  */
-export async function executeAgent({ root, agentName, prompt, providerName, signal }) {
+export async function executeAgent({ root, agentName, agent: preset, prompt, providerName, signal }) {
   /*
    * Provider를 먼저 고른다.
    *
@@ -39,10 +40,14 @@ export async function executeAgent({ root, agentName, prompt, providerName, sign
   }
 
   const paths = resolveProjectPaths(root);
-  const agent = await loadAgent(join(AGENTS_DIR, `${agentName}.md`), {
-    pluginRoot: REPO_ROOT,
-    projectRoot: paths.root,
-  });
+  /*
+   * 실행자는 두 가지로 온다.
+   *   agentName  — agents/<이름>.md 를 읽는다 (일반 경로)
+   *   agent      — 호출부가 만들어 넘긴다 (오케스트레이터 스킬처럼 대응하는 .md 가 없을 때)
+   */
+  if (!preset && !agentName) throw new Error("agentName 또는 agent 중 하나는 필요하다");
+  const agent = preset
+    ?? (await loadAgent(join(AGENTS_DIR, `${agentName}.md`), { pluginRoot: REPO_ROOT, projectRoot: paths.root }));
 
   for (const warning of agent.warnings) process.stderr.write(ui.dim(`  ! ${warning}\n`));
 

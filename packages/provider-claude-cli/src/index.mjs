@@ -40,25 +40,35 @@ const MUTATING = ["Edit", "MultiEdit", "NotebookEdit", "Write"];
 
 /*
  * AX-NAVI의 도구 계약에 없는 claude Code 기능. 켜 두면 에이전트가 우리 계약 밖으로
- * 새어 나간다 — 특히 Task/Skill은 우리가 관측할 수 없는 서브에이전트를 띄우고,
- * Web* 는 프로젝트 컨텍스트를 외부로 내보낸다(브리프 §12).
+ * 새어 나간다 — Web* 는 프로젝트 컨텍스트를 외부로 내보낸다(브리프 §12).
  */
 const OUT_OF_CONTRACT = [
-  "Task", "Skill", "SlashCommand", "WebSearch", "WebFetch",
+  "Skill", "SlashCommand", "WebSearch", "WebFetch",
   "Workflow", "Monitor", "CronCreate", "CronDelete", "CronList",
   "SendMessage", "ListAgents", "PushNotification", "RemoteTrigger",
 ];
+
+/*
+ * 서브에이전트 호출. 기본은 끈다 — 우리가 관측할 수 없는 실행이 생기기 때문이다.
+ *
+ * 다만 오케스트레이터 스킬(harness-init 등)은 여러 전문 에이전트를 순서대로 부르는 것이
+ * 절차의 본체라, 이걸 막으면 스킬 자체가 성립하지 않는다. spec.allowDelegation이
+ * 요청될 때만 연다.
+ */
+const DELEGATION_TOOLS = ["Task"];
 
 /**
  * 역할이 허용한 도구를 claude 쪽 `--disallowedTools` 목록으로 번역한다.
  * 켤 것을 고르는 게 아니라 끌 것을 고른다 — claude는 내장 도구를 기본 제공하므로
  * 화이트리스트만으로는 나머지가 남는다.
  * @param {readonly import("@ax-navi/core").ToolDefinition[]} tools
+ * @param {boolean} [allowDelegation]  서브에이전트 호출을 허용할지
  * @returns {string[]}
  */
-export function toDisallowedTools(tools) {
+export function toDisallowedTools(tools, allowDelegation = false) {
   const allowed = new Set(tools.map((t) => t.name));
   const off = [...OUT_OF_CONTRACT];
+  if (!allowDelegation) off.push(...DELEGATION_TOOLS);
   for (const name of MUTATING) {
     if (!allowed.has(name)) off.push(name);
   }
@@ -233,19 +243,32 @@ export class ClaudeCliProvider {
    * @returns {AsyncIterable<ProviderEvent>}
    */
   async *runDelegated(spec, prompt, signal) {
+    /*
+     * 역할 지침과 요청을 모두 stdin으로 보낸다. 명령줄 인자로 넘기지 않는 이유가 둘 있다.
+     *
+     * 1) 길이 — 윈도우 명령줄 상한은 32KB인데 agents/analyzer.md 하나가 47KB고
+     *    skills/harness-init/SKILL.md 는 50KB다. 인자로 넘기면 spawn ENAMETOOLONG 으로 죽는다(실측).
+     * 2) `--append-system-prompt-file` 은 이 버전(2.1.259)에서 인자로 받아들여지지만
+     *    실제로는 아무 효과가 없다(실측: 지정한 지침과 무관한 응답, 대조군과 출력 동일).
+     *    조용히 무시되는 경로라 쓰지 않는다.
+     *
+     * 대신 stdin은 길이 제한이 없다. 시스템 프롬프트로서의 분리는 잃지만,
+     * 지침이 조용히 사라지는 것보다 낫다.
+     */
+    const payload = spec.system
+      ? `<역할 지침>\n${spec.system}\n</역할 지침>\n\n${prompt}`
+      : prompt;
+
     const args = [
-      "-p", prompt,
+      "-p",
       "--output-format", "stream-json",
       "--verbose",
       "--model", MODEL_BY_TIER[spec.tier],
-      // 에이전트 본문을 그대로 얹는다. claude 기본 프롬프트를 지우지는 못하지만
-      // 역할 지침은 전달된다.
-      "--append-system-prompt", spec.system,
       // 사용자의 MCP 서버가 끼어들지 않게 한다 — 우리 도구 계약 밖이다.
       "--strict-mcp-config",
       ...this.options.extraArgs ?? [],
     ];
-    const disallowed = toDisallowedTools(spec.tools);
+    const disallowed = toDisallowedTools(spec.tools, spec.allowDelegation === true);
     if (disallowed.length) args.push("--disallowedTools", ...disallowed);
 
     const bin = resolveClaudeBin();
@@ -257,11 +280,12 @@ export class ClaudeCliProvider {
       return;
     }
 
-    // shell:false — 인자를 배열 그대로 넘겨야 긴 시스템 프롬프트가 보존된다.
+    // shell:false — 인자를 배열 그대로 넘긴다. 프롬프트는 stdin으로 들어간다.
     const child = spawn(bin, args, {
       cwd: this.options.cwd ?? process.cwd(),
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
+    child.stdin.end(payload, "utf8");
 
     const onAbort = () => child.kill();
     signal?.addEventListener("abort", onAbort, { once: true });

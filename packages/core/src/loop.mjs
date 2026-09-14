@@ -78,7 +78,13 @@ export async function* runAgent({ provider, agent, registry, gateway, ctx, userP
 
     let stopReason = "end_turn";
     for await (const event of provider.runDelegated(
-      { system: agent.systemPrompt, tools, tier: agent.tier, label: agent.name },
+      {
+        system: agent.systemPrompt,
+        tools,
+        tier: agent.tier,
+        label: agent.name,
+        ...(agent.allowDelegation ? { allowDelegation: true } : {}),
+      },
       userPrompt,
       ctx.signal,
     )) {

@@ -10,3 +10,6 @@ export { createDefaultRegistry } from "../src/tools/builtin/index.mjs";
 export { loadAgent, loadAllAgents, parseFrontmatter, applyPromptShim } from "../src/agents/loader.mjs";
 export { runAgent } from "../src/loop.mjs";
 export { loadSkill, resolveSkill, loadAllSkills } from "../src/skills/loader.mjs";
+
+export type { AgentDefinition } from "../src/agents/loader.mjs";
+export type { SkillDefinition } from "../src/skills/loader.mjs";

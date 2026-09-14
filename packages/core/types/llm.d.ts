@@ -44,6 +44,16 @@ export interface SessionSpec {
   readonly cacheSystem?: boolean;
   /** 로그·세션 기록용 라벨 (예: "feature-finder"). */
   readonly label?: string;
+  /*
+   * 이 실행이 서브에이전트를 띄워도 되는가.
+   *
+   * 오케스트레이터 스킬(harness-init 등)은 여러 전문 에이전트를 순서대로 부르는 것이
+   * 절차의 본체라 이게 없으면 성립하지 않는다. 반대로 일반 작업에는 열어 줄 이유가
+   * 없다 — 우리가 관측할 수 없는 실행이 생기기 때문이다. 그래서 기본은 꺼져 있다.
+   *
+   * ownsAgentLoop Provider만 이 요청을 실제로 들어줄 수 있다.
+   */
+  readonly allowDelegation?: boolean;
 }
 
 export interface ProviderCapabilities {

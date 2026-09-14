@@ -25,6 +25,7 @@ import { toTier } from "../llm/tier.mjs";
  * @property {RolePolicy} role
  * @property {string} sourcePath
  * @property {string[]} warnings
+ * @property {boolean} [allowDelegation]  서브에이전트를 띄워도 되는 실행인가 (오케스트레이터 전용)
  */
 
 /** 부수효과를 내는 도구. frontmatter가 이 중 하나라도 선언하면 쓰기 역할로 본다. */
