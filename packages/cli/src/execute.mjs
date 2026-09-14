@@ -23,11 +23,13 @@ import { AGENTS_DIR, REPO_ROOT, createAuditSink, createElicitor, createProgressS
  * @param {import("@ax-navi/core").AgentDefinition} [args.agent]  미리 만든 실행자 (오케스트레이터 등)
  * @param {string} args.prompt
  * @param {import("@ax-navi/core").Conversation} [args.conversation]  주면 대화를 이어간다
+ * @param {(usd: number) => void} [args.onCost]  이번 실행의 비용을 호출부에 알린다
+ * @param {{ print: (t: string) => void }} [args.screen]  주면 이쪽으로 출력한다(프롬프트를 밀지 않게)
  * @param {import("./provider.mjs").ProviderName} [args.providerName]
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<number>} 프로세스 종료 코드
  */
-export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, providerName, signal }) {
+export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, onCost, screen, providerName, signal }) {
   /*
    * Provider를 먼저 고른다.
    *
@@ -42,16 +44,26 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 이게 없으면 "물을 수단이 없다"고 가정하고 기본값으로 넘어간다(실측).
    */
   const bridge = await startMcpBridge({ paths, elicitor });
-
-  const picked = selectProvider({
-    ...(providerName ? { provider: providerName } : {}),
-    cwd: root,
-    mcp: { configPath: bridge.configPath, env: bridge.env },
-  });
-  if ("error" in picked) {
-    process.stderr.write(`${picked.error}\n`);
+  try {
+    return await runWithBridge();
+  } finally {
+    /*
+     * 브리지는 로컬 소켓 서버라 닫지 않으면 이벤트 루프가 살아 있어 프로세스가 끝나지 않는다.
+     * 예전에는 이 정리가 실행 루프 안쪽 finally 에만 있어서, 그 앞에서 예외가 나면
+     * (예: 없는 에이전트 파일) 오류만 찍고 CLI가 영영 안 끝났다(실측).
+     */
     await bridge.dispose();
-    return 1;
+  }
+
+  async function runWithBridge() {
+    const picked = selectProvider({
+      ...(providerName ? { provider: providerName } : {}),
+      cwd: root,
+      mcp: { configPath: bridge.configPath, env: bridge.env },
+    });
+    if ("error" in picked) {
+      process.stderr.write(`${picked.error}\n`);
+      return 1;
   }
 
   /*
@@ -111,6 +123,32 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   debug(ui.dim(`  provider=${picked.note}\n`));
   debug(ui.dim(`  agent=${agent.name} tier=${agent.tier} tools=${allowed.join(",")}\n`));
 
+  /*
+   * 출력 경로. screen 이 있으면 프롬프트 영역을 피해 흘리고, 없으면 그냥 쓴다.
+   * 스트리밍 텍스트는 줄 단위로 모아 내보낸다 — 토큰마다 화면을 다시 그리면 깜빡인다.
+   */
+  /** @param {string} text */
+  const emit = (text) => (screen ? screen.print(text) : process.stderr.write(`${text}\n`));
+  let textBuffer = "";
+  /** @param {string} chunk */
+  const emitText = (chunk) => {
+    if (!screen) {
+      process.stdout.write(chunk);
+      return;
+    }
+    textBuffer += chunk;
+    for (let nl = textBuffer.indexOf("\n"); nl !== -1; nl = textBuffer.indexOf("\n")) {
+      screen.print(textBuffer.slice(0, nl));
+      textBuffer = textBuffer.slice(nl + 1);
+    }
+  };
+  const flushText = () => {
+    if (textBuffer) {
+      emit(textBuffer);
+      textBuffer = "";
+    }
+  };
+
   const startedAt = Date.now();
   let failed = false;
   let toolErrors = 0;
@@ -119,10 +157,10 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
 
   try {
     for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt: prompt, ...(conversation ? { conversation } : {}) })) {
-      if (event.type === "text") process.stdout.write(event.text ?? "");
+      if (event.type === "text") emitText(event.text ?? "");
       else if (event.type === "compacted") {
         // 컨텍스트를 줄였다는 사실은 숨기지 않는다 — 답이 앞 내용을 잊은 이유가 될 수 있다.
-        process.stderr.write(`${ui.yellow("  ⤵ ")}${ui.dim(event.reason ?? "")}\n`);
+        emit(`${ui.yellow("  ⤵ ")}${ui.dim(event.reason ?? "")}`);
       } else if (event.type === "delegated") {
         /*
          * 통제 주체가 옮겨간 사실은 시작 화면의 Runtime 줄이 이미 밝히고 있다.
@@ -130,11 +168,12 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
          */
         debug(`${ui.yellow("  ! ")}${ui.dim(event.reason ?? "")}\n`);
       } else if (event.type === "tool_call") {
-        process.stderr.write(`\n${ui.cyan(`  → ${event.tool}`)} ${ui.dim(summarize(event.input))}\n`);
+        flushText();
+        emit(`${ui.cyan(`  → ${event.tool}`)} ${ui.dim(summarize(event.input))}`);
       } else if (event.type === "tool_result") {
         const head = (event.result ?? "").split("\n")[0] ?? "";
         const mark = event.isError ? ui.red("  ✗") : ui.green("  ←");
-        process.stderr.write(`${mark} ${ui.dim(head.slice(0, 160))}\n`);
+        emit(`${mark} ${ui.dim(head.slice(0, 160))}`);
         /*
          * 도구 실패 하나를 실행 전체의 실패로 보지 않는다.
          * 에이전트는 잘못된 경로로 grep했다가 고쳐 다시 부르는 식으로 스스로 복구한다 —
@@ -149,24 +188,26 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         // 비용은 Provider가 실제로 줄 때만 표시한다. 추정치를 지어내지 않는다.
         if (typeof event.usage.costUsd === "number") {
           totals.costUsd = (totals.costUsd ?? 0) + event.usage.costUsd;
+          onCost?.(event.usage.costUsd);
         }
       } else if (event.type === "error") {
-        process.stderr.write(`\n${ui.red(`  오류: ${event.reason}`)}\n`);
+        flushText();
+        emit(ui.red(`  오류: ${event.reason}`));
         failed = true;
       } else if (event.type === "done") {
         // 상한 도달·거절 같은 비정상 종료를 성공으로 보고하지 않는다.
         if (event.reason && !["end_turn", "stop_sequence"].includes(event.reason)) {
-          process.stderr.write(`\n${ui.yellow(`  종료 사유: ${event.reason}`)}\n`);
+          emit(ui.yellow(`  종료 사유: ${event.reason}`));
         }
       }
     }
   } finally {
+    flushText();
     process.off("SIGINT", onSigint);
-    await bridge.dispose();
     await audit.flush();
   }
 
-  process.stdout.write("\n");
+  if (!screen) process.stdout.write("\n");
 
   /*
    * 마무리 한 줄.
@@ -186,6 +227,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     ),
   );
   return failed ? 1 : 0;
+  }
 }
 
 /** @param {unknown} input */

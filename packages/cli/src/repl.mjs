@@ -25,15 +25,31 @@ import { attachAutocomplete } from "./autocomplete.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { cmdIndex, runSkill } from "./commands.mjs";
+import { createNaviPersona } from "./persona.mjs";
+import { createScreen } from "./screen.mjs";
+import { renderStatus } from "./status.mjs";
+import { estimateTokens } from "@ax-navi/core";
 
-/** 자연어 → 에이전트. 확실할 때만 라우팅하고, 애매하면 기본값으로 둔다. */
+/*
+ * 자연어 → 전문 역할.
+ *
+ * 매칭되지 않으면 AX-NAVI 본인이 받는다. 예전에는 기본값이 feature-finder 였는데
+ * 그러면 "넌 뭐야?" 같은 일반 질문까지 코드 검색 전문가가 받아서 자기를
+ * "AX-NAVI의 feature-finder 에이전트"라고 소개했다(실측). 사용자가 부른 것은
+ * AX-NAVI지 그 안의 역할이 아니다.
+ *
+ * 그래서 규칙을 **확실할 때만 걸리도록** 좁게 쓴다. 애매하면 넘기지 않는다.
+ */
 const ROUTES = [
-  { agent: "impact-analyzer", re: /영향|impact|어디까지|파급/ },
-  { agent: "logic-tracer", re: /흐름|어떻게 (돼|되나|동작)|trace|처리 과정/ },
-  { agent: "sql-reviewer", re: /\bSELECT\b|\bUPDATE\b|\bINSERT\b|쿼리|SQL/i },
-  { agent: "legacy-decoder", re: /무슨 코드|뭐하는|역공학|해석해/ },
-  { agent: "feature-finder", re: /어디 ?있|찾아|위치|where/ },
+  { agent: "impact-analyzer", re: /영향도|영향 ?범위|어디까지 영향|파급/ },
+  { agent: "logic-tracer", re: /처리 ?흐름|흐름 ?추적|어떻게 (돌아가|처리되|동작하)/ },
+  { agent: "sql-reviewer", re: /\bSELECT\b|\bUPDATE\b|\bINSERT\b|\bDELETE\b|쿼리 ?(리뷰|점검)|SQL ?(리뷰|점검)/i },
+  { agent: "legacy-decoder", re: /역공학|레거시 ?해석|이 ?프로시저 ?(뭐|무슨)/ },
+  { agent: "feature-finder", re: /어디 ?(있|에 ?있)|위치 ?(찾|알려)|관련 ?코드 ?찾/ },
 ];
+
+/** 라우팅에 안 걸리면 AX-NAVI 본인이 받는다. */
+const DEFAULT_AGENT = "axnavi";
 
 /**
  * @param {import("@ax-navi/core").ProjectPaths} paths
@@ -51,8 +67,11 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
   const commands = buildCommands(skills);
   const agentNames = agents.map((a) => a.name);
   const skillByName = new Map(skills.map((s) => [s.name, s]));
+  // AX-NAVI 본인. 라우팅에 안 걸리는 모든 입력을 받는다.
+  const navi = createNaviPersona({ agents, skills });
 
-  process.stdout.write(block(statusLines(paths, state)));
+  const providerInfo = selectProvider({ cwd: paths.root });
+  process.stdout.write(block(statusLines(paths, state, providerInfo)));
 
   const rl = createInterface({
     input: process.stdin,
@@ -102,6 +121,43 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     waiter?.(null);
     waiter = null;
   });
+
+  /*
+   * 바닥에 붙는 입력·상태 영역.
+   *
+   * 이게 있어야 작업이 도는 중에도 프롬프트가 화면에서 사라지지 않는다 —
+   * 큐가 이미 입력을 받고 있었지만 칠 자리가 안 보이면 받는 줄 모른다.
+   */
+  const screen = createScreen({
+    output: process.stdout,
+    prompt: PROMPT,
+    currentInput: () => /** @type {{ line?: string }} */ (rl).line ?? "",
+  });
+
+  /** 누적 비용. 상태줄에 보여 준다. */
+  let sessionCost = 0;
+
+  screen.setStatus(() =>
+    renderStatus({
+      root: paths.root,
+      runtime: "error" in providerInfo ? "런타임 없음" : providerInfo.short.split(" · ")[0] ?? "",
+      contextTokens: thread ? estimateTokens(thread.conversation.turns) : 0,
+      maxTokens: 120_000,
+      turns: thread?.turns ?? 0,
+      costUsd: sessionCost > 0 ? sessionCost : null,
+      queued: queued.length,
+      ui,
+      width: process.stdout.columns ?? 100,
+    }),
+  );
+
+  /*
+   * 상태줄은 키 입력마다 다시 그리지 않는다.
+   *
+   * 처음엔 대기 건수를 즉시 보여 주려고 keypress 마다 redraw 했는데, 한글 IME의
+   * 조합 중인 글자를 매번 지웠다 다시 그려 입력이 깨졌다(실측). 상태줄이 바뀌는
+   * 시점은 턴 시작·종료뿐이라 그때만 그리면 충분하다.
+   */
 
   /** @returns {Promise<string | null>} null이면 입력 끝. */
   const nextLine = () => {
@@ -190,7 +246,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
 
   for (;;) {
     // 큐에 이미 쌓여 있으면 프롬프트를 다시 그리지 않는다 — 붙여넣기가 어지러워진다.
-    if (!queued.length) process.stdout.write(PROMPT);
+    if (!queued.length) screen.redraw();
     const raw = await nextLine();
     if (raw === null) break; // Ctrl+C / EOF
     const line = raw.trim();
@@ -215,14 +271,18 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
       } else {
         const agent = route(line);
         const t = threadFor(agent, line);
-        process.stderr.write(ui.dim(`  ⋯ ${agent}${t.turns > 1 ? ` · ${t.turns}번째 턴` : ""}\n`));
+        screen.print(ui.dim(`  ⋯ ${agent}${t.turns > 1 ? ` · ${t.turns}번째 턴` : ""}`));
         code = await executeAgent({
           root: paths.root,
-          agentName: agent,
+          // AX-NAVI 본인이면 내장 인격을, 전문 역할이면 agents/<이름>.md 를 쓴다.
+          ...(agent === DEFAULT_AGENT ? { agent: navi } : { agentName: agent }),
           prompt: line,
           conversation: t.conversation,
+          onCost: (usd) => { sessionCost += usd; },
+          screen,
         });
         await persist();
+        screen.redraw();
       }
     } catch (error) {
       process.stderr.write(`${ui.red("실패")}: ${/** @type {Error} */ (error).message}\n`);
@@ -230,6 +290,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     }
   }
 
+  screen.clear();
   menu?.dispose();
   rl.close();
   return code;
@@ -238,9 +299,10 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
 /**
  * @param {import("@ax-navi/core").ProjectPaths} paths
  * @param {import("@ax-navi/core").ProjectState} state
+ * @param {ReturnType<typeof selectProvider>} picked
  * @returns {string[]}
  */
-function statusLines(paths, state) {
+function statusLines(paths, state, picked) {
   /** @type {string[]} */
   const lines = [];
   lines.push(row("Project", `${ui.bold(basename(paths.root))}  ${ui.dim(paths.root)}`));
@@ -264,7 +326,6 @@ function statusLines(paths, state) {
    * 예전에는 여기서 ANTHROPIC_API_KEY만 보고 "키 미설정 — /index 외 명령은 실패한다"고
    * 썼는데, claude 구독으로 도는 경우에는 그게 거짓말이다.
    */
-  const picked = selectProvider({ cwd: paths.root });
   if ("error" in picked) {
     lines.push(row("Runtime", `${ui.red("없음")}  ${ui.dim("— 아래 안내 참고")}`));
   } else {
@@ -293,7 +354,7 @@ function route(input) {
   for (const { agent, re } of ROUTES) {
     if (re.test(input)) return agent;
   }
-  return "feature-finder";
+  return DEFAULT_AGENT;
 }
 
 /**
