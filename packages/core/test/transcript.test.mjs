@@ -151,3 +151,55 @@ test("들여써도 폭을 넘지 않는다", () => {
     }
   }
 });
+
+/* ---------- 한 줄로 눕히기 ---------- */
+
+/*
+ * Read·Grep 은 연속으로 수십 번 불린다. 두 줄씩 차지하면 화면이 그것만으로 차버린다 —
+ * 실측으로 도구 25회가 50줄이 됐다. 내용은 그대로 두고 줄 수만 반으로 줄인다.
+ */
+test("한 마디로 끝나는 결과는 제목 줄에 붙인다", () => {
+  const file = Array.from({ length: 25 }, (_, i) => `${i + 1} x`).join("\n");
+  assert.equal(render({ tool: "Read", input: { file_path: "A.java" }, result: file }).length, 1);
+  assert.equal(render({ tool: "Grep", input: { pattern: "x" }, result: "a\nb" }).length, 1);
+});
+
+test("한 줄짜리 결과도 폭에 들어가면 붙인다", () => {
+  const lines = render({ tool: "Grep", input: { pattern: "x" }, result: "No matches found" });
+  assert.equal(lines.length, 1);
+  assert.match(/** @type {string} */ (lines[0]), /No matches found/);
+});
+
+test("폭에 안 들어가면 잘라 버리지 않고 아래로 내린다", () => {
+  const long = "아주 긴 한 줄 결과 ".repeat(20);
+  const lines = render({ tool: "Grep", input: { pattern: "x" }, result: long, width: 60 });
+  assert.ok(lines.length > 1, "긴 줄을 제목에 붙여 잘라 버렸다");
+});
+
+test("여러 줄 결과는 덩어리로 남긴다 — Bash 출력은 그 자체가 보고 싶은 것이다", () => {
+  const lines = render({ tool: "Bash", input: { command: "ls" }, result: "a\nb\nc\nd\ne" });
+  assert.ok(lines.length > 2);
+  assert.match(lines.join("\n"), /⎿/);
+});
+
+test("Write 결과의 긴 안내를 되풀이하지 않는다 — 경로는 이미 제목에 있다", () => {
+  const lines = render({
+    tool: "Write",
+    input: { file_path: "_workspace/index/owasp_top10.json" },
+    result: "File created successfully at: C:\Users\HHI\...\owasp_top10.json (file state is current in your context — no need to Read it back)",
+  });
+  assert.equal(lines.length, 1);
+  assert.match(/** @type {string} */ (lines[0]), /저장됨/);
+  assert.ok(!(/** @type {string} */ (lines[0])).includes("file state"), "안내 문구가 그대로 남았다");
+});
+
+test("실패는 눈에 띄게 남는다 — 줄이느라 감추면 안 된다", () => {
+  const lines = render({
+    tool: "Edit",
+    input: { file_path: "a.json" },
+    result: "<tool_use_error>Error: No such tool available: Edit.</tool_use_error>",
+    isError: true,
+    width: 60,
+  });
+  assert.match(lines.join("\n"), /No such tool available/);
+});

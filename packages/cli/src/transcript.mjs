@@ -95,6 +95,13 @@ export function headline(tool, input, opts = {}) {
  *
  * Bash 는 일부러 뺄다 — 출력 그 자체가 보고 싶은 것이다.
  */
+/** 결과 줄 수와 무관하게 항상 같은 말을 하는 도구. */
+const FIXED = {
+  Write: "저장됨",
+  Edit: "고쳐짐",
+  MultiEdit: "고쳐짐",
+};
+
 const SUMMARIZE = {
   /** @param {number} n */ Read: (n) => `${n}줄 읽음`,
   /** @param {number} n */ Write: (n) => `${n}줄 썼`,
@@ -116,6 +123,13 @@ const SUMMARIZE = {
  */
 export function summarizeResult(tool, result, isError) {
   if (isError) return null;
+  /*
+   * Write 의 결과는 "File created successfully at: … (file state is current…)" 같은
+   * 긴 안내다. 경로는 이미 제목 줄에 있으니 되풀이할 이유가 없다.
+   */
+  const fixed = /** @type {string | undefined} */ (/** @type {any} */ (FIXED)[tool]);
+  if (fixed) return fixed;
+
   const make = /** @type {((n: number) => string) | undefined} */ (/** @type {any} */ (SUMMARIZE)[tool]);
   if (!make) return null;
   const lines = (result ?? "").trimEnd().split(NEWLINE).filter((l) => l.trim());
@@ -177,13 +191,32 @@ export function renderCall({ tool, input, result, isError, pending, root, depth 
   }
 
   const tint = isError ? ui.red : ui.dim;
+
+  /*
+   * 한 마디로 끝나는 결과는 제목 줄에 붙인다.
+   *
+   * Read·Grep 처럼 연속으로 수십 번 불리는 도구는 두 줄씩 차지하면 화면이 그것만으로
+   * 차버린다(실측: 도구 25회가 50줄이 됐다). 내용은 그대로 두고 줄 수만 반으로 줄인다.
+   */
   const short = summarizeResult(toolName(tool), result ?? "", isError);
   if (short !== null) {
-    lines.push(clipToWidth(`${pad}  ${ui.dim("⎿")} ${tint(short)}`, cap));
+    lines[0] = clipToWidth(`${lines[0]}  ${tint(short)}`, cap);
     return lines;
   }
 
   const { lines: body, hidden } = resultBlock(result ?? "");
+
+  /*
+   * 한 줄짜리 결과도 폭에 들어가면 제목 줄에 붙인다 — "No matches found",
+   * "OK 10" 같은 것을 따로 한 줄 내주면 길이만 두 배로 먹는다.
+   * 안 들어가면 잘라 버리지 않고 아래 덩어리로 내린다.
+   */
+  const only = body.length === 1 && !hidden ? /** @type {string} */ (body[0]) : null;
+  if (only !== null && visibleLength(lines[0] ?? "") + visibleLength(only) + 2 < cap) {
+    lines[0] = `${lines[0]}  ${tint(only)}`;
+    return lines;
+  }
+
   if (!body.length) {
     lines.push(clipToWidth(`${pad}${tint("  ⎿  (출력 없음)")}`, cap));
   } else {

@@ -85,6 +85,16 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
 
   const PROMPT = `${ui.cyan("AX-NAVI")} ${ui.dim(">")} `;
 
+  /*
+   * 프롬프트는 **readline 이 소유해야** 한다.
+   *
+   * 예전엔 process.stdout.write(PROMPT) 로 직접 찍었는데, 그러면 readline 은 그 존재를
+   * 모른다. rl.getCursorPos() 가 프롬프트 10칸을 빼고 돌려주므로, 자동완성이 그 값으로
+   * 커서를 되돌리면 프롬프트 안쪽으로 들어가 덮어쓴다 — 실측으로 `AX-NAVI > ` 에
+   * /find 를 치면 `AX-find> /` 가 되고, 지우면 `>` 만 남았다.
+   */
+  rl.setPrompt(PROMPT);
+
   const menu = process.stdin.isTTY
     ? attachAutocomplete({
         rl,
@@ -232,7 +242,8 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
       return;
     }
     exitArmed = true;
-    process.stdout.write(`\n${ui.dim("  한 번 더 Ctrl+C 를 누르면 나간다 (또는 /exit)")}\n${PROMPT}`);
+    process.stdout.write(`\n${ui.dim("  한 번 더 Ctrl+C 를 누르면 나간다 (또는 /exit)")}\n`);
+    rl.prompt();
   });
 
   /*
@@ -324,7 +335,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
 
   for (;;) {
     // 큐에 이미 쌓여 있으면 프롬프트를 다시 그리지 않는다 — 붙여넣기가 어지러워진다.
-    if (!queued.length) process.stdout.write(PROMPT);
+    if (!queued.length) rl.prompt();
     const raw = await nextLine();
     if (raw === null) break; // Ctrl+C / EOF
     const line = raw.trim();

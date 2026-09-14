@@ -63,6 +63,24 @@ function balance(/** @type {string} */ text) {
   return { down, up: upTotal };
 }
 
+/**
+ * 화면에 쓴 내용에서 "오른쪽으로 n칸" 이동만 개다.
+ * 정규식을 안 쓰는 건 도구를 거치며 역슬래시가 먹히는 일이 잦기 때문이다.
+ * @param {string} text
+ * @returns {number[]}
+ */
+function cursorRightMoves(text) {
+  /** @type {number[]} */
+  const out = [];
+  for (const part of text.split(ESC + "[").slice(1)) {
+    const end = part.indexOf("C");
+    if (end <= 0) continue;
+    const digits = part.slice(0, end);
+    if ([...digits].every((c) => c >= "0" && c <= "9")) out.push(Number(digits));
+  }
+  return out;
+}
+
 const ITEMS = [
   { value: "/context", hint: "진행 중인 대화 상태" },
   { value: "/cross-repo-modify", hint: "페어 연동된 백엔드·프론트엔드" },
@@ -125,4 +143,28 @@ test("슬래시로 시작하지 않으면 메뉴를 닫는다", async () => {
   assert.equal(down, up, "닫으면서 줄 수가 어긋났다");
   assert.ok(!h.text().includes("/context"), "닫았는데 메뉴를 또 그렸다");
   menu.dispose();
+});
+
+/*
+ * 실측된 결함 — `AX-NAVI > ` 에 /find 를 치면 `AX-find> /` 가 됐다.
+ *
+ * 프롬프트를 직접 찍고 readline 에게 알리지 않으면 getCursorPos() 가 프롬프트 폭을
+ * 빼고 돌려준다. 그 값으로 커서를 되돌리면 프롬프트 안쪽으로 들어가 글자를 덮어쓴다.
+ */
+test("커서를 프롬프트 뒤로 되돌린다 — 안쪽으로 들어가면 프롬프트를 덮어쓴다", async () => {
+  const PROMPT_COLS = 10; // "AX-NAVI > "
+  const h = harness();
+  // readline 이 프롬프트를 알고 있는 상태를 흔내낸다.
+  h.rl.getCursorPos = () => ({ rows: 0, cols: PROMPT_COLS + h.rl.line.length });
+
+  attachAutocomplete({ rl: h.rl, input: h.input, output: h.output, source: () => ITEMS, ui: plainUi });
+  h.reset();
+  h.type("/find");
+  await new Promise((r) => setImmediate(r));
+
+  const moves = cursorRightMoves(h.text());
+  assert.ok(moves.length > 0, "좌표를 되돌리지 않았다");
+  for (const col of moves) {
+    assert.ok(col >= PROMPT_COLS, `프롬프트 안쪽(${col}칸)으로 들어갔다`);
+  }
 });

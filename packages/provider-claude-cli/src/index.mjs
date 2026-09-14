@@ -27,6 +27,8 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 
+const NEWLINE = String.fromCharCode(10);
+
 /** @typedef {import("@ax-navi/core").ProviderEvent} ProviderEvent */
 /** @typedef {import("@ax-navi/core").SessionSpec} SessionSpec */
 /** @typedef {import("@ax-navi/core").LLMProvider} LLMProvider */
@@ -319,9 +321,18 @@ export class ClaudeCliProvider {
      * 대신 stdin은 길이 제한이 없다. 시스템 프롬프트로서의 분리는 잃지만,
      * 지침이 조용히 사라지는 것보다 낫다.
      */
-    const payload = spec.system
-      ? `<역할 지침>\n${spec.system}\n</역할 지침>\n\n${prompt}`
-      : prompt;
+    /*
+     * 쓸 수 있는 도구를 먼저 알린다.
+     *
+     * 안 알려 주면 모델이 없는 도구를 부르고 한 턴을 날린다 — 실측으로 analyzer 가
+     * Edit 를 불렀다가 "No such tool available: Edit" 를 받고 되돌아갔다.
+     * 없다는 사실뿐 아니라 대신 무엇을 할지까지 적어 준다.
+     */
+    const payload = [
+      toolBriefing(spec.tools),
+      spec.system ? `<역할 지침>\n${spec.system}\n</역할 지침>` : "",
+      prompt,
+    ].filter(Boolean).join("\n\n");
 
     const args = [
       "-p",
@@ -531,3 +542,24 @@ function pluginMuteSettings() {
 
 /** @type {string | null | undefined} 한 프로세스에 한 번만 만든다. */
 let mutePath;
+
+/**
+ * 이 실행에서 쓸 수 있는 도구를 한 덩어리로 알린다.
+ *
+ * 특히 Edit 계열은 막혀 있는 데다 위임된 서브에이전트에도 같이 걸린다 — 도구 제약이
+ * 세션 단위로 걸리는 경로이기 때문이다. 그게 맞다(13개 에이전트가 Edit 없이 도는 계약).
+ * 다만 그 사실을 모르면 모델이 매번 한 번씩 부딛혀 보고 되돌아간다.
+ *
+ * @param {readonly { name: string }[]} tools
+ * @returns {string}
+ */
+function toolBriefing(tools) {
+  const names = tools.map((t) => t.name);
+  if (!names.length) return "";
+  const lines = [`<쓸 수 있는 도구>`, names.join(", ")];
+  if (!names.includes("Edit")) {
+    lines.push("Edit·MultiEdit 은 이 실행에 없다(서브에이전트도 마찬가지). 파일을 고치려면 Read 로 읽고 Write 로 전체를 다시 써라.");
+  }
+  lines.push(`</쓸 수 있는 도구>`);
+  return lines.join(NEWLINE);
+}
