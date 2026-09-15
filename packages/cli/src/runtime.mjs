@@ -10,6 +10,7 @@ import { createInterface } from "node:readline/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pick } from "./picker.mjs";
+import { DEFAULT_MODE } from "./mode.mjs";
 
 /** @typedef {import("@ax-navi/core").AuditRecord} AuditRecord */
 /** @typedef {import("@ax-navi/core").ProjectPaths} ProjectPaths */
@@ -162,6 +163,37 @@ export function setLineReader(fn) {
  */
 /** @type {AbortController | null} */
 let currentTurn = null;
+
+/*
+ * 세션 동안의 선택 — 실행 모드와 모델.
+ *
+ * stdin · 취소 손잡이와 같은 자리에 둔다. 실행 경로가 넷(/skill, 오케스트레이터,
+ * /agent, 일반 대화)이라 인자로 끌고 다니면 한 곳만 빼먹어도 그 경로만 조용히 모드를
+ * 무시한다. 그런 구명은 화면에 안 드러나서 더 위험하다.
+ */
+let currentMode = DEFAULT_MODE;
+/** @type {import("@ax-navi/core").ModelTier | null} */
+let modelOverride = null;
+
+/** @returns {string} */
+export function sessionMode() {
+  return currentMode;
+}
+
+/** @param {string} id */
+export function setSessionMode(id) {
+  currentMode = id;
+}
+
+/** @returns {import("@ax-navi/core").ModelTier | null} */
+export function sessionModel() {
+  return modelOverride;
+}
+
+/** @param {import("@ax-navi/core").ModelTier | null} tier */
+export function setSessionModel(tier) {
+  modelOverride = tier;
+}
 
 /*
  * 턴이 도는 동안 사용자가 치고 있는 글.

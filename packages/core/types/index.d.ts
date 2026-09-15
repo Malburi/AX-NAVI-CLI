@@ -18,3 +18,4 @@ export { estimateTokens, compactTurns } from "../src/context/compaction.mjs";
 export { buildProjectContext, indexAgeNote } from "../src/context/project.mjs";
 export { newSessionId, toTitle, saveSession, loadSession, listSessions, latestSession, appendMessage } from "../src/context/sessions.mjs";
 export type { SessionRecord, SessionMessage } from "../src/context/sessions.mjs";
+export type { ModelTier } from "./llm.js";

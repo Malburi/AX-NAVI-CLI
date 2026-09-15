@@ -16,8 +16,9 @@ import { startMcpBridge } from "./mcp/bridge.mjs";
 import { createActivity, elapsed } from "./activity.mjs";
 import { renderCall } from "./transcript.mjs";
 import { createMarkdown } from "./markdown.mjs";
+import { applyMode } from "./mode.mjs";
 import { join } from "node:path";
-import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, debug, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, sessionMode, sessionModel, debug, ui } from "./runtime.mjs";
 
 /**
  * @param {object} args
@@ -156,6 +157,15 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
 
   const allowed = registry.definitionsFor(agent.role).map((d) => d.name);
   debug(ui.dim(`  provider=${picked.note}\n`));
+
+  /*
+   * 세션 선택을 여기서 한 번에 얽는다.
+   * 모드는 역할·지침을 고치고, 모델은 frontmatter 선언을 덮어쓴다.
+   */
+  agent = applyMode(agent, sessionMode());
+  const chosenModel = sessionModel();
+  if (chosenModel) agent = { ...agent, tier: chosenModel };
+
   debug(ui.dim(`  agent=${agent.name} tier=${agent.tier} tools=${allowed.join(",")}\n`));
 
   /*

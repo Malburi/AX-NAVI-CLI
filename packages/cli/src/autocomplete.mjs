@@ -66,7 +66,7 @@ const right = (n) => (n > 0 ? ESC + "[" + n + "C" : "");
  * @param {NodeJS.WriteStream} args.output
  * @param {(line: string) => MenuItem[]} args.source  현재 입력에 대한 후보 목록
  * @param {{ dim: (s: string) => string, cyan: (s: string) => string, bold: (s: string) => string }} args.ui
- * @returns {{ close: () => void, dispose: () => void }}
+ * @returns {{ close: () => void, isOpen: () => boolean, dispose: () => void }}
  */
 export function attachAutocomplete({ rl, input, output, source, ui }) {
   /** @type {MenuItem[]} */
@@ -224,6 +224,8 @@ export function attachAutocomplete({ rl, input, output, source, ui }) {
 
   return {
     close,
+    /** 메뉴가 떠 있는가. Shift+Tab 을 누가 가져갈지 가르는 데 쓴다. */
+    isOpen: () => painted > 0,
     dispose() {
       close();
       input.off("keypress", onKeypress);

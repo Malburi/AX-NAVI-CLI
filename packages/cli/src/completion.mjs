@@ -33,6 +33,8 @@ const BUILTINS = [
   { name: "new", kind: "builtin", summary: "대화를 끊고 새로 시작" },
   { name: "sessions", kind: "builtin", summary: "저장된 대화 목록" },
   { name: "resume", kind: "builtin", summary: "이전 대화로 돌아가기" },
+  { name: "model", kind: "builtin", summary: "모델 바꾸기 (haiku | sonnet | opus)" },
+  { name: "mode", kind: "builtin", summary: "실행 모드 보기 (Shift+Tab 으로 변경)" },
   { name: "exit", kind: "builtin", summary: "종료" },
 ];
 

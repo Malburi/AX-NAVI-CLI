@@ -19,7 +19,7 @@ import {
   saveSession,
   toTitle,
 } from "@ax-navi/core";
-import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, setLineReader, setTypingProbe, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, sessionMode, sessionModel, setLineReader, setSessionMode, setSessionModel, setTypingProbe, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
 import { buildCommands, menuItems, renderCommandMenu } from "./completion.mjs";
 import { attachAutocomplete } from "./autocomplete.mjs";
@@ -31,6 +31,7 @@ import { estimateTokens } from "@ax-navi/core";
 import { createNaviPersona } from "./persona.mjs";
 import { createTypeahead } from "./typeahead.mjs";
 import { renderReplay, replayFrame } from "./replay.mjs";
+import { DEFAULT_MODE, MODES, modeOf, nextMode } from "./mode.mjs";
 
 const NL = String.fromCharCode(10);
 
@@ -95,7 +96,15 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
    * 커서를 되돌리면 프롬프트 안쪽으로 들어가 덮어쓴다 — 실측으로 `AX-NAVI > ` 에
    * /find 를 치면 `AX-find> /` 가 되고, 지우면 `>` 만 남았다.
    */
-  rl.setPrompt(PROMPT);
+  /*
+   * 프롬프트에 모드를 달아 둔다. 바꿈 때 한 번 알리고 말면 몇 턴 뒤에 잊어버린다 —
+   * 읽기 전용인 줄 모르고 수정을 시키면 무엇도 안 된 이유를 모른다.
+   */
+  const applyPrompt = () => {
+    const mode = modeOf(sessionMode());
+    rl.setPrompt(mode.id === DEFAULT_MODE ? PROMPT : `${ui.cyan("AX-NAVI")} ${ui.yellow(`(${mode.label})`)} ${ui.dim(">")} `);
+  };
+  applyPrompt();
 
   /**
    * 이어서 열 때 지난 대화를 되살린다.
@@ -285,8 +294,21 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
    * 도는 턴이 없을 때는 건드리지 않는다 — 자동완성 메뉴가 ESC 를 쓰기 때문이다.
    */
   if (process.stdin.isTTY) {
-    process.stdin.on("keypress", (/** @type {string} */ _ch, /** @type {{ name?: string }} */ key) => {
-      if (key?.name === "escape") interrupt("ESC");
+    process.stdin.on("keypress", (/** @type {string} */ _ch, /** @type {{ name?: string, shift?: boolean }} */ key) => {
+      if (key?.name === "escape") return interrupt("ESC");
+      /*
+       * Shift+Tab 으로 모드를 돌린다.
+       * 자동완성 메뉴가 떠 있을 때는 그쪽이 Tab 을 쓴다 — 둠 다 가져가면 후보 이동과
+       * 모드 변경이 동시에 일어난다.
+       */
+      if (key?.name === "tab" && key.shift && !menu?.isOpen()) {
+        setSessionMode(nextMode(sessionMode()));
+        const mode = modeOf(sessionMode());
+        applyPrompt();
+        const note = mode.enforced ? "" : ui.dim("  (강제가 아니라 지침이다)");
+        process.stdout.write(`${NL}  ${ui.yellow(mode.label)}  ${ui.dim(mode.hint)}${note}${NL}`);
+        rl.prompt();
+      }
     });
   }
 
@@ -559,7 +581,7 @@ function statusLines(paths, state, picked) {
     lines.push("");
   }
   lines.push(
-    `  ${ui.dim("자연어로 물어보세요.")}   ${ui.cyan("/")} ${ui.dim("명령 목록")}   ${ui.dim("Tab 자동완성")}   ${ui.cyan("/exit")} ${ui.dim("종료")}`,
+    `  ${ui.dim("자연어로 물어보세요.")}   ${ui.cyan("/")} ${ui.dim("명령 목록")}   ${ui.dim("Tab 자동완성")}   ${ui.cyan("Shift+Tab")} ${ui.dim("모드")}   ${ui.cyan("/exit")} ${ui.dim("종료")}`,
   );
   lines.push("");
   return lines;
@@ -599,6 +621,46 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       onReset?.();
       process.stdout.write(`  ${ui.dim("새 대화를 시작한다.")}\n`);
       return 0;
+
+    case "model": {
+      /*
+       * 세션 동안 모델을 바꾼다. frontmatter 선언을 덮어쓴는다.
+       *
+       * 기본은 에이전트마다 다르다 — analyzer 는 sonnet, 어떤 것은 opus 를 선언한다.
+       * 그걸 한 줄로 묶어 버리지 않고 "선언대로"를 골라 둘 수 있게 둔다.
+       */
+      const wanted = (rest[0] ?? "").toLowerCase();
+      if (wanted) {
+        const pickTier = wanted === "기본" || wanted === "auto" || wanted === "default"
+          ? null
+          : MODEL_CHOICES.find((m) => m.id === wanted)?.tier;
+        if (pickTier === undefined) {
+          process.stderr.write(`  ${ui.yellow("모르는 모델")} ${ui.dim(`— ${wanted} (${MODEL_CHOICES.map((m) => m.id).join(", ")}, 기본)`)}${NL}`);
+          return 2;
+        }
+        setSessionModel(pickTier);
+        process.stdout.write(`  ${ui.green("모델")} ${ui.dim(describeModel())}${NL}`);
+        return 0;
+      }
+
+      const labels = [
+        `기본 — 에이전트가 선언한 모델을 따른다`,
+        ...MODEL_CHOICES.map((m) => `${m.id} — ${m.hint}`),
+      ];
+      const [picked] = await createHostElicitor().ask("어느 모델로 돌릴까요?", labels, {});
+      if (!picked) return 0;
+      const at = labels.indexOf(picked);
+      setSessionModel(at <= 0 ? null : /** @type {any} */ (MODEL_CHOICES[at - 1]).tier);
+      process.stdout.write(`  ${ui.green("모델")} ${ui.dim(describeModel())}${NL}`);
+      return 0;
+    }
+
+    case "mode": {
+      const mode = modeOf(sessionMode());
+      const lines = MODES.map((m) => `  ${m.id === mode.id ? ui.cyan("❯") : " "} ${ui.cyan(m.label.padEnd(8))} ${ui.dim(m.hint)}${m.enforced ? "" : ui.dim("  (지침)")}`);
+      process.stdout.write(`${lines.join(NL)}${NL}  ${ui.dim("Shift+Tab 으로 돌린다.")}${NL}`);
+      return 0;
+    }
 
     case "resume": {
       /*
@@ -741,4 +803,25 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       return 2;
     }
   }
+}
+
+/*
+ * 골라 쓸 수 있는 모델.
+ *
+ * Core 는 등급(ModelTier)만 안다 — 실제 모델 id 로의 변환은 Provider 가 한다.
+ * 그 경계를 여기서 깨지 않도록 이름은 보여 주되 넘기는 것은 등급이다.
+ */
+/** @type {ReadonlyArray<{ id: string, tier: import("@ax-navi/core").ModelTier, hint: string }>} */
+const MODEL_CHOICES = [
+  { id: "haiku", tier: "fast", hint: "빠르고 싸다. 간단한 조회·요약" },
+  { id: "sonnet", tier: "standard", hint: "기본값. 일상 작업" },
+  { id: "opus", tier: "deep", hint: "깊게 본다. 분석·설계·마이그레이션" },
+];
+
+/** @returns {string} */
+function describeModel() {
+  const tier = sessionModel();
+  if (!tier) return "기본 — 에이전트 선언을 따른다";
+  const hit = MODEL_CHOICES.find((m) => m.tier === tier);
+  return `${hit?.id ?? tier} — ${hit?.hint ?? ""}`;
 }
