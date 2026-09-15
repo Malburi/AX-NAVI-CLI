@@ -104,3 +104,64 @@ test("여러 질문을 순서대로 처리한다", async () => {
     await host.close();
   }
 });
+
+/* ---------- 스킬 실행 요청 ---------- */
+
+/*
+ * 자연어로 "하네스 초기화 해줘" 하면 인격이 안내만 하고 끝났다(실측: `/harness-init`
+ * 을 실행하라고 답했다). 알아보는데 실행할 수단이 없어서였다.
+ *
+ * 이 통로는 **접수만** 한다. 여기서 바로 실행하면 LLM 턴 안에서 또 다른 LLM 턴을
+ * 돌리는 꼴이 되고, 출력이 섞여 무엇이 어느 실행의 것인지 구분되지 않는다.
+ */
+test("스킬 실행 요청이 CLI까지 가서 접수된다", async () => {
+  /** @type {Array<{ name: string, request: string }>} */
+  const got = [];
+  const host = await startElicitHost({
+    elicitor: { ask: async () => ["쓰이면 안 된다"] },
+    onSkill: (name, request) => {
+      got.push({ name, request });
+      return `접수했다. ${name} 을 지금 시작한다.`;
+    },
+  });
+
+  const res = await roundTrip(host.address, {
+    id: "s1", kind: "skill", name: "harness-init", request: "하네스 초기화 해줘.",
+  });
+
+  assert.deepEqual(got, [{ name: "harness-init", request: "하네스 초기화 해줘." }]);
+  assert.match(res.answers[0], /접수했다/);
+  await host.close();
+});
+
+test("스킬 요청을 질문으로 착각하지 않는다 — 사람에게 묻지 않는다", async () => {
+  let asked = 0;
+  const host = await startElicitHost({
+    elicitor: { ask: async () => { asked += 1; return []; } },
+    onSkill: () => "접수",
+  });
+
+  await roundTrip(host.address, { id: "s2", kind: "skill", name: "find-feature", request: "결제" });
+  assert.equal(asked, 0, "스킬 요청인데 사람에게 물었다");
+  await host.close();
+});
+
+test("스킬을 실행할 수 없는 경로면 그 사실을 돌려준다 — 조용히 삼키지 않는다", async () => {
+  // onSkill 을 주지 않은 호스트. 단발 실행(axnavi ask)이 이 경우다.
+  const host = await startElicitHost({ elicitor: { ask: async () => [] } });
+  const res = await roundTrip(host.address, { id: "s3", kind: "skill", name: "harness-init", request: "" });
+  assert.match(res.answers[0], /실행할 수 없는/);
+  await host.close();
+});
+
+test("질문은 그대로 사람에게 간다 — 스킬 분기가 질문을 가로채지 않는다", async () => {
+  let asked = 0;
+  const host = await startElicitHost({
+    elicitor: { ask: async () => { asked += 1; return ["가"]; } },
+    onSkill: () => "접수",
+  });
+  const res = await roundTrip(host.address, { id: "q1", question: "무엇?", options: ["가", "나"] });
+  assert.equal(asked, 1);
+  assert.deepEqual(res.answers, ["가"]);
+  await host.close();
+});

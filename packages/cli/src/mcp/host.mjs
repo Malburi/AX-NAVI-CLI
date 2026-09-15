@@ -13,6 +13,8 @@
  * 자식 프로세스가 부모의 TTY를 직접 여는 방식은 윈도우에서 지저분하다.
  */
 import { createServer } from "node:net";
+
+const NEWLINE = String.fromCharCode(10);
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -38,9 +40,10 @@ function makeAddress() {
  * @param {object} args
  * @param {Elicitor} args.elicitor              실제로 사람에게 묻는 구현 (터미널)
  * @param {(text: string) => void} [args.onNotice]  사용자에게 보여 줄 안내
+ * @param {(name: string, request: string) => string} [args.onSkill]  스킬 실행 요청을 받아 답을 돌려준다
  * @returns {Promise<ElicitHost>}
  */
-export async function startElicitHost({ elicitor, onNotice }) {
+export async function startElicitHost({ elicitor, onNotice, onSkill }) {
   const address = makeAddress();
   const state = { asked: 0 };
 
@@ -54,11 +57,23 @@ export async function startElicitHost({ elicitor, onNotice }) {
         buffer = buffer.slice(nl + 1);
         if (!line.trim()) continue;
 
-        /** @type {{ id: string, question: string, options?: string[], multiSelect?: boolean }} */
+        /** @type {{ id: string, kind?: string, question: string, options?: string[], multiSelect?: boolean, name?: string, request?: string }} */
         let req;
         try {
           req = JSON.parse(line);
         } catch {
+          continue;
+        }
+
+        /*
+         * 스킬 실행 요청은 여기서 돌리지 않는다 — 접수만 하고 돌아간다.
+         * 여기서 돌리면 LLM 턴 안에서 또 다른 LLM 턴을 돌리는 꼴이 되고,
+         * 출력이 섞여 무엇이 어느 실행의 것인지 구분되지 않는다.
+         */
+        if (req.kind === "skill") {
+          const answer = onSkill?.(req.name ?? "", req.request ?? "")
+            ?? "스킬을 실행할 수 없는 경로다.";
+          socket.write(`${JSON.stringify({ id: req.id, answers: [answer] })}${NEWLINE}`);
           continue;
         }
 

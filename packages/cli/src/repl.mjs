@@ -173,6 +173,9 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
   });
 
   /** 이 대화에 쓴 누적 비용. */
+  /** 인격이 부르기로 한 스킬. 턴이 끝나면 이어서 실행한다. @type {{ name: string, request: string } | null} */
+  let pendingSkill = null;
+
   let sessionCost = 0;
   /** 마지막 턴이 실제로 실어 보낸 컨텍스트 크기. 위임 경로는 우리가 turns 를 안 들고 있다. */
   let lastContextTokens = 0;
@@ -441,11 +444,37 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
            * 주고받은 말을 쌓아 둔다. 위임 경로는 대화를 claude 가 들고 있어
            * conversation.turns 가 비어 있으므로, 되살릴 내용은 우리가 따로 가지고 있어야 한다.
            */
+          /*
+           * 자연어 요청을 스킬로 이어 준다.
+           *
+           * 인격은 이전에 "`/harness-init` 을 실행하세요" 라고 안내만 했다(실측).
+           * 알아보는데 실행할 수단이 없어서였다. 지금은 부를 수 있고,
+           * 여기서 그 요청을 받아 턴이 끝난 뒤 실행한다 — LLM 턴 안에서 또 한 번
+           * 도는 것보다 확실하고, 출력도 섞이지 않는다.
+           */
+          onSkillRequest: (name, request) => {
+            const wanted = name.replace(/^\//, "").trim();
+            if (!skillByName.has(wanted)) {
+              return `그런 스킬이 없다: ${wanted}. 쓸 수 있는 것: ${[...skillByName.keys()].join(", ")}`;
+            }
+            pendingSkill = { name: wanted, request: request || line };
+            return `접수했다. ${wanted} 을 지금 시작한다 — 설명을 덧붙이지 말고 여기서 끝내라.`;
+          },
           onAnswer: (text) => {
             t.messages = appendMessage(appendMessage(t.messages ?? [], "user", line), "assistant", text);
           },
           queuedCount: () => queued.length,
         });
+        /*
+         * 인격이 스킬을 부르기로 했으면 이어서 실행한다.
+         * 사용자가 부탁한 일을 끝까지 해주는 것이 한 번의 입력에 대한 답이다.
+         */
+        if (pendingSkill) {
+          const { name, request } = pendingSkill;
+          pendingSkill = null;
+          process.stdout.write(ui.dim(`  ⋯ /${name}${NL}`));
+          code = await runSkill(paths.root, name, request);
+        }
         await persist();
         /*
          * 턴이 끝나면 상태를 한 줄 남긴다.

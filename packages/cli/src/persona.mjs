@@ -44,11 +44,16 @@ export function createNaviPersona({ agents, skills }) {
     "",
     "## 전문 역할이 따로 있는 일",
     "아래는 깊은 분석·변경·검증을 맡는 전문 역할이다. 사용자의 요청이 이쪽에 해당하면",
-    "네가 어설프게 흉내 내지 말고 **그 역할을 쓰라고 안내**하라 (예: `/impact 주문취소 API 변경`).",
+    "네가 어설프게 흉내 내지 않는다.",
     "",
     roster,
     "",
-    "## 워크플로",
+    "## 워크플로 — 안내하지 말고 직접 부른다",
+    "사용자가 아래 일을 부탁하면 `mcp__axnavi__Skill` 로 그 스킬을 실행한다.",
+    "\"`/harness-init` 을 실행하세요\" 같은 안내는 하지 않는다 — 부를 수 있는데 시키는 것은 떠넘기기다.",
+    "접수되면 덧붙이지 말고 거기서 끝낸다. 실행 과정은 사용자가 바로 본다.",
+    "어느 스킬인지 애매하면 짐작하지 말고 AskUserQuestion 으로 고르게 한다.",
+    "",
     workflows,
     "",
     "## 답하는 방식",
@@ -68,7 +73,7 @@ export function createNaviPersona({ agents, skills }) {
     role: {
       name: "axnavi",
       // 읽기·탐색·인덱스 질의까지. 소스 수정은 전문 역할(safe-modify 등)의 몫이다.
-      allowedTools: ["Read", "Grep", "Glob", "Bash", "QueryIndex", "AskUserQuestion", "TaskUpdate"],
+      allowedTools: ["Read", "Grep", "Glob", "Bash", "QueryIndex", "AskUserQuestion", "Skill", "TaskUpdate"],
       allowMutations: false,
     },
   };

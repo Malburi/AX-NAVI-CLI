@@ -77,7 +77,7 @@ const CLAUDE_CODE_TOOLS = [
 const DELEGATION_TOOLS = ["Task", "Agent", "TaskOutput", "TaskStop"];
 
 /** AX-NAVI MCP 서버가 노출하는 도구. claude 쪽에서는 이 이름으로 보인다. */
-const MCP_TOOLS = ["mcp__axnavi__AskUserQuestion", "mcp__axnavi__QueryIndex"];
+const MCP_TOOLS = ["mcp__axnavi__AskUserQuestion", "mcp__axnavi__QueryIndex", "mcp__axnavi__Skill"];
 
 /**
  * 역할이 허용한 도구를 claude 쪽 `--disallowedTools` 목록으로 번역한다.

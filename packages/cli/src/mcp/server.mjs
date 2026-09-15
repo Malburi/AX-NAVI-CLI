@@ -14,6 +14,8 @@
 import { createInterface } from "node:readline";
 import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
+
+const NEWLINE = String.fromCharCode(10);
 import { COMMANDS } from "@ax-navi/indexer";
 
 const ELICIT_ADDR = process.env["AXNAVI_ELICIT_ADDR"] ?? "";
@@ -62,12 +64,21 @@ function ensureSocket() {
  * @returns {Promise<string[]>}
  */
 function askUser(question, options, multiSelect) {
+  return request({ question, options, multiSelect });
+}
+
+/**
+ * 호스트에 한 건 묻고 답을 기다린다. 질문도 스킬 요청도 같은 통로를 쓴다.
+ * @param {Record<string, unknown>} payload
+ * @returns {Promise<string[]>}
+ */
+function request(payload) {
   const sock = ensureSocket();
   if (!sock) return Promise.resolve([]);
   const id = randomUUID();
   return new Promise((resolve) => {
     waiting.set(id, resolve);
-    sock.write(`${JSON.stringify({ id, question, options, multiSelect })}\n`);
+    sock.write(`${JSON.stringify({ id, ...payload })}${NEWLINE}`);
   });
 }
 
@@ -86,6 +97,20 @@ const TOOLS = [
         question: { type: "string", description: "한국어로 쓴다" },
         options: { type: "array", items: { type: "string" }, description: "선택지. 비우면 자유 입력" },
         multiSelect: { type: "boolean", description: "복수 선택 허용" },
+      },
+    },
+  },
+  {
+    name: "Skill",
+    description:
+      "AX-NAVI 의 전용 워크플로를 실행한다. 사용자가 그 일을 부탁하면 명령을 " +
+      "안내하지 말고 이 도구를 부르면 된다. 접수되면 덧붙이지 말고 끝내라.",
+    inputSchema: {
+      type: "object",
+      required: ["name"],
+      properties: {
+        name: { type: "string", description: "스킬 이름. 예: harness-init, safe-modify, find-feature" },
+        request: { type: "string", description: "사용자의 요청을 그대로. 없으면 빈 문자열" },
       },
     },
   },
@@ -124,6 +149,11 @@ async function callTool(name, args) {
       return { text: "(사용자가 응답하지 않았다. 임의로 진행하지 말고 무엇을 가정했는지 밝혀라.)" };
     }
     return { text: answers.join(", ") };
+  }
+
+  if (name === "Skill") {
+    const [answer] = await request({ kind: "skill", name: args.name ?? "", request: args.request ?? "" });
+    return { text: answer ?? "응답이 없다." };
   }
 
   if (name === "QueryIndex") {

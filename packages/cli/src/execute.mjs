@@ -27,13 +27,14 @@ import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, 
  * @param {import("@ax-navi/core").Conversation} [args.conversation]  주면 대화를 이어간다
  * @param {(usd: number) => void} [args.onCost]  이번 실행의 비용을 호출부에 알린다
  * @param {(tokens: number) => void} [args.onContextSize]  이번 턴이 실제로 실어 보낸 컨텍스트 크기
+ * @param {(name: string, request: string) => string} [args.onSkillRequest]  모델이 스킬 실행을 요청했을 때
  * @param {(text: string) => void} [args.onAnswer]  대화를 다시 여는 데 쓸 답변 본문
  * @param {() => number} [args.queuedCount]  대기 중인 입력 줄 수 (상태 표시에 쓴다)
  * @param {import("./provider.mjs").ProviderName} [args.providerName]
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<number>} 프로세스 종료 코드
  */
-export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, onCost, onContextSize, onAnswer, queuedCount, providerName, signal }) {
+export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, onCost, onContextSize, onAnswer, onSkillRequest, queuedCount, providerName, signal }) {
   /*
    * Provider를 먼저 고른다.
    *
@@ -69,7 +70,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 위임 실행이 사용자에게 되묻고 우리 인덱스를 쓸 수 있게 MCP 브리지를 띄운다.
    * 이게 없으면 "물을 수단이 없다"고 가정하고 기본값으로 넘어간다(실측).
    */
-  const bridge = await startMcpBridge({ paths, elicitor });
+  const bridge = await startMcpBridge({ paths, elicitor, ...(onSkillRequest ? { onSkill: onSkillRequest } : {}) });
   try {
     return await runWithBridge();
   } finally {
