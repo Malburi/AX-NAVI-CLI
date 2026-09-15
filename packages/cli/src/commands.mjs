@@ -25,6 +25,9 @@ import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { firstSentence } from "./completion.mjs";
+import { renderSkillHeader } from "./transcript.mjs";
+
+const NEWLINE = String.fromCharCode(10);
 
 
 const AGENT_ENV = { pluginRoot: REPO_ROOT, projectRoot: process.cwd() };
@@ -288,7 +291,22 @@ export async function runSkill(root, name, prompt, providerName) {
     return 2;
   }
   const { skill, via } = await resolveSkill(SKILLS_DIR, name);
-  if (via.length) process.stderr.write(ui.dim(`  별칭 ${via.join(" → ")} → ${skill.name}\n`));
+
+  /*
+   * 스킬이 돌기 시작했다는 것을 먼저 밝힌다.
+   *
+   * 자연어로 부르든 /find 로 부르든 같은 자리에서 같은 모양으로 나와야 한다 —
+   * 예전에는 슬래시 경로에 아무 표시가 없어 무엇이 돌고 있는지 알 수 없었다.
+   */
+  process.stderr.write(
+    renderSkillHeader({
+      name: skill.name,
+      description: firstSentence(skill.description, 120),
+      via,
+      width: process.stdout.columns ?? 100,
+      ui,
+    }).join(NEWLINE) + NEWLINE,
+  );
 
   /*
    * 오케스트레이터 스킬은 실행자에게 넘기지 않는다.
@@ -396,15 +414,7 @@ async function runOrchestratorSkill(root, skill, prompt, providerName) {
     return 2;
   }
 
-  /*
-   * 스킬 자신의 설명을 보여 준다.
-   *
-   * 예전에는 "오케스트레이터 스킬 — 에이전트 7종을 지휘한다" 라고 지어내서 썼다.
-   * 본문에서 긁어모은 에이전트 수였을 뿐 스킬의 설명이 아니었고, 그러면 사용자는
-   * frontmatter 에 적혀 있는 진짜 설명을 볼 기회를 잃는다.
-   */
-  const summary = firstSentence(skill.description, 120);
-  process.stderr.write(ui.dim(`  ${summary}\n`));
+
 
   const instruction = [
     `# 실행 지시`,

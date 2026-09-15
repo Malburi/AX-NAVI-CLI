@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { headline, renderCall, resultBlock, shorten, summarizeResult } from "../../cli/src/transcript.mjs";
+import { headline, renderCall, renderSkillHeader, resultBlock, shorten, summarizeResult } from "../../cli/src/transcript.mjs";
 import { visibleLength } from "../../cli/src/width.mjs";
 
 const plainUi = {
@@ -202,4 +202,46 @@ test("실패는 눈에 띄게 남는다 — 줄이느라 감추면 안 된다", 
     width: 60,
   });
   assert.match(lines.join("\n"), /No such tool available/);
+});
+
+/* ---------- 스킬 머리말 ---------- */
+
+/*
+ * 자연어로 부르든 /find 로 부르든 같은 모양이어야 한다. 예전에는 자연어 경로에만
+ * 표시가 붙고 슬래시는 그냥 답부터 찍혀서 무엇이 돌고 있는지 구분이 안 됐다.
+ */
+test("스킬을 썼다는 것과 그 설명을 보여 준다", () => {
+  const lines = renderSkillHeader({
+    name: "find-feature",
+    description: "기능명·키워드·도메인 용어로 관련 파일·클래스·메서드·SQL을 찾아 목록으로 반환한다",
+    width: 120,
+    ui: plainUi,
+  });
+  assert.match(/** @type {string} */ (lines[0]), /Skill\(find-feature\)/);
+  assert.match(/** @type {string} */ (lines[1]), /기능명/);
+});
+
+test("별칭으로 들어왔으면 어느 이름으로 불렀는지도 남긴다", () => {
+  const lines = renderSkillHeader({ name: "find-feature", via: ["find"], width: 120, ui: plainUi });
+  assert.match(/** @type {string} */ (lines[0]), /find-feature/);
+  assert.match(/** @type {string} */ (lines[0]), /\/find/);
+});
+
+test("설명이 없으면 빈 줄을 만들지 않는다", () => {
+  assert.equal(renderSkillHeader({ name: "x", width: 120, ui: plainUi }).length, 1);
+  assert.equal(renderSkillHeader({ name: "x", description: "   ", width: 120, ui: plainUi }).length, 1);
+});
+
+test("어떤 폭에서도 머리말이 폭을 넘지 않는다", () => {
+  for (const width of [30, 60, 120]) {
+    for (const line of renderSkillHeader({
+      name: "cross-repo-scaffold",
+      description: "아주 긴 설명 ".repeat(20),
+      via: ["scaffold"],
+      width,
+      ui: plainUi,
+    })) {
+      assert.ok(visibleLength(line) < width, `폭 ${width}에서 ${visibleLength(line)}칸`);
+    }
+  }
 });

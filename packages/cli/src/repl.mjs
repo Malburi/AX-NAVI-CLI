@@ -473,7 +473,6 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
         if (pendingSkill) {
           const { name, request } = pendingSkill;
           pendingSkill = null;
-          process.stdout.write(ui.dim(`  ⋯ /${name}${NL}`));
           code = await runSkill(paths.root, name, request);
         }
         await persist();

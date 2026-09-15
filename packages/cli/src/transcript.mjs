@@ -241,4 +241,30 @@ export function renderCall({ tool, input, result, isError, pending, root, depth 
   return lines;
 }
 
+/**
+ * 스킬 실행 머리말.
+ *
+ * 자연어로 부르든 슬래시로 부르든 **같은 모양**이어야 한다. 예전에는 자연어 경로에만
+ * 표시가 붙고 `/find` 는 그냥 답부터 찍혀서, 무엇이 돌고 있는지 구분이 안 됐다.
+ *
+ * 설명은 SKILL.md 의 frontmatter 에서 온다 — 여기서 지어내지 않는다.
+ *
+ * @param {object} args
+ * @param {string} args.name          실제 실행되는 스킬 이름
+ * @param {string} [args.description] frontmatter 설명 (첫 문장으로 줄여 넣는다)
+ * @param {readonly string[]} [args.via]  거쳐 온 별칭 사슬
+ * @param {number} args.width
+ * @param {{ dim: (s: string) => string, green: (s: string) => string, bold: (s: string) => string }} args.ui
+ * @returns {string[]}
+ */
+export function renderSkillHeader({ name, description, via = [], width, ui }) {
+  const cap = Math.max(20, width - 1);
+  // 별칭으로 들어왔으면 어느 이름으로 불렀는지도 남긴다. 그걸 숨기면 목록과 대응이 안 된다.
+  const alias = via.length ? ui.dim(`  ← /${via[0]}`) : "";
+  const lines = [clipToWidth(`${ui.green("●")} ${ui.bold(`Skill(${name})`)}${alias}`, cap)];
+  const summary = (description ?? "").trim();
+  if (summary) lines.push(clipToWidth(`  ${ui.dim(summary)}`, cap));
+  return lines;
+}
+
 export { RESULT_LINES, visibleLength };
