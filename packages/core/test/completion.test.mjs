@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { loadAllSkills } from "../src/skills/loader.mjs";
-import { buildCommands, complete, menuItems, renderCommandMenu } from "../../cli/src/completion.mjs";
+import { firstSentence, buildCommands, complete, menuItems, renderCommandMenu } from "../../cli/src/completion.mjs";
 import { computeWindow } from "../../cli/src/autocomplete.mjs";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
@@ -136,4 +136,33 @@ test("창은 어느 선택에서도 그 항목을 포함한다", () => {
     const { start, end } = computeWindow(24, i, 7);
     assert.ok(i >= start && i < end, `선택 ${i}가 창 [${start},${end}) 밖이다`);
   }
+});
+
+/* ---------- 설명 요약 ---------- */
+
+/*
+ * 실행 머리말이 "오케스트레이터 스킬 — 에이전트 7종을 지휘한다" 라고 지어낸 적이 있다.
+ * 본문에서 긁어모은 에이전트 수였을 뿐 스킬의 설명이 아니었고, 그러면 사용자는
+ * frontmatter 에 적혀 있는 진짜 설명을 볼 기회를 잃는다.
+ */
+test("스킬 설명은 frontmatter 의 첫 문장을 쓴다 — 지어내지 않는다", async () => {
+  const skills = await loadAllSkills(SKILLS);
+  const init = skills.find((s) => s.name === "harness-init");
+  assert.ok(init, "harness-init 을 못 찾았다");
+  const summary = firstSentence(/** @type {any} */ (init).description, 120);
+  assert.match(summary, /프로젝트를 심층 분석해/);
+  assert.ok(!summary.includes("에이전트 7종"), "지어낸 문구가 남아 있다");
+});
+
+test("트리거 예시는 잘라 낸다 — 라우팅용이지 사람이 읽을 설명이 아니다", () => {
+  const raw = '프로젝트를 분석하는 오케스트레이터. "하네스 초기화", "하네스 만들어줘" 요청 시 사용.';
+  const summary = firstSentence(raw, 120);
+  assert.match(summary, /오케스트레이터/);
+  assert.ok(!summary.includes("하네스 초기화"), "트리거 목록이 그대로 붙었다");
+});
+
+test("길이 상한은 자리마다 다르게 준다 — 메뉴는 짧게, 실행 머리말은 길게", () => {
+  const long = "가".repeat(200);
+  assert.equal(firstSentence(long).length, 47, "메뉴 기본 상한(46자+말줄임)이 아니다");
+  assert.equal(firstSentence(long, 120).length, 121);
 });

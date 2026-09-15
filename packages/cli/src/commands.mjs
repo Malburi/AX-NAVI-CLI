@@ -24,6 +24,8 @@ import {
 import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
+import { firstSentence } from "./completion.mjs";
+
 
 const AGENT_ENV = { pluginRoot: REPO_ROOT, projectRoot: process.cwd() };
 
@@ -394,9 +396,15 @@ async function runOrchestratorSkill(root, skill, prompt, providerName) {
     return 2;
   }
 
-  process.stderr.write(
-    ui.dim(`  오케스트레이터 스킬 — 에이전트 ${skill.agents.length}종을 지휘한다 (${skill.agents.join(", ")})\n`),
-  );
+  /*
+   * 스킬 자신의 설명을 보여 준다.
+   *
+   * 예전에는 "오케스트레이터 스킬 — 에이전트 7종을 지휘한다" 라고 지어내서 썼다.
+   * 본문에서 긁어모은 에이전트 수였을 뿐 스킬의 설명이 아니었고, 그러면 사용자는
+   * frontmatter 에 적혀 있는 진짜 설명을 볼 기회를 잃는다.
+   */
+  const summary = firstSentence(skill.description, 120);
+  process.stderr.write(ui.dim(`  ${summary}\n`));
 
   const instruction = [
     `# 실행 지시`,

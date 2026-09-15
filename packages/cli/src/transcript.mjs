@@ -22,8 +22,18 @@ const NEWLINE = String.fromCharCode(10);
  * 도구별로 "이것만 보면 무슨 일을 하는지 아는" 인자.
  * 없는 도구는 아래 fallback 이 첫 문자열 인자를 고른다.
  */
+/*
+ * 결과를 따로 보여 줄 필요가 없는 도구.
+ *
+ * 질문은 선택지가 바로 떴고, 스킬은 그 실행이 바로 이어진다. 결과 문구를 한 번 더
+ * 찍으면 같은 말을 두 번 하는 것이고, 그 문구가 모델에게 주는 지시면 사용자에게는
+ * 엉뚱한 소리로 보인다(실측: "설명을 덧붙이지 말고 여기서 끝내라" 가 화면에 떴다).
+ */
+const HEADER_ONLY = new Set(["AskUserQuestion", "Skill"]);
+
 const PRIMARY = {
   Bash: ["command"],
+  Skill: ["name"],
   Read: ["file_path"],
   Write: ["file_path"],
   Edit: ["file_path"],
@@ -191,6 +201,9 @@ export function renderCall({ tool, input, result, isError, pending, root, depth 
   }
 
   const tint = isError ? ui.red : ui.dim;
+
+  // 실패는 보여 준다 — 접수된 줄 알고 지나가면 무엇이 안 돌았는지 모른다.
+  if (!isError && HEADER_ONLY.has(toolName(tool))) return lines;
 
   /*
    * 한 마디로 끝나는 결과는 제목 줄에 붙인다.

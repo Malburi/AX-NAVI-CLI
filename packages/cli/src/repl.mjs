@@ -458,7 +458,8 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
               return `그런 스킬이 없다: ${wanted}. 쓸 수 있는 것: ${[...skillByName.keys()].join(", ")}`;
             }
             pendingSkill = { name: wanted, request: request || line };
-            return `접수했다. ${wanted} 을 지금 시작한다 — 설명을 덧붙이지 말고 여기서 끝내라.`;
+            // 모델에게 주는 지시는 도구 설명에 있다. 여기서는 짧게 끝낸다 — 모델이 이걸 따라 적을 수 있다.
+            return "시작한다.";
           },
           onAnswer: (text) => {
             t.messages = appendMessage(appendMessage(t.messages ?? [], "user", line), "assistant", text);

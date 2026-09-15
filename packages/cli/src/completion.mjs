@@ -62,15 +62,20 @@ export function buildCommands(skills) {
 
 /**
  * description 앞머리만 잘라 한 줄 요약으로 쓴다.
+ *
+ * 메뉴와 실행 머리말이 같은 규칙을 써야 한다 — 사본을 두면 한쪽만 고쳐져 갈라진다.
+ * 길이만 자리에 따라 다르므로 그것만 인자로 받는다.
  * @param {string} text
+ * @param {number} [limit]
+ * @returns {string}
  */
-function firstSentence(text) {
+export function firstSentence(text, limit = 46) {
   // 따옴표로 시작하는 설명이 있다(safe-modify). 먼저 벗기지 않으면 첫 조각이 빈 문자열이 된다.
   const body = text.trim().replace(/^["'"]+/, "");
   // 첫 문장만. 트리거 예시("~ 요청 시")는 목록에서 군더더기라 잘라 낸다.
   const head = body.split(/[.。]\s|\. |["'"]/)[0] ?? body;
   const cut = head.replace(/\s*—.*$/, "").trim();
-  return cut.length > 46 ? `${cut.slice(0, 46)}…` : cut;
+  return cut.length > limit ? `${cut.slice(0, limit)}…` : cut;
 }
 
 /**
