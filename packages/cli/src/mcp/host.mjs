@@ -57,7 +57,7 @@ export async function startElicitHost({ elicitor, onNotice, onSkill }) {
         buffer = buffer.slice(nl + 1);
         if (!line.trim()) continue;
 
-        /** @type {{ id: string, kind?: string, question: string, options?: string[], multiSelect?: boolean, name?: string, request?: string }} */
+        /** @type {{ id: string, kind?: string, question: string, options?: string[], multiSelect?: boolean, header?: string, name?: string, request?: string }} */
         let req;
         try {
           req = JSON.parse(line);
@@ -83,7 +83,10 @@ export async function startElicitHost({ elicitor, onNotice, onSkill }) {
           const answers = await elicitor.ask(
             req.question,
             req.options ?? [],
-            req.multiSelect === undefined ? {} : { multiSelect: req.multiSelect },
+            {
+              ...(req.multiSelect === undefined ? {} : { multiSelect: req.multiSelect }),
+              ...(req.header ? { header: req.header } : {}),
+            },
           );
           socket.write(`${JSON.stringify({ id: req.id, answers })}\n`);
         } catch (error) {

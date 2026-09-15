@@ -68,11 +68,10 @@ test("4개를 넘는 선택지도 다 보인다 — 호스트의 4옵션 상한�
 });
 
 test("복수 선택은 고른 것과 아닌 것을 표시로 가른다", () => {
-  const lines = render({ multiSelect: true, checked: new Set([1, 3]), options: opts(4) });
-  const body = lines.join("\n");
-  assert.match(body, /◉ 선택지 2/);
-  assert.match(body, /◉ 선택지 4/);
-  assert.match(body, /◯ 선택지 1/);
+  const body = render({ multiSelect: true, checked: new Set([1, 3]), options: opts(4) }).join("\n");
+  assert.match(body, /◉ 2\. 선택지 2/);
+  assert.match(body, /◉ 4\. 선택지 4/);
+  assert.match(body, /◯ 1\. 선택지 1/);
 });
 
 test("조작법을 알려 준다 — 방향키를 쓰는 줄 모르면 멈춘 화면으로 보인다", () => {
@@ -100,9 +99,10 @@ test("어떤 폭에서도 줄이 폭을 넘지 않는다 — 접히면 지울 �
   }
 });
 
-test("줄 수가 예측 가능하다 — 질문 1 + 선택지 n + 조작법 1", () => {
-  assert.equal(render({ options: opts(4) }).length, 6);
-  assert.equal(render({ options: opts(1) }).length, 3);
+test("줄 수가 예측 가능하다 — 지울 때 그만큼 올라가야 한다", () => {
+  // 질문 1 + 빈 줄 + 선택지 n + 빈 줄 + 조작법 1. 설명이 없는 선택지는 한 줄씩이다.
+  assert.equal(render({ options: opts(4) }).length, 1 + 1 + 4 + 1 + 1);
+  assert.equal(render({ options: opts(1) }).length, 1 + 1 + 1 + 1 + 1);
 });
 
 /* ---------- 키 처리 ---------- */
@@ -228,11 +228,11 @@ const MULTILINE = [
 
 test("여러 줄짜리 질문도 줄 수가 정확하다 — 틀리면 지우다 말아 화면에 쌓인다", () => {
   const lines = render({ question: MULTILINE, options: opts(3), width: 200 });
-  // 배열 안에 줄바꿈이 남아 있으면 세는 줄 수와 찍히는 줄 수가 어긋난다.
   for (const line of lines) {
     assert.ok(!line.includes("\n"), `줄 안에 줄바꿈이 남았다: ${JSON.stringify(line)}`);
   }
-  assert.equal(lines.length, 4 + 3 + 1, "질문 4줄 + 선택지 3 + 조작법 1이 아니다");
+  // 질문 4 + 빈 줄 + 선택지 3 + 빈 줄 + 조작법 1
+  assert.equal(lines.length, 4 + 1 + 3 + 1 + 1);
 });
 
 test("긴 선택지는 잘리지 않고 접힌다 — 내용 자체가 정보다", () => {
@@ -260,4 +260,59 @@ test("답 기록도 여러 줄 질문을 그대로 담는다", () => {
   for (const line of lines) assert.ok(!line.includes("\n"));
   assert.equal(lines.length, 5, "질문 4줄 + 답 1줄이 아니다");
   assert.match(lines.join("\n"), /Standard로 진행/);
+});
+
+/* ---------- 새 배치 ---------- */
+
+import { splitOption } from "../../cli/src/picker.mjs";
+
+/*
+ * 스킬들이 이미 "제목 — 설명" 꼴로 쓰고 있다(harness-init 의 구성 선택 등).
+ * 한 줄로 두면 제목이 설명에 묻혀 무엇을 고르는지 한눈에 안 들어온다.
+ */
+test("선택지를 제목과 설명으로 가른다", () => {
+  const { title, detail } = splitOption("단일 프로젝트로 초기화 (Recommended) — 지금 폴더 전체를 분석합니다");
+  assert.equal(title, "단일 프로젝트로 초기화 (Recommended)");
+  assert.equal(detail, "지금 폴더 전체를 분석합니다");
+});
+
+test("구분자가 없으면 통째로 제목이다", () => {
+  assert.deepEqual(splitOption("기타"), { title: "기타", detail: "" });
+});
+
+test("맨 앞의 붙임표는 구분자로 보지 않는다 — 제목이 토막 난다", () => {
+  assert.equal(splitOption("- 이건 목록 기호").title, "- 이건 목록 기호");
+});
+
+test("제목은 진하게, 설명은 흐리게 — 두 줄로 나온다", () => {
+  const lines = render({ options: ["제목 — 설명입니다"], width: 120 });
+  const body = lines.join("\n");
+  assert.match(body, /1\. 제목/);
+  assert.match(body, /설명입니다/);
+  // 제목과 설명이 같은 줄에 붙으면 가른 의미가 없다.
+  assert.ok(!lines.some((l) => l.includes("제목") && l.includes("설명입니다")));
+});
+
+test("번호를 보여 준다 — 번호로도 고를 수 있다는 걸 화면이 말해야 한다", () => {
+  const body = render({ options: opts(3) }).join("\n");
+  for (const n of [1, 2, 3]) assert.match(body, new RegExp(`${n}\. 선택지 ${n}`));
+  assert.match(body, /번호 입력/);
+});
+
+test("주제말을 테두리로 두른다 — 무엇에 관한 질문인지 먼저 보여야 한다", () => {
+  const lines = render({ header: "프로젝트 구성", options: opts(2), width: 100 });
+  assert.match(/** @type {string} */ (lines[1]), /프로젝트 구성/);
+  assert.ok(/** @type {string} */ (lines[0]).includes("╭"), "테두리가 없다");
+});
+
+test("주제말이 없으면 테두리도 없다 — 빈 상자를 그리지 않는다", () => {
+  assert.ok(!/** @type {string} */ (render({ options: opts(2) })[0]).includes("╭"));
+});
+
+test("주제말이 길어도 폭을 넘지 않는다", () => {
+  for (const width of [30, 60, 120]) {
+    for (const line of render({ header: "아주 긴 주제말 ".repeat(10), options: opts(2), width })) {
+      assert.ok(visibleLength(line) < width, `폭 ${width}에서 ${visibleLength(line)}칸`);
+    }
+  }
 });

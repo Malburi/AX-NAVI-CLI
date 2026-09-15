@@ -269,6 +269,7 @@ export function createHostElicitor() {
         question,
         options,
         multiSelect: opts.multiSelect === true,
+        ...(opts.header ? { header: opts.header } : {}),
         input: process.stdin,
         output: process.stdout,
         ui,

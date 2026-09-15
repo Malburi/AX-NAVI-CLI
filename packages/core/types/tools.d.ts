@@ -42,7 +42,11 @@ export interface Elicitor {
    * 조용히 잘려나간 사고가 실제로 있었다(skills/harness-init/SKILL.md:38, 2026-07-30).
    * CLI에는 그 제약이 없으므로 옵션 수를 제한하지 않는다.
    */
-  ask(question: string, options: readonly string[], opts?: { multiSelect?: boolean }): Promise<string[]>;
+  ask(
+    question: string,
+    options: readonly string[],
+    opts?: { multiSelect?: boolean; header?: string },
+  ): Promise<string[]>;
 }
 
 /** 진행 상태 보고. Claude Code의 TaskCreate/TaskUpdate 자리를 대신한다. */

@@ -12,7 +12,7 @@
  * ESC 는 "이 질문 취소"여야지 "작업 전체 중단"이 아니다.
  */
 
-import { wrapToWidth } from "./width.mjs";
+import { clipToWidth, visibleLength, wrapToWidth } from "./width.mjs";
 
 const ESC = String.fromCharCode(27);
 const HIDE_CURSOR = `${ESC}[?25l`;
@@ -52,40 +52,78 @@ export function windowFor(total, selected, max = MAX_VISIBLE) {
  * @param {boolean} args.multiSelect
  * @param {number} args.width
  * @param {{ dim: (s: string) => string, cyan: (s: string) => string, bold: (s: string) => string, yellow: (s: string) => string }} args.ui
+ * @param {string} [args.header]  짧은 주제말
  * @returns {string[]}
  */
-export function renderPicker({ question, options, cursor, checked, multiSelect, width, ui }) {
+export function renderPicker({ question, options, cursor, checked, multiSelect, width, ui, header }) {
   const cap = Math.max(20, width - 1);
   const { lines, push } = lineSink(cap, ui);
+
+  /*
+   * 주제말을 테두리로 두르는 이유.
+   *
+   * 질문이 길면(경로·규모가 들어간다) 무엇에 관한 질문인지가 묻힌다.
+   * 한 마디로 먼저 걸어 주면 읽기 전에 감이 온다.
+   */
+  if (header) {
+    const label = clipToWidth(` ${header} `, cap - 4);
+    lines.push(ui.dim(`╭─${"─".repeat(Math.max(0, visibleLength(label)))}─╮`));
+    lines.push(`${ui.dim("│")} ${ui.cyan(ui.bold(label.trim()))} ${ui.dim("│")}`);
+    lines.push(ui.dim(`╰─${"─".repeat(Math.max(0, visibleLength(label)))}─╯`));
+    lines.push("");
+  }
 
   /*
    * 모든 줄을 표시를 붙이기 **전에** 접는다.
    *
    * 질문문에 줄바꿈이 들어 있거나 줄이 폭을 넘으면 실제로 찍히는 줄 수가 늘어난다.
-   * 그걸 한 줄로 세면 지울 때 모자라 매번 몇 줄씩 남는다 — 실측으로 harness-init 의
-   * 견적 안내가 네 줄짜리 질문으로 왔고, 방향키를 움직일 때마다 같은 질문이 쌓였다.
+   * 그걸 한 줄로 세면 지울 때 모자라 매번 몇 줄씩 남는다(실측).
    */
-  push(question, ui.bold, ui.yellow("?"));
+  push(question, ui.bold, " ");
+  lines.push("");
 
   const { start, end } = windowFor(options.length, cursor);
   if (start > 0) push(`⋯ 위로 ${start}개 더`, ui.dim, " ");
 
   for (let i = start; i < end; i += 1) {
     const here = i === cursor;
+    const { title, detail } = splitOption(/** @type {string} */ (options[i]));
     const mark = multiSelect ? (checked.has(i) ? "◉ " : "◯ ") : "";
-    // 화살표는 첫 줄에만 단다. 접힌 줄마다 붙이면 항목이 여러 개로 보인다.
-    push(`${mark}${options[i]}`, here ? ui.cyan : ui.dim, here ? ui.cyan("❯") : " ");
+    // 번호를 보여 준다 — 번호로도 고를 수 있다는 것을 화면이 말해야 알게 된다.
+    push(`${mark}${i + 1}. ${title}`, here ? (t) => ui.cyan(ui.bold(t)) : ui.bold, here ? ui.cyan("❯") : " ");
+    // 설명은 한 칸 더 들여써 제목과 구분한다.
+    if (detail) push(`   ${detail}`, ui.dim, " ");
   }
   if (end < options.length) push(`⋯ 아래로 ${options.length - end}개 더`, ui.dim, " ");
 
+  lines.push("");
   push(
     multiSelect
-      ? "↑↓ 이동 · Space 선택 · Enter 확정 · Esc 건너뜀"
-      : "↑↓ 이동 · Enter 선택 · Esc 건너뜀",
+      ? "↑↓ 이동 · Space 선택 · Enter 확정 · 번호 입력 · Esc 건너뜀"
+      : "↑↓ 이동 · Enter 선택 · 번호 입력 · Esc 건너뜀",
     ui.dim,
     " ",
   );
   return lines;
+}
+
+/**
+ * 선택지를 제목과 설명으로 가른다.
+ *
+ * 스킬들이 이미 "제목 — 설명" 꼴로 쓰고 있다(harness-init 의 구성 선택 등).
+ * 그걸 한 줄로 두면 제목이 설명에 묻혀 무엇을 고르는지 한눈에 안 들어온다.
+ *
+ * @param {string} text
+ * @returns {{ title: string, detail: string }}
+ */
+export function splitOption(text) {
+  const one = String(text ?? "").trim();
+  for (const sep of [" — ", " - ", " – "]) {
+    const at = one.indexOf(sep);
+    // 너무 앞에서 갈라지면 제목이 토막이 된다. 구분자가 아니라 내용일 수 있다.
+    if (at > 1) return { title: one.slice(0, at).trim(), detail: one.slice(at + sep.length).trim() };
+  }
+  return { title: one, detail: "" };
 }
 
 /**
@@ -142,13 +180,14 @@ function lineSink(cap, _ui) {
  * @param {string} args.question
  * @param {readonly string[]} args.options
  * @param {boolean} [args.multiSelect]
+ * @param {string} [args.header]  짧은 주제말
  * @param {NodeJS.ReadStream} args.input
  * @param {NodeJS.WriteStream} args.output
  * @param {{ dim: (s: string) => string, cyan: (s: string) => string, bold: (s: string) => string, yellow: (s: string) => string }} args.ui
  * @param {() => void} [args.onInterrupt]  선택지 위에서 Ctrl+C 를 누른 경우
  * @returns {Promise<string[]>}
  */
-export function pick({ question, options, multiSelect = false, input, output, ui, onInterrupt }) {
+export function pick({ question, options, multiSelect = false, header, input, output, ui, onInterrupt }) {
   return new Promise((resolve) => {
     let cursor = 0;
     /** @type {Set<number>} */
@@ -159,6 +198,7 @@ export function pick({ question, options, multiSelect = false, input, output, ui
       const lines = renderPicker({
         question, options, cursor, checked, multiSelect,
         width: output.columns ?? 80, ui,
+        ...(header ? { header } : {}),
       });
       output.write(cursorUp(drawn) + CLEAR_DOWN + lines.join("\n") + "\n");
       drawn = lines.length;

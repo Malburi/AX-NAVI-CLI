@@ -61,10 +61,11 @@ function ensureSocket() {
  * @param {string} question
  * @param {string[]} options
  * @param {boolean} multiSelect
+ * @param {string} [header]
  * @returns {Promise<string[]>}
  */
-function askUser(question, options, multiSelect) {
-  return request({ question, options, multiSelect });
+function askUser(question, options, multiSelect, header) {
+  return request({ question, options, multiSelect, header });
 }
 
 /**
@@ -95,7 +96,8 @@ const TOOLS = [
       required: ["question"],
       properties: {
         question: { type: "string", description: "한국어로 쓴다" },
-        options: { type: "array", items: { type: "string" }, description: "선택지. 비우면 자유 입력" },
+        header: { type: "string", description: "짧은 주제 말말 (예: '프로젝트 구성', '배치 구현'). 질문에 다시 적지 마라." },
+        options: { type: "array", items: { type: "string" }, description: "선택지. '제목 — 설명' 꼴로 쓰면 제목과 설명을 갈라 보여 준다. 비우면 자유 입력" },
         multiSelect: { type: "boolean", description: "복수 선택 허용" },
       },
     },
@@ -147,7 +149,7 @@ const TOOLS = [
  */
 async function callTool(name, args) {
   if (name === "AskUserQuestion") {
-    const answers = await askUser(args.question ?? "", args.options ?? [], args.multiSelect === true);
+    const answers = await askUser(args.question ?? "", args.options ?? [], args.multiSelect === true, args.header ?? "");
     if (!answers.length) {
       return { text: "(사용자가 응답하지 않았다. 임의로 진행하지 말고 무엇을 가정했는지 밝혀라.)" };
     }

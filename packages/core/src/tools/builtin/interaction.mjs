@@ -23,7 +23,8 @@ export const askUserQuestionTool = {
       required: ["question"],
       properties: {
         question: { type: "string" },
-        options: { type: "array", items: { type: "string" } },
+        header: { type: "string", description: "짧은 주제 말말 (예: '프로젝트 구성', '배치 구현'). 질문에 다시 적지 마라." },
+        options: { type: "array", items: { type: "string" }, description: "선택지. '제목 — 설명' 꼴로 쓰면 제목과 설명을 갈라 보여 준다." },
         multiSelect: { type: "boolean" },
       },
     },
@@ -32,7 +33,10 @@ export const askUserQuestionTool = {
     const answers = await ctx.elicitor.ask(
       input.question,
       input.options ?? [],
-      input.multiSelect === undefined ? {} : { multiSelect: input.multiSelect },
+      {
+        ...(input.multiSelect === undefined ? {} : { multiSelect: input.multiSelect }),
+        ...(input.header ? { header: input.header } : {}),
+      },
     );
     return { content: answers.length ? answers.join(", ") : "(응답 없음)" };
   },
