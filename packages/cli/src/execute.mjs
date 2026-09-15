@@ -15,6 +15,7 @@ import { selectProvider } from "./provider.mjs";
 import { startMcpBridge } from "./mcp/bridge.mjs";
 import { createActivity, elapsed } from "./activity.mjs";
 import { renderCall } from "./transcript.mjs";
+import { createMarkdown } from "./markdown.mjs";
 import { join } from "node:path";
 import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, debug, ui } from "./runtime.mjs";
 
@@ -186,6 +187,9 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   /** @type {Map<string, string>} */
   const buffers = new Map();
 
+  /** 답변의 마크다운을 터미널 서식으로. 울타리가 줄을 넘어 이어지므로 한 개를 계속 쓴다. */
+  const markdown = createMarkdown({ ui });
+
   /**
    * @param {string} chunk
    * @param {string} [parentId]  서브에이전트가 낸 글이면 그 Task 호출 id
@@ -206,7 +210,12 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    */
   const writeText = (line, parentId) => {
     // 서브에이전트가 한 말은 들여서 흐리게 — 부모가 한 말과 섞이면 누가 한 말인지 모른다.
-    emit(parentId ? `${ui.dim("│")} ${ui.dim(line)}` : line);
+    if (parentId) return emit(`${ui.dim("│")} ${ui.dim(line)}`);
+    /*
+     * 본문은 마크다운으로 온다. 그대로 흘리면 `**강조**` 가 기호째 보인다(실측).
+     * 두 칸 들여쓰는 것은 도구 기록(● 줄)과 말을 가르기 위해서다.
+     */
+    emit(line ? `  ${markdown.line(line)}` : "");
   };
 
   /** @param {string} [parentId] 주면 그 버퍼만, 안 주면 전부 비운다. */
