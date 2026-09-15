@@ -119,7 +119,8 @@ const TOOLS = [
     description:
       "AX-NAVI 결정론적 인덱스에 질의한다. 인덱스 JSON을 직접 열지 말고 이 도구를 써라 " +
       "(대형 레거시에서 sql_usage.json은 143MB까지 커진다). " +
-      "명령: summary, symbol, callers, callees, trace, sql, table, endpoint, transaction, schema, dead.",
+      "명령: summary, search, symbol, callers, callees, trace, sql, table, endpoint, transaction, schema, dead. " +
+      "업무 용어로 찾을 때는 search 를 먼저 쓴다 — 나머지 명령은 코드 식별자·파일명으로만 걸려서 한글 용어가 안 맞는다(실측: symbol '로그인' 0건, search '로그인' 384건).",
     inputSchema: {
       type: "object",
       required: ["command"],
@@ -130,6 +131,8 @@ const TOOLS = [
         file: { type: "string" },
         table: { type: "string" },
         path: { type: "string" },
+        q: { type: "string", description: "찾을 말 (search) — 한글 업무 용어도 된다" },
+        kind: { type: "string", description: "search 종류 좁히기" },
         depth: { type: "integer" },
         limit: { type: "integer" },
       },
@@ -162,7 +165,7 @@ async function callTool(name, args) {
     try {
       /** @type {Record<string, unknown>} */
       const query = { root: PROJECT_ROOT, ...(INDEX_DIR ? { indexDir: INDEX_DIR } : {}) };
-      for (const key of ["id", "name", "file", "table", "path", "depth", "limit"]) {
+      for (const key of ["id", "name", "file", "table", "path", "depth", "limit", "q", "kind"]) {
         if (args[key] !== undefined) query[key] = args[key];
       }
       return { text: JSON.stringify(handler(query), null, 2) };

@@ -332,6 +332,15 @@ axnavi skill run harness-init
     │   ├── transactions.json    ← 트랜잭션 경계
     │   ├── external_io.json     ← 외부 통신
     │   └── schema.json          ← DB 스키마 (DDL 없으면 SQL에서 유도)
+
+인덱스는 **코드 식별자** 기준이라, 한글 업무 용어는 `search` 로 찾습니다.
+SQL 본문·주석과 AI 보강 설명까지 훑습니다 — 인덱스를 다시 만들 필요는 없습니다.
+
+```
+axnavi index build 이후
+  symbol "로그인"  →   0건   (심볼 이름에 한글이 없다)
+  search "로그인"  → 384건   (SQL 주석·엔드포인트 설명에서 찾는다)
+```
     └── 0*_*.md                  ← 단계별 분석 리포트
 ```
 

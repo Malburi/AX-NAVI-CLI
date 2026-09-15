@@ -36,6 +36,8 @@ function parseArgs(argv) {
     else if (argv[i] === "--depth") args.depth = Math.max(1, Number(argv[++i]) || 1);
     else if (argv[i] === "--limit") args.limit = Math.min(MAX_LIMIT, Math.max(1, Number(argv[++i]) || DEFAULT_LIMIT));
     else if (argv[i] === "--json") args.json = argv[++i];
+    else if (argv[i] === "--q") args.q = argv[++i];
+    else if (argv[i] === "--kind") args.kind = argv[++i];
     else if (argv[i] === "--index-dir") args.indexDir = argv[++i];
     else throw new Error(`알 수 없는 인자: ${argv[i]}`);
   }
@@ -81,6 +83,61 @@ function cap(items, limit) {
 const matches = (haystack, needle) => String(haystack || "").toLowerCase().includes(String(needle || "").toLowerCase());
 /* `--id`는 전체 id와 마지막 segment 둘 다로 맞춘다 — 에이전트가 짧은 이름으로 물어도 통하게. */
 const idMatches = (id, query) => id === query || String(id).split(".").at(-1) === query || matches(id, query);
+
+/*
+ * 자유 텍스트로 훑을 대상.
+ *
+ * 한글이 실제로 들어 있는 곳을 실측해서 골랐다 — sql_usage 16,708조각,
+ * call_graph 14,799조각, dead_code 22,765조각, api_contract 11,135조각.
+ * symbols·schema 에는 한글이 없지만 영문 키워드로도 찾게 같이 넣는다.
+ */
+const SEARCHABLE = [
+  { index: "symbols", key: "symbols", kind: "symbol" },
+  { index: "call_graph", key: "nodes", kind: "node" },
+  { index: "call_graph", key: "edges", kind: "edge" },
+  { index: "sql_usage", key: "sqls", kind: "sql" },
+  { index: "sql_usage", key: "usages", kind: "sql_use" },
+  { index: "schema", key: "tables", kind: "table" },
+  { index: "api_contract", key: "endpoints", kind: "endpoint" },
+  { index: "data_flow", key: "chains", kind: "flow" },
+  { index: "external_io", key: "communications", kind: "io" },
+  { index: "dead_code", key: "unused_methods", kind: "dead" },
+];
+
+/*
+ * 레코드 한 건에서 찾는 말이 든 필드를 하나 집어 온다.
+ *
+ * 필드 이름을 일일이 나열하지 않는 이유 — AI 보강이 붙이는 설명 필드는 인덱서 버전마다
+ * 늘어난다. 나열해 두면 새 필드가 생겨도 검색이 못 따라간다.
+ * 중첩은 한 겹까지만 본다. 더 파고들면 call_graph 8,701 엣지에서 느려진다.
+ */
+function findText(record, lower, depth = 0) {
+  if (!record || typeof record !== "object") return null;
+  for (const [field, value] of Object.entries(record)) {
+    if (typeof value === "string") {
+      if (value.toLowerCase().includes(lower)) return { field, value };
+    } else if (Array.isArray(value) && depth < 1) {
+      for (const item of value) {
+        if (typeof item === "string" && item.toLowerCase().includes(lower)) return { field, value: item };
+        const deeper = findText(item, lower, depth + 1);
+        if (deeper) return { field: `${field}.${deeper.field}`, value: deeper.value };
+      }
+    } else if (depth < 1) {
+      const deeper = findText(value, lower, depth + 1);
+      if (deeper) return { field: `${field}.${deeper.field}`, value: deeper.value };
+    }
+  }
+  return null;
+}
+
+/* 찾은 말 주변만 잘라 준다. SQL 본문은 수천 자라 통째로 주면 화면이 덮인다. */
+function excerpt(value, needle) {
+  const text = String(value).replace(/\s+/g, " ").trim();
+  const at = text.toLowerCase().indexOf(needle.toLowerCase());
+  if (at === -1 || text.length <= 120) return text.slice(0, 120);
+  const from = Math.max(0, at - 40);
+  return `${from > 0 ? "…" : ""}${text.slice(from, from + 120)}${from + 120 < text.length ? "…" : ""}`;
+}
 
 const COMMANDS = {
   /* 심볼 위치 조회 — "이 클래스·메서드 어디 있나" */
@@ -202,6 +259,57 @@ const COMMANDS = {
     return { query: { file }, ...cap(hits.map(({ id, file: f, line, reason }) => ({ id, file: f, line, reason })), limit) };
   },
 
+  /*
+   * 자유 텍스트 검색 — "로그인", "중복체크" 같은 업무 용어로 찾는다.
+   *
+   * 다른 명령은 전부 코드 식별자·파일 경로·테이블명으로만 건다. 그래서 한국어 업무
+   * 용어로는 아무것도 안 나왔다(실측: symbol "로그인" 0건, "login" 32건).
+   *
+   * 그런데 한글은 이미 인덱스 안에 있다 — SQL 본문·별칭, AI 보강 설명, 흐름 이름에
+   * 들어 있는데 꺼낼 길이 없었을 뿐이다. 여기서 그 필드들을 훑는다.
+   * 인덱스를 다시 만들 필요는 없다.
+   */
+  search({ root, indexDir, q, kind, limit }) {
+    const needle = String(q || "").trim();
+    if (!needle) throw new Error("search에는 --q가 필요합니다.");
+    const lower = needle.toLowerCase();
+
+    /** @type {Array<{kind: string, id: string, file: string, line: number, field: string, snippet: string}>} */
+    const hits = [];
+    /** 인덱스가 없어도 나머지는 계속 본다 — 하나 없다고 검색 전체를 막을 이유는 없다. */
+    const missing = [];
+
+    for (const source of SEARCHABLE) {
+      if (kind && source.kind !== kind) continue;
+      let index;
+      try {
+        index = loadIndex(root, source.index, indexDir);
+      } catch (error) {
+        if (error.missingIndex) missing.push(source.index);
+        continue;
+      }
+      for (const record of index[source.key] || []) {
+        const found = findText(record, lower);
+        if (!found) continue;
+        hits.push({
+          kind: source.kind,
+          id: String(record.id ?? record.from ?? record.name ?? record.path ?? record.sql_id ?? ""),
+          file: String(record.file ?? ""),
+          line: Number(record.line ?? 0),
+          field: found.field,
+          snippet: excerpt(found.value, needle),
+        });
+      }
+    }
+
+    return {
+      query: { q: needle, kind: kind || null },
+      ...cap(hits, limit),
+      ...(missing.length ? { missing_indexes: missing } : {}),
+      note: "코드 식별자로 좁히려면 symbol·callers·sql 명령을 쓴다.",
+    };
+  },
+
   /* 규모만 먼저 확인 — 무엇을 열지 정하기 전에 보는 화면 */
   summary({ root, indexDir }) {
     const meta = loadIndex(root, "_meta", indexDir);
@@ -227,6 +335,7 @@ function printHelp() {
   node query-index.mjs <명령> --root <프로젝트> [옵션]
 
   summary                                   규모와 인덱스별 크기 먼저 확인
+  search      --q <말> [--kind <종류>]        업무 용어로 전체 검색 (SQL 본문·설명까지)
   symbol      --name <이름> [--file <경로>]  심볼 위치
   callers     --id <심볼>                    이 심볼을 부르는 곳
   callees     --id <심볼>                    이 심볼이 부르는 곳
@@ -240,6 +349,8 @@ function printHelp() {
 
   공통: --limit N (기본 ${DEFAULT_LIMIT}, 최대 ${MAX_LIMIT}). 응답에 total·truncated가 함께 온다.
         --index-dir <dir>  인덱스 위치 (기본 <root>/_workspace/index).
+
+  search 의 --kind: symbol node edge sql sql_use table endpoint flow io dead
 `);
 }
 

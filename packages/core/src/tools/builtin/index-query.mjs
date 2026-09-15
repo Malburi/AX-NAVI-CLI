@@ -10,7 +10,7 @@ import { COMMANDS } from "@ax-navi/indexer";
 /** @typedef {import("../../../types/tools.js").ToolHandler} ToolHandler */
 
 const COMMAND_NAMES = /** @type {const} */ ([
-  "summary", "symbol", "callers", "callees", "trace", "sql",
+  "summary", "search", "symbol", "callers", "callees", "trace", "sql",
   "table", "endpoint", "transaction", "schema", "dead",
 ]);
 
@@ -20,7 +20,8 @@ export const queryIndexTool = {
     name: "QueryIndex",
     description:
       "결정론적 인덱스에 질의한다. 원본 JSON을 직접 열지 말고 항상 이 도구를 쓴다. " +
-      `명령: ${COMMAND_NAMES.join(", ")}. 응답에 total·truncated가 함께 온다.`,
+      `명령: ${COMMAND_NAMES.join(", ")}. 응답에 total·truncated가 함께 온다. ` +
+      "업무 용어로 찾을 때는 search 를 먼저 쓴다 — 나머지 명령은 코드 식별자·파일명으로만 걸려서 한글 용어가 안 맞는다(실측: symbol '로그인' 0건, search '로그인' 384건).",
     mutates: false,
     inputSchema: {
       type: "object",
@@ -32,6 +33,8 @@ export const queryIndexTool = {
         file: { type: "string" },
         table: { type: "string", description: "테이블명 (table/schema)" },
         path: { type: "string", description: "엔드포인트 경로 (endpoint)" },
+        q: { type: "string", description: "찾을 말 (search) — 한글 업무 용어도 된다" },
+        kind: { type: "string", description: "search 를 한 종류로 좁힌다: symbol node edge sql sql_use table endpoint flow io dead" },
         depth: { type: "integer", description: "추적 깊이 (trace, 기본 3)" },
         limit: { type: "integer", description: "결과 상한 (기본 50, 최대 500)" },
       },
@@ -44,7 +47,7 @@ export const queryIndexTool = {
     }
     /** @type {Record<string, unknown>} */
     const args = { root: ctx.paths.root, indexDir: ctx.paths.indexDir };
-    for (const key of ["id", "name", "file", "table", "path", "depth", "limit"]) {
+    for (const key of ["id", "name", "file", "table", "path", "depth", "limit", "q", "kind"]) {
       if (input[key] !== undefined) args[key] = input[key];
     }
     try {

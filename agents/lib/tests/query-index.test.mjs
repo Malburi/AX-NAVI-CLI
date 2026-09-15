@@ -166,4 +166,53 @@ export async function test(register, assert) {
       assert.ok(!all.items[0].columns, "목록 조회에 컬럼 본문이 실리면 안 된다");
     });
   });
+
+  /*
+   * 자유 텍스트 검색.
+   *
+   * 다른 명령은 코드 식별자·파일명으로만 건다. 그래서 한국어 업무 용어로는
+   * 아무것도 안 나왔다(실측: symbol "로그인" 0건, "login" 32건).
+   * 정작 한글은 SQL 본문·설명 필드에 이미 들어 있었다 — 꾼낼 길이 없었을 뿐이다.
+   */
+  register("자유 텍스트 검색은 한글 업무 용어를 찾는다", () => {
+    withIndex({
+      symbols: { symbols: [{ id: "kr.co.demo.LoginService", type: "class", file: "src/LoginService.java", line: 1 }] },
+      sql_usage: {
+        sqls: [{ id: "MEMBER_DUP_S01", file: "query/member.xml", line: 12, type: "select",
+          text_preview: "SELECT MEM_ID FROM TB_MEMBER WHERE MEM_ID=? <description>회원아이디 중복체크</description>" }],
+        usages: [],
+      },
+    }, (root) => {
+      const hit = COMMANDS.search({ root, q: "중복체크", limit: 50 });
+      assert.equal(hit.total, 1, `한글 검색 결과: ${JSON.stringify(hit.items)}`);
+      assert.equal(hit.items[0].kind, "sql");
+      assert.equal(hit.items[0].file, "query/member.xml");
+      assert.ok(hit.items[0].snippet.includes("중복체크"), "찾은 말 주변을 보여 줘야 한다");
+
+      /* 영문 식별자도 같은 명령으로 잡힌다 — 용어마다 명령을 갈아타게 하지 않는다. */
+      assert.equal(COMMANDS.search({ root, q: "loginservice", limit: 50 }).total, 1, "대소문자 무시로 잡혀야 한다");
+    });
+  });
+
+  register("검색은 종류로 좁힐 수 있고, 없는 인덱스는 건너뛰되 밝힌다", () => {
+    withIndex({
+      symbols: { symbols: [{ id: "kr.co.demo.PayService", type: "class", file: "src/PayService.java", line: 1 }] },
+    }, (root) => {
+      const all = COMMANDS.search({ root, q: "pay", limit: 50 });
+      assert.equal(all.total, 1);
+      /* 인덱스 하나가 없다고 검색 전체를 막지 않는다. 다만 무엇이 없었는지는 밝힌다. */
+      assert.ok(all.missing_indexes.includes("call_graph"), `빠진 인덱스를 밝혀야 한다: ${JSON.stringify(all)}`);
+
+      assert.equal(COMMANDS.search({ root, q: "pay", kind: "sql", limit: 50 }).total, 0, "종류로 좁히지 않았다");
+      assert.equal(COMMANDS.search({ root, q: "pay", kind: "symbol", limit: 50 }).total, 1);
+    });
+  });
+
+  register("빈 검색어는 전수 반환이 아니라 거절이다", () => {
+    withIndex({ symbols: { symbols: [{ id: "A", type: "class", file: "a.java", line: 1 }] } }, (root) => {
+      let threw = false;
+      try { COMMANDS.search({ root, q: "  ", limit: 50 }); } catch { threw = true; }
+      assert.ok(threw, "빈 검색어가 인덱스 전체를 되돌려줌");
+    });
+  });
 }
