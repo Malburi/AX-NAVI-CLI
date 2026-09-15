@@ -107,7 +107,18 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
    */
   const showReplay = (record) => {
     const messages = record.messages ?? [];
-    if (!messages.length) return false;
+    if (!messages.length) {
+      /*
+       * 되살릴 게 없는 것과 고장난 것은 화면에서 같아 보인다. 이유를 밝힌다.
+       * 기록을 쌓기 시작하기 전에 만든 세션은 상태만 남아 있다 —
+       * 대화 자체는 Provider 쪽에 남아 있어 **이어지긴 한다**. 그 둘을 같이 말해야
+       * 사용자가 쓸데없이 앞 질문을 다시 쓰지 않는다.
+       */
+      process.stdout.write(
+        `  ${ui.dim("지난 내용을 되살리지 못한다 — 기록을 남기기 전에 만든 대화다. 대화는 그대로 이어진다.")}${NL}`,
+      );
+      return false;
+    }
     const width = process.stdout.columns ?? 100;
     const { head, tail } = replayFrame({ title: record.title ?? "", turns: record.turns, width, ui });
     const body = renderReplay({ messages, width, ui });
