@@ -75,9 +75,15 @@ function loadIndex(root, name, indexDir) {
   return value;
 }
 
-/* 상한을 적용하되 잘린 개수를 함께 돌려준다. */
+/*
+ * 상한을 적용하되 잘린 개수를 함께 돌려준다.
+ *
+ * 수를 items 보다 앞에 둔 것은 일부러다. 이 결과는 중간에서 잘려 전달되는 일이
+ * 있고(위임 경로가 도구 결과를 2000자로 자른다), 뒤에 두면 잘릴 때마다 몇 건이었는지를
+ * 먼저 잃는다. 몇 건인지는 목록 자체보다 먼저 알아야 하는 것이다.
+ */
 function cap(items, limit) {
-  return { items: items.slice(0, limit), returned: Math.min(items.length, limit), total: items.length, truncated: Math.max(0, items.length - limit) };
+  return { total: items.length, returned: Math.min(items.length, limit), truncated: Math.max(0, items.length - limit), items: items.slice(0, limit) };
 }
 
 const matches = (haystack, needle) => String(haystack || "").toLowerCase().includes(String(needle || "").toLowerCase());

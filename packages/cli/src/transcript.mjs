@@ -12,7 +12,7 @@
  * 도는지는 상태 표시 줄이 이미 보여 주므로 기다리는 동안 깜깜하지 않다.
  */
 
-import { clipToWidth, visibleLength } from "./width.mjs";
+import { clipToWidth, visibleLength, wrapToWidth } from "./width.mjs";
 
 /** 결과에서 보여 줄 줄 수. 넘치면 몇 줄이 더 있는지만 알린다. */
 const RESULT_LINES = 4;
@@ -112,12 +112,16 @@ const FIXED = {
   MultiEdit: "고쳐짐",
 };
 
+/*
+ * 결과 본문이 쓸모없는 도구만 수자로 줄인다.
+ *
+ * Read 의 결과는 파일 내용 그 자체라 앞 네 줄을 봐도 "이 파일을 읽었다" 외에
+ * 알 게 없다. 반면 Grep·QueryIndex 는 **찾은 것 자체**가 답이다 — "16건" 만 보여 주면
+ * 무엇을 찾았는지 알 수 없어 따라갈 수가 없다(실측: 30개 호출이 전부 숫자만 남았다).
+ */
 const SUMMARIZE = {
   /** @param {number} n */ Read: (n) => `${n}줄 읽음`,
-  /** @param {number} n */ Write: (n) => `${n}줄 썼`,
   /** @param {number} n */ Glob: (n) => `파일 ${n}개`,
-  /** @param {number} n */ Grep: (n) => `${n}건`,
-  /** @param {number} n */ QueryIndex: (n) => `${n}줄`,
 };
 
 /**
@@ -133,6 +137,7 @@ const SUMMARIZE = {
  */
 export function summarizeResult(tool, result, isError) {
   if (isError) return null;
+  if (tool === "QueryIndex") return describeQuery(result);
   /*
    * Write 의 결과는 "File created successfully at: … (file state is current…)" 같은
    * 긴 안내다. 경로는 이미 제목 줄에 있으니 되풀이할 이유가 없다.
@@ -189,11 +194,26 @@ export function renderCall({ tool, input, result, isError, pending, root, depth 
   const bullet = pending ? ui.yellow("●") : isError ? ui.red("●") : ui.green("●");
   const head = headline(tool, input, root === undefined ? {} : { root });
   // 도구 이름만 진하게. 인자는 흐리게 두어야 이름이 눈에 먼저 들어온다.
+  /*
+   * 긴 명령은 잘라 버리지 않고 한 줄 더 이어 보인다.
+   *
+   * 한 줄에서 자르면 `cd "..." && python -c "` 에서 끝나 정작 무었 했는지가 안 보인다
+   * (실측). 두 줄까지만 쓴다 — 더 늘리면 본문보다 명령이 화면을 차지한다.
+   */
   const open = head.indexOf("(");
-  const painted = open === -1
-    ? ui.bold(head)
-    : `${ui.bold(head.slice(0, open))}${ui.dim(head.slice(open))}`;
-  const lines = [clipToWidth(`${pad}${bullet} ${painted}`, cap)];
+  const name = open === -1 ? head : head.slice(0, open);
+  const args = open === -1 ? "" : head.slice(open);
+  const first = cap - visibleLength(pad) - 2 - visibleLength(name);
+  const wrapped = args ? wrapToWidth(args, Math.max(10, first)) : [""];
+
+  const lines = [`${pad}${bullet} ${ui.bold(name)}${ui.dim(wrapped[0] ?? "")}`];
+  if (wrapped.length > 1) {
+    // 두 번째 줄까지. 그래도 남으면 줄임표로 끝낸다.
+    const rest = wrapped.slice(1).join("");
+    const room = cap - visibleLength(pad) - 4;
+    const tail = visibleLength(rest) > room ? `${clipToWidth(rest, room - 2)}…` : rest;
+    lines.push(`${pad}    ${ui.dim(tail)}`);
+  }
 
   if (pending) {
     lines.push(clipToWidth(`${pad}${ui.dim("  ⎿  (결과를 받지 못했다)")}`, cap));
@@ -206,38 +226,26 @@ export function renderCall({ tool, input, result, isError, pending, root, depth 
   if (!isError && HEADER_ONLY.has(toolName(tool))) return lines;
 
   /*
-   * 한 마디로 끝나는 결과는 제목 줄에 붙인다.
+   * 결과는 항상 ⎿ 줄로 내린다.
    *
-   * Read·Grep 처럼 연속으로 수십 번 불리는 도구는 두 줄씩 차지하면 화면이 그것만으로
-   * 차버린다(실측: 도구 25회가 50줄이 됐다). 내용은 그대로 두고 줄 수만 반으로 줄인다.
+   * 한때 제목 줄에 붙였는데, 그러면 줄 수는 줄지만 어디까지가 호출이고 어디부터가
+   * 결과인지 눈으로 안 갈린다. 줄이 많아지는 것보다 읽히지 않는 쪽이 나쁘다.
    */
   const short = summarizeResult(toolName(tool), result ?? "", isError);
   if (short !== null) {
-    lines[0] = clipToWidth(`${lines[0]}  ${tint(short)}`, cap);
+    lines.push(clipToWidth(`${pad}  ${ui.dim("⎿")} ${tint(short)}`, cap));
     return lines;
   }
 
   const { lines: body, hidden } = resultBlock(result ?? "");
-
-  /*
-   * 한 줄짜리 결과도 폭에 들어가면 제목 줄에 붙인다 — "No matches found",
-   * "OK 10" 같은 것을 따로 한 줄 내주면 길이만 두 배로 먹는다.
-   * 안 들어가면 잘라 버리지 않고 아래 덩어리로 내린다.
-   */
-  const only = body.length === 1 && !hidden ? /** @type {string} */ (body[0]) : null;
-  if (only !== null && visibleLength(lines[0] ?? "") + visibleLength(only) + 2 < cap) {
-    lines[0] = `${lines[0]}  ${tint(only)}`;
-    return lines;
-  }
-
   if (!body.length) {
-    lines.push(clipToWidth(`${pad}${tint("  ⎿  (출력 없음)")}`, cap));
+    lines.push(clipToWidth(`${pad}  ${ui.dim("⎿")} ${tint("(출력 없음)")}`, cap));
   } else {
     body.forEach((line, i) => {
-      lines.push(clipToWidth(`${pad}  ${ui.dim(i === 0 ? "⎿ " : "  ")} ${tint(line)}`, cap));
+      lines.push(clipToWidth(`${pad}  ${ui.dim(i === 0 ? "⎿" : " ")} ${tint(line)}`, cap));
     });
   }
-  if (hidden) lines.push(clipToWidth(`${pad}${ui.dim(`     … +${hidden}줄`)}`, cap));
+  if (hidden) lines.push(clipToWidth(`${pad}    ${ui.dim(`… +${hidden}줄`)}`, cap));
   return lines;
 }
 
@@ -268,3 +276,86 @@ export function renderSkillHeader({ name, description, via = [], width, ui }) {
 }
 
 export { RESULT_LINES, visibleLength };
+
+/**
+ * 인덱스 질의 결과를 한 줄로.
+ *
+ * 그대로 보여 주면 옆으로 벌어진 JSON 의 앞 네 줄, 즉 `{ "query": { "q": ... }` 만
+ * 보인다(실측). 그건 질문을 되풀이한 것이지 답이 아니다.
+ * 몇 건이 나왔고 첫 건이 무엇인지가 화면에서 필요한 전부다.
+ *
+ * @param {string} result
+ * @returns {string | null}
+ */
+function describeQuery(result) {
+  /** @type {any} */
+  let parsed;
+  try {
+    parsed = JSON.parse(result);
+  } catch {
+    /*
+     * 위임 경로는 도구 결과를 2000자에서 자른다. 큰 질의 결과는 그래서 파싱이
+     * 안 되고, 그대로 두면 잘린 JSON 의 앞부분이 화면을 덮는다(실측).
+     * 잘렸어도 total 과 첫 id 는 앞쪽에 있으니 글자로 찾는다.
+     */
+    return looksLikeJson(result) ? scavenge(result) : null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const items = Array.isArray(parsed.items) ? parsed.items : null;
+  if (!items) {
+    // summary 처럼 목록이 아닌 결과는 키만 보여 준다.
+    const keys = Object.keys(parsed).filter((k) => k !== "note" && k !== "query");
+    return keys.length ? keys.slice(0, 6).join(", ") : null;
+  }
+
+  const total = typeof parsed.total === "number" ? parsed.total : items.length;
+  if (total === 0) return "0건";
+  const head = items[0] ?? {};
+  const first = String(head.id ?? head.name ?? head.from ?? head.file ?? head.sql_id ?? "").split("/").at(-1) ?? "";
+  const more = total > 1 ? ` 외 ${total - 1}` : "";
+  return first ? `${total}건 · ${first}${more}` : `${total}건`;
+}
+
+/** @param {string} text @returns {boolean} */
+function looksLikeJson(text) {
+  return text.trimStart().startsWith("{");
+}
+
+/**
+ * 잘린 JSON 에서 숫자와 첫 이름만 긁어온다.
+ * 정규식을 안 쓰는 것은 도구를 거치며 역슬래시가 먹히는 일이 잦기 때문이다.
+ * @param {string} text
+ * @returns {string | null}
+ */
+function scavenge(text) {
+  /** @param {string} key */
+  const after = (key) => {
+    const at = text.indexOf(`"${key}"`);
+    if (at === -1) return "";
+    const colon = text.indexOf(":", at);
+    if (colon === -1) return "";
+    return text.slice(colon + 1, colon + 200).trim();
+  };
+
+  /*
+   * 앞쪽 연속된 숫자만 읽는다.
+   * 전체에서 숫자를 걸러 이으면 "total": 384, "returned": 50, "truncated": 334 가
+   * 38450334 가 된다 — 실제로 그러게 나왔다.
+   */
+  let digits = "";
+  for (const ch of after("total")) {
+    if (ch >= "0" && ch <= "9") digits += ch;
+    else break;
+  }
+  const total = digits ? Number(digits) : null;
+
+  const idRaw = after("id");
+  const quoted = idRaw.startsWith('"') ? idRaw.slice(1, idRaw.indexOf('"', 1)) : "";
+  const first = quoted.split("/").at(-1) ?? "";
+
+  if (total === null && !first) return null;
+  if (total === null) return `${first} …`;
+  const more = total > 1 && first ? ` 외 ${total - 1}` : "";
+  return first ? `${total}건 · ${first}${more}` : `${total}건`;
+}

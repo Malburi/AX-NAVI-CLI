@@ -12,6 +12,8 @@ import assert from "node:assert/strict";
 import { headline, renderCall, renderSkillHeader, resultBlock, shorten, summarizeResult } from "../../cli/src/transcript.mjs";
 import { visibleLength } from "../../cli/src/width.mjs";
 
+const BS = String.fromCharCode(92);
+
 const plainUi = {
   dim: (/** @type {string} */ s) => s,
   cyan: (/** @type {string} */ s) => s,
@@ -114,11 +116,19 @@ test("어떤 폭에서도 줄이 폭을 넘지 않는다 — 접히면 상태 �
  * 사실 외에 알 수 있는 게 없고, 파일 수십 개를 읽는 동안 화면이 남의 파일 앞도리로
  * 덮인다 — 실측으로 harness-init 중 화면의 대부분이 이것이었다.
  */
-test("파일 내용은 뿌리지 않고 얼마나 했는지만 남긴다", () => {
+test("본문이 쓸모없는 도구만 수자로 줄인다", () => {
   const file = Array.from({ length: 60 }, (_, i) => `${i + 1}  코드`).join("\n");
   assert.equal(summarizeResult("Read", file), "60줄 읽음");
   assert.equal(summarizeResult("Glob", "a\nb\nc"), "파일 3개");
-  assert.equal(summarizeResult("Grep", "m1\nm2"), "2건");
+});
+
+/*
+ * Grep·QueryIndex 는 찾은 것 자체가 답이다. "16건" 만 남기면 무엇을 찾았는지 몰라
+ * 따라갈 수가 없다 — 실측으로 호출 30개가 전부 숫자만 남았다.
+ */
+test("찾은 것 자체가 답인 도구는 줄이지 않는다", () => {
+  assert.equal(summarizeResult("Grep", "a\nb\nc"), null);
+  assert.equal(summarizeResult("QueryIndex", "a\nb\nc"), null);
 });
 
 test("Bash 출력은 줄이지 않는다 — 출력 자체가 보고 싶은 것이다", () => {
@@ -158,22 +168,25 @@ test("들여써도 폭을 넘지 않는다", () => {
  * Read·Grep 은 연속으로 수십 번 불린다. 두 줄씩 차지하면 화면이 그것만으로 차버린다 —
  * 실측으로 도구 25회가 50줄이 됐다. 내용은 그대로 두고 줄 수만 반으로 줄인다.
  */
-test("한 마디로 끝나는 결과는 제목 줄에 붙인다", () => {
+test("결과는 제목 줄과 나뉘어 적는다 — 붙이면 호출과 결과가 눈으로 안 갈린다", () => {
   const file = Array.from({ length: 25 }, (_, i) => `${i + 1} x`).join("\n");
-  assert.equal(render({ tool: "Read", input: { file_path: "A.java" }, result: file }).length, 1);
-  assert.equal(render({ tool: "Grep", input: { pattern: "x" }, result: "a\nb" }).length, 1);
+  const lines = render({ tool: "Read", input: { file_path: "A.java" }, result: file });
+  assert.equal(lines.length, 2);
+  assert.match(/** @type {string} */ (lines[0]), /Read\(A\.java\)$/);
+  assert.match(/** @type {string} */ (lines[1]), /⎿ 25줄 읽음/);
 });
 
-test("한 줄짜리 결과도 폭에 들어가면 붙인다", () => {
+test("한 줄짜리 결과도 제 자리를 갖는다", () => {
   const lines = render({ tool: "Grep", input: { pattern: "x" }, result: "No matches found" });
-  assert.equal(lines.length, 1);
-  assert.match(/** @type {string} */ (lines[0]), /No matches found/);
+  assert.equal(lines.length, 2);
+  assert.match(/** @type {string} */ (lines[1]), /No matches found/);
 });
 
-test("폭에 안 들어가면 잘라 버리지 않고 아래로 내린다", () => {
+test("긴 한 줄은 잘라 버리지 않고 폭에 맞춘다", () => {
   const long = "아주 긴 한 줄 결과 ".repeat(20);
-  const lines = render({ tool: "Grep", input: { pattern: "x" }, result: long, width: 60 });
-  assert.ok(lines.length > 1, "긴 줄을 제목에 붙여 잘라 버렸다");
+  for (const line of render({ tool: "Grep", input: { pattern: "x" }, result: long, width: 60 })) {
+    assert.ok(visibleLength(line) < 60, `${visibleLength(line)}칸`);
+  }
 });
 
 test("여러 줄 결과는 덩어리로 남긴다 — Bash 출력은 그 자체가 보고 싶은 것이다", () => {
@@ -186,11 +199,11 @@ test("Write 결과의 긴 안내를 되풀이하지 않는다 — 경로는 이�
   const lines = render({
     tool: "Write",
     input: { file_path: "_workspace/index/owasp_top10.json" },
-    result: "File created successfully at: C:\Users\HHI\...\owasp_top10.json (file state is current in your context — no need to Read it back)",
+    result: "File created successfully at: C:" + BS + "Users" + BS + "HHI ... (file state is current in your context — no need to Read it back)",
   });
-  assert.equal(lines.length, 1);
-  assert.match(/** @type {string} */ (lines[0]), /저장됨/);
-  assert.ok(!(/** @type {string} */ (lines[0])).includes("file state"), "안내 문구가 그대로 남았다");
+  assert.equal(lines.length, 2);
+  assert.match(/** @type {string} */ (lines[1]), /저장됨/);
+  assert.ok(!lines.join("").includes("file state"), "안내 문구가 그대로 남았다");
 });
 
 test("실패는 눈에 띄게 남는다 — 줄이느라 감추면 안 된다", () => {
@@ -244,4 +257,87 @@ test("어떤 폭에서도 머리말이 폭을 넘지 않는다", () => {
       assert.ok(visibleLength(line) < width, `폭 ${width}에서 ${visibleLength(line)}칸`);
     }
   }
+});
+
+/* ---------- 긴 명령 ---------- */
+
+/*
+ * 한 줄에서 자르면 `cd "..." && python -c "` 에서 끝나 정작 무엇을 했는지가 안 보인다.
+ * 두 줄까지 이어 보이되, 그래도 남으면 줄임표로 끝낸다 — 본문보다 명령이 화면을
+ * 차지하면 그것대로 안 읽힌다.
+ */
+test("긴 명령은 잘라 버리지 않고 한 줄 더 이어 보인다", () => {
+  const long = { command: `cd "D:/AI/새 폴더/AX-NAVI" && PYTHONIOENCODING=utf-8 python -c "import json; print(len(json.load(open('_workspace/index/dead_code.json'))))"` };
+  const lines = render({ tool: "Bash", input: long, result: "count 0", width: 100 });
+  assert.ok(lines.length >= 3, "이어지는 줄이 없다");
+  assert.match(lines.slice(0, 2).join(""), /dead_code\.json/, "뒷부분이 통째로 잘렸다");
+});
+
+test("아무리 길어도 두 줄을 넘지 않는다", () => {
+  const lines = render({ tool: "Bash", input: { command: "x".repeat(2000) }, result: "ok", width: 80 });
+  // 제목 2줄 + 결과 1줄
+  assert.equal(lines.length, 3, `${lines.length}줄이나 됐다`);
+});
+
+test("이어 보이는 줄도 폭을 넘지 않는다", () => {
+  for (const width of [40, 80, 120]) {
+    const lines = render({ tool: "Bash", input: { command: "가".repeat(500) }, result: "ok", width });
+    for (const line of lines) assert.ok(visibleLength(line) < width, `폭 ${width}에서 ${visibleLength(line)}칸`);
+  }
+});
+
+/* ---------- 인덱스 질의 ---------- */
+
+/*
+ * 그대로 보여 주면 옆으로 벌어진 JSON 의 앞 네 줄, 즉 `{ "query": { "q": ... }` 만 보인다.
+ * 질문을 되풀이한 것이지 답이 아니다 — 실측으로 /flow 화면이 이걸로 덮였다.
+ */
+test("인덱스 질의는 몇 건 나왔고 첫 건이 무엇인지 보여 준다", () => {
+  const body = JSON.stringify({
+    query: { q: "수강신청" },
+    items: [{ kind: "endpoint", id: "root::POST /TransData.do::FrontCourseApplyService.doApply" }, {}],
+    total: 44,
+  });
+  const summary = summarizeResult("QueryIndex", body);
+  assert.match(/** @type {string} */ (summary), /^44건/);
+  assert.match(/** @type {string} */ (summary), /doApply/);
+  assert.ok(!(/** @type {string} */ (summary)).includes('"query"'), "질문을 되풀이했다");
+});
+
+test("0건은 0건이라고 한다 — 빈 목록과 실패를 헷갈리면 안 된다", () => {
+  assert.equal(summarizeResult("QueryIndex", JSON.stringify({ items: [], total: 0 })), "0건");
+});
+
+test("목록이 아닌 결과는 무엇이 들었는지 키로 알린다", () => {
+  const summary = summarizeResult("QueryIndex", JSON.stringify({ tier: "Full", source_file_count: 4003 }));
+  assert.match(/** @type {string} */ (summary), /tier/);
+  assert.match(/** @type {string} */ (summary), /source_file_count/);
+});
+
+test("JSON 이 아니면 손대지 않는다", () => {
+  assert.equal(summarizeResult("QueryIndex", "인덱스가 없다 (transactions)."), null);
+});
+
+test("실패는 요약하지 않는다 — 사유가 본문에 있다", () => {
+  assert.equal(summarizeResult("QueryIndex", JSON.stringify({ items: [], total: 0 }), true), null);
+});
+
+test("잘린 결과에서도 몇 건인지 건져 낸다 — 위임 경로는 도구 결과를 2000자로 자른다", () => {
+  const body = JSON.stringify({
+    total: 384, returned: 50, truncated: 334,
+    items: Array.from({ length: 50 }, () => ({ id: "eduport.common.login.action.LoginAction" })),
+  }, null, 2);
+  const summary = summarizeResult("QueryIndex", body.slice(0, 2000));
+  assert.match(/** @type {string} */ (summary), /^384건/, `잘린 JSON 요약: ${summary}`);
+  assert.match(/** @type {string} */ (summary), /LoginAction/);
+});
+
+test("숫자를 이어 붙이지 않는다 — total·returned·truncated 가 나란히 있다", () => {
+  // 앞쪽 연속 숫자만 읽어야 한다. 전체에서 걸러 이으면 384+50+334 가 38450334 가 된다.
+  const body = '{ "total": 384, "returned": 50, "truncated": 334, "items": [ { "id": "A" }';
+  assert.match(/** @type {string} */ (summarizeResult("QueryIndex", body)), /^384건/);
+});
+
+test("건질 게 없으면 손대지 않는다", () => {
+  assert.equal(summarizeResult("QueryIndex", '{ "query": { "q"'), null);
 });
