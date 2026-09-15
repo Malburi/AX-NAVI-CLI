@@ -165,6 +165,34 @@ export function setLineReader(fn) {
 let currentTurn = null;
 
 /*
+ * 접어 둔 결과의 전문.
+ *
+ * 화면에는 앞 몇 줄만 보이고 "… +N줄" 로 끝난다. 그 나머지를 보려면 도구를 다시
+ * 돌려야 했는데, 그건 돈이 드는 일이다. 마지막 것들을 들고 있다가 Ctrl+O 에 풀어 준다.
+ *
+ * Claude Code 처럼 그 자리에서 펼쳐 보이지는 못한다 — 기록을 흘려보내는 구조라 지나간 줄을
+ * 다시 그릴 수 없다. 대신 아래에 덧붙여 찍는다.
+ */
+const FOLDED_KEEP = 20;
+/** @type {Array<{ label: string, text: string }>} */
+let folded = [];
+
+/**
+ * 접힌 덩어리 하나를 기억해 둔다.
+ * @param {string} label
+ * @param {string} text
+ */
+export function rememberFolded(label, text) {
+  folded.push({ label, text });
+  if (folded.length > FOLDED_KEEP) folded = folded.slice(folded.length - FOLDED_KEEP);
+}
+
+/** @returns {{ label: string, text: string } | null} 가장 최근에 접힌 것을 꺼낸다. */
+export function takeFolded() {
+  return folded.pop() ?? null;
+}
+
+/*
  * 세션 동안의 선택 — 실행 모드와 모델.
  *
  * stdin · 취소 손잡이와 같은 자리에 둔다. 실행 경로가 넷(/skill, 오케스트레이터,

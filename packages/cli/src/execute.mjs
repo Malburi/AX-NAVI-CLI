@@ -18,7 +18,7 @@ import { renderCall } from "./transcript.mjs";
 import { createMarkdown } from "./markdown.mjs";
 import { applyMode } from "./mode.mjs";
 import { join } from "node:path";
-import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, sessionMode, sessionModel, debug, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, rememberFolded, sessionMode, sessionModel, debug, ui } from "./runtime.mjs";
 
 /**
  * @param {object} args
@@ -198,7 +198,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   const buffers = new Map();
 
   /** 답변의 마크다운을 터미널 서식으로. 울타리가 줄을 넘어 이어지므로 한 개를 계속 쓴다. */
-  const markdown = createMarkdown({ ui });
+  const markdown = createMarkdown({ ui, width: (process.stdout.columns ?? 100) - 2 });
 
   /**
    * @param {string} chunk
@@ -225,7 +225,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
      * 본문은 마크다운으로 온다. 그대로 흘리면 `**강조**` 가 기호째 보인다(실측).
      * 두 칸 들여쓰는 것은 도구 기록(● 줄)과 말을 가르기 위해서다.
      */
-    emit(line ? `  ${markdown.line(line)}` : "");
+    // 표는 모았다 한꺼번에 나오므로 한 줄이 여러 줄이 될 수 있고, 빈 배열일 수도 있다.
+    for (const out of markdown.line(line)) emit(out ? `  ${out}` : "");
   };
 
   /** @param {string} [parentId] 주면 그 버퍼만, 안 주면 전부 비운다. */
@@ -235,6 +236,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
       if (buf) writeText(buf, key || undefined);
       buffers.set(key, "");
     }
+    // 답이 표로 끝나는 경우가 흔하다. 모아 둔 표를 흘리지 않는다.
+    for (const out of markdown.flush()) emit(out ? `  ${out}` : "");
   };
 
   /** 이번 턴에서 사용자가 본 답. 세션에 쌓아 두면 다음에 이어 열 때 되살릴 수 있다. */
@@ -316,6 +319,14 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
 
         const call = key === undefined ? undefined : pending.get(key);
         if (key !== undefined) pending.delete(key);
+        /*
+         * 접힌 결과의 전문을 들고 있는다 — Ctrl+O 로 풀어 볼 수 있게.
+         * 없으면 나머지를 보려고 도구를 다시 돌려야 하고, 그건 돈이 드는 일이다.
+         */
+        const full = event.result ?? "";
+        if (full.split(NEWLINE).length > 4) {
+          rememberFolded(`${call?.tool ?? toolLabel(event.tool ?? "")}`, full);
+        }
         emit(
           renderCall({
             tool: call?.tool ?? toolLabel(event.tool ?? ""),

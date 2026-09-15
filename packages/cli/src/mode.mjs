@@ -10,6 +10,8 @@
  *   - 빠름: vibe 스킬의 정책을 얹는다. 이건 강제가 아니라 지침이고, 화면에도 그렇게 적는다.
  */
 
+const NEWLINE = String.fromCharCode(10);
+
 /**
  * @typedef {object} Mode
  * @property {string} id
@@ -21,7 +23,7 @@
 /** @type {readonly Mode[]} */
 export const MODES = [
   { id: "default", label: "기본", hint: "에이전트가 선언한 도구 그대로", enforced: true },
-  { id: "readonly", label: "읽기 전용", hint: "무엇도 고치지 않는다 — 조사·분석만", enforced: true },
+  { id: "plan", label: "계획", hint: "고치지 않고 계획부터 낸다", enforced: true },
   { id: "vibe", label: "빠름", hint: "영향도·안전 게이트를 건너뛰고 바로 수행", enforced: false },
 ];
 
@@ -65,11 +67,12 @@ const VIBE_POLICY = [
   "- 3개 이상 파일에 걸친 수정",
 ].join("\n");
 
-const READONLY_POLICY = [
-  "## 읽기 전용",
-  "사용자가 읽기 전용을 골랐다. 파일을 만들거나 고치지 않는다 — 쓰기 도구는 실제로 막혀 있다.",
-  "무엇을 어떻게 바꾸면 되는지는 설명하되, 바꾸지는 마라.",
-].join("\n");
+const PLAN_POLICY = [
+  "## 계획 모드",
+  "사용자가 계획 모드를 골랐다. 파일을 고치지 말고, 무엇을 어떻게 바꿀지를 먼저 내놓는다.",
+  "조사·분석은 제한 없이 한다 — 근거 없는 계획은 계획이 아니다.",
+  "계획에는 고칠 파일·줄, 순서, 검증 방법을 넣는다.",
+].join(NEWLINE);
 
 /**
  * 모드를 에이전트 정의에 반영한다.
@@ -81,10 +84,18 @@ const READONLY_POLICY = [
  * @returns {import("@ax-navi/core").AgentDefinition}
  */
 export function applyMode(agent, modeId) {
-  if (modeId === "readonly") {
+  if (modeId === "plan") {
+    /*
+     * 두 겹으로 건다.
+     *
+     * planOnly 는 Provider 에게 넘긴다 — claude CLI 는 자기 permission-mode plan 을 써서
+     * 막기만 하는 게 아니라 계획을 내놓고 승인을 기다린다.
+     * allowMutations 는 우리 경로의 보험이다 — 직접 루프를 도는 Provider 에는 그 수단이 없다.
+     */
     return {
       ...agent,
-      systemPrompt: `${agent.systemPrompt}\n\n${READONLY_POLICY}`,
+      systemPrompt: `${agent.systemPrompt}\n\n${PLAN_POLICY}`,
+      planOnly: true,
       role: { ...agent.role, allowMutations: false },
     };
   }

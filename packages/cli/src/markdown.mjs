@@ -15,32 +15,111 @@
 
 /** @typedef {{ dim: (s: string) => string, cyan: (s: string) => string, bold: (s: string) => string, green: (s: string) => string, yellow: (s: string) => string }} Ui */
 
+import { clipToWidth, visibleLength, wrapToWidth } from "./width.mjs";
+
 const BULLET = "•";
 
 /**
  * @param {object} args
  * @param {Ui} args.ui
- * @returns {{ line: (text: string) => string, reset: () => void }}
+ * @param {number} [args.width]  표 칸 폭을 맞추는 데 쓴다
+ * @returns {{ line: (text: string) => string[], flush: () => string[], reset: () => void }}
  */
-export function createMarkdown({ ui }) {
+export function createMarkdown({ ui, width = 100 }) {
   // 울타리 안에서는 어떤 서식도 걸지 않는다. 코드에 든 기호는 코드다.
   let inFence = false;
+  /*
+   * 표는 줄이 다 모일 때까지 들고 있다가 한꺼번에 내보람다.
+   * 칸 폭을 맞추려면 모든 줄을 봐야 하기 때문이다. 멈추는 것은 표가 끝날 때까지만이라
+   * 스트리밍이 보이게 끊기지는 않는다.
+   */
+  /** @type {string[]} */
+  let table = [];
+
+  /** @returns {string[]} */
+  const flushTable = () => {
+    if (!table.length) return [];
+    const rows = table;
+    table = [];
+    return renderTable(rows, width, ui);
+  };
 
   return {
-    /** @param {string} text */
+    /**
+     * @param {string} text
+     * @returns {string[]} 이번에 찍을 줄들. 표를 모으는 중이면 빈 배열이다.
+     */
     line(text) {
       const fence = /^\s*(```|~~~)/.exec(text);
       if (fence) {
+        const before = flushTable();
         inFence = !inFence;
-        return ui.dim(text);
+        return [...before, ui.dim(text)];
       }
-      if (inFence) return ui.cyan(text);
-      return block(text, ui);
+      if (inFence) return [ui.cyan(text)];
+
+      if (isTableRow(text)) {
+        table.push(text);
+        return [];
+      }
+      return [...flushTable(), block(text, ui)];
     },
+    /** 남은 표를 내보낸다. 답이 표로 끝나는 경우가 흔하다. */
+    flush: flushTable,
     reset() {
       inFence = false;
+      table = [];
     },
   };
+}
+
+/** @param {string} text @returns {boolean} */
+function isTableRow(text) {
+  const body = text.trim();
+  return body.startsWith("|") && body.endsWith("|") && body.length > 2;
+}
+
+/**
+ * 표를 칸 폭을 맞춰 그린다.
+ *
+ * 한글은 두 칸이라 글자 수로 맞추면 줄이 어긋난다. 표시 칸 수로 맞춘다.
+ *
+ * @param {string[]} rows
+ * @param {number} width
+ * @param {Ui} ui
+ * @returns {string[]}
+ */
+function renderTable(rows, width, ui) {
+  const cells = rows.map((row) => row.trim().slice(1, -1).split("|").map((c) => c.trim()));
+  const isRule = (/** @type {string[]} */ r) => r.every((c) => /^:?-+:?$/.test(c) || c === "");
+  const body = cells.filter((r) => !isRule(r));
+  if (!body.length) return rows.map((r) => ui.dim(r));
+
+  const columns = Math.max(...body.map((r) => r.length));
+  const widths = Array.from({ length: columns }, (_, i) =>
+    Math.max(...body.map((r) => visibleLength(inline(r[i] ?? "", ui)))));
+
+  // 폭을 넘으면 맞추기를 포기한다 — 억지로 맞추면 내용이 잘린다.
+  const need = widths.reduce((a, b) => a + b + 3, 1);
+  if (need > width) return rows.map((r) => `${ui.dim("│")}${r.trim().slice(1, -1).split("|").map((c) => inline(c, ui)).join(ui.dim("│"))}${ui.dim("│")}`);
+
+  /** @param {string[]} row */
+  const line = (row) => {
+    const painted = row.map((cell, i) => {
+      const text = inline(cell, ui);
+      return `${text}${" ".repeat(Math.max(0, (widths[i] ?? 0) - visibleLength(text)))}`;
+    });
+    return `${ui.dim("│")} ${painted.join(` ${ui.dim("│")} `)} ${ui.dim("│")}`;
+  };
+
+  const rule = (/** @type {string} */ l, /** @type {string} */ m, /** @type {string} */ r) =>
+    ui.dim(`${l}${widths.map((w) => "─".repeat(w + 2)).join(m)}${r}`);
+
+  const out = [rule("╭", "┬", "╮"), line(/** @type {string[]} */ (body[0]))];
+  if (body.length > 1) out.push(rule("├", "┼", "┤"));
+  for (const row of body.slice(1)) out.push(line(row));
+  out.push(rule("╰", "┴", "╯"));
+  return out;
 }
 
 /**

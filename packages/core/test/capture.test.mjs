@@ -122,3 +122,32 @@ test("보이지 않는 제어 문자는 줄에 섞이지 않는다", () => {
   c.onKey("", {});
   assert.equal(c.text(), "", "제어 문자가 들어갔다 — DEL(0x7f)은 공백보다 커서 빠져나간다");
 });
+
+/* ---------- 접힌 결과 펼치기 ---------- */
+
+import { rememberFolded, takeFolded } from "../../cli/src/runtime.mjs";
+
+/*
+ * 화면에는 앞 몇 줄만 보이고 "… +N줄" 로 끝난다. 그 나머지를 보려면 도구를 다시
+ * 돌려야 했는데 그건 돈이 드는 일이다. 마지막 것들을 들고 있다가 Ctrl+O 에 풀어 준다.
+ */
+test("가장 최근에 접힌 것부터 꺼낸다", () => {
+  while (takeFolded()) { /* 앞선 테스트가 남긴 것 비우기 */ }
+  rememberFolded("Grep", "첫째");
+  rememberFolded("Read", "둘째");
+  assert.equal(takeFolded()?.text, "둘째");
+  assert.equal(takeFolded()?.text, "첫째");
+});
+
+test("꺼낼 게 없으면 null — 호출자가 그 사실을 알려 줘야 한다", () => {
+  while (takeFolded()) { /* 비우기 */ }
+  assert.equal(takeFolded(), null);
+});
+
+test("무한정 쌓지 않는다 — 긴 작업이면 도구가 수십 번 돈다", () => {
+  while (takeFolded()) { /* 비우기 */ }
+  for (let i = 0; i < 40; i += 1) rememberFolded("Read", `${i}`);
+  let count = 0;
+  while (takeFolded()) count += 1;
+  assert.ok(count <= 20, `${count}개나 들고 있다`);
+});

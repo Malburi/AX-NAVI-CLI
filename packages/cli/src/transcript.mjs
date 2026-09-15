@@ -245,7 +245,8 @@ export function renderCall({ tool, input, result, isError, pending, root, depth 
       lines.push(clipToWidth(`${pad}  ${ui.dim(i === 0 ? "⎿" : " ")} ${tint(line)}`, cap));
     });
   }
-  if (hidden) lines.push(clipToWidth(`${pad}    ${ui.dim(`… +${hidden}줄`)}`, cap));
+  // 몇 줄이 숨었는지와 펼치는 법을 같이 적는다 — 안 적으면 나머지를 볼 길이 없는 줄 안다.
+  if (hidden) lines.push(clipToWidth(`${pad}    ${ui.dim(`… +${hidden}줄  Ctrl+O`)}`, cap));
   return lines;
 }
 

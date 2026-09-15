@@ -12,6 +12,7 @@ import { createMarkdown, inline } from "../../cli/src/markdown.mjs";
 import { visibleLength } from "../../cli/src/width.mjs";
 
 const ESC = String.fromCharCode(27);
+const NEWLINE = String.fromCharCode(10);
 const ui = {
   dim: (/** @type {string} */ s) => `${ESC}[2m${s}${ESC}[0m`,
   cyan: (/** @type {string} */ s) => `${ESC}[36m${s}${ESC}[0m`,
@@ -23,8 +24,16 @@ const ui = {
 /** 서식만 걷어 낸 알맹이. 내용이 살아남았는지 보는 용도. */
 const plain = (/** @type {string} */ s) => s.split(ESC).map((p) => p.replace(/^\[\d+m/, "")).join("");
 
-/** @param {string} text */
-const one = (text) => createMarkdown({ ui }).line(text);
+/**
+ * 한 줄을 넣고 나오는 대로 받는다.
+ * 표는 모았다 한꺼번에 나오므로 줄 하나가 줄 여럿이 될 수 있다.
+ * @param {string} text
+ * @returns {string}
+ */
+const one = (text) => {
+  const md = createMarkdown({ ui });
+  return [...md.line(text), ...md.flush()].join(NEWLINE);
+};
 
 /* ---------- 걸려야 하는 것 ---------- */
 
@@ -67,7 +76,7 @@ test("SQL 의 홑별표를 서식으로 오인하지 않는다", () => {
 test("코드 울타리 안에서는 어떤 서식도 걸지 않는다", () => {
   const md = createMarkdown({ ui });
   md.line("```sql");
-  const inside = md.line("SELECT **not bold** FROM T");
+  const inside = md.line("SELECT **not bold** FROM T").join(NEWLINE);
   md.line("```");
   assert.ok(plain(inside).includes("**not bold**"), "울타리 안의 별표를 먹었다");
 });
@@ -77,7 +86,7 @@ test("울타리를 닫으면 다시 서식이 걸린다", () => {
   md.line("```");
   md.line("코드");
   md.line("```");
-  assert.ok(md.line("**굵게**").includes(`${ESC}[1m`), "울타리가 안 닫혔다");
+  assert.ok(md.line("**굵게**").join("").includes(`${ESC}[1m`), "울타리가 안 닫혔다");
 });
 
 test("짝이 안 맞는 백틱은 서식으로 보지 않는다 — 줄 끝까지 물든다", () => {
@@ -115,18 +124,54 @@ test("한 줄에 여러 서식이 섞여도 각각 걸린다", () => {
 
 /* ---------- 표 ---------- */
 
-test("표의 상자를 흐리게 해서 값이 먼저 눈에 들게 한다", () => {
-  const out = one("| ant compile | `WEB-INF/src/java` |");
-  assert.match(plain(out), /│ ant compile │ WEB-INF\/src\/java │/);
-  assert.ok(out.includes(`${ESC}[36m`), "칸 안의 코드 조각에도 서식이 걸려야 한다");
+/** 표 전체를 한 번에 넣고 나온 줄들을 받는다. */
+function table(/** @type {string[]} */ rows, width = 100) {
+  const md = createMarkdown({ ui, width });
+  /** @type {string[]} */
+  const out = [];
+  for (const row of rows) out.push(...md.line(row));
+  out.push(...md.flush());
+  return out;
+}
+
+/*
+ * 칸 폭을 맞추려면 표 전체를 봐야 한다. 그래서 표만 모았다가 한꺼번에 내보낸다 —
+ * 스트리밍이 멈추는 구간은 표 길이만큼뿐이다.
+ */
+test("칸 폭을 맞춰 그린다 — 한글은 두 칸이라 글자 수로 맞추면 어긋난다", () => {
+  const lines = table(["| 타깃 | 동작 |", "|---|---|", "| ant | 컴파일한다 |", "| deploy | scp |"]);
+  const widths = lines.map((l) => visibleLength(l));
+  assert.equal(new Set(widths).size, 1, `줄마다 폭이 다르다: ${widths.join(", ")}`);
 });
 
-test("표 구분줄도 상자 글자로 바꾼다 — 안 맞추면 표로 안 보인다", () => {
-  assert.match(plain(one("|------|------|")), /^┼─+┼─+┼$/);
+test("머리줄과 본문을 가로줄로 가른다", () => {
+  const lines = table(["| A | B |", "|---|---|", "| 1 | 2 |"]);
+  assert.ok(plain(/** @type {string} */ (lines[0])).startsWith("╭"), "위 테두리가 없다");
+  assert.ok(plain(lines.join(NEWLINE)).includes("├"), "머리줄 구분이 없다");
+  assert.ok(plain(/** @type {string} */ (lines.at(-1))).startsWith("╰"), "아래 테두리가 없다");
 });
 
-test("표처럼 생겼지만 아닌 줄은 건드리지 않는다", () => {
-  // 세로줄 하나만 있는 줄. 표로 오인해 쪼개면 내용이 깨진다.
-  const text = "a | b 형태의 설명";
-  assert.equal(plain(one(text)), text);
+test("칸 안의 서식도 살린다", () => {
+  const lines = table(["| A | B |", "|---|---|", "| `code` | **bold** |"]);
+  const body = lines.join("");
+  assert.ok(body.includes(`${ESC}[36m`), "코드 조각에 색이 없다");
+  assert.ok(body.includes(`${ESC}[1m`), "굵게가 안 걸렸다");
+});
+
+test("폭을 넘으면 맞추기를 포기한다 — 억지로 맞추면 내용이 잘린다", () => {
+  const lines = table(["| " + "가".repeat(60) + " | " + "나".repeat(60) + " |", "|---|---|"], 60);
+  assert.ok(plain(lines.join("")).includes("가".repeat(60)), "내용을 잘랐다");
+});
+
+test("표가 끝나기 전에는 내보내지 않는다 — 폭을 아직 모른다", () => {
+  const md = createMarkdown({ ui });
+  assert.deepEqual(md.line("| A | B |"), []);
+  assert.deepEqual(md.line("|---|---|"), []);
+  assert.ok(md.line("본문").length > 3, "표를 안 내보내고 본문만 냈다");
+});
+
+test("답이 표로 끝나도 흘리지 않는다", () => {
+  const md = createMarkdown({ ui });
+  md.line("| A |");
+  assert.ok(md.flush().length > 0, "마지막 표가 사라졌다");
 });

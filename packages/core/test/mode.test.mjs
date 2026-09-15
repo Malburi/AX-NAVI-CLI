@@ -41,21 +41,21 @@ test("모르는 모드는 기본으로 떨어진다 — 빈 화면이 되지 않
 
 /* ---------- 강제되는가 ---------- */
 
-test("읽기 전용은 쓰기 도구를 실제로 막는다 — 지침이 아니라 차단이다", () => {
+test("계획 모드는 쓰기 도구를 실제로 막는다 — 지침이 아니라 차단이다", () => {
   const registry = createDefaultRegistry();
   const before = registry.definitionsFor(WRITER.role).map((t) => t.name);
   assert.ok(before.includes("Write") && before.includes("Edit"), "기본 상태에서 쓰기가 있어야 비교가 된다");
 
-  const locked = applyMode(WRITER, "readonly");
+  const locked = applyMode(WRITER, "plan");
   const after = registry.definitionsFor(locked.role).map((t) => t.name);
   for (const tool of ["Write", "Edit"]) {
-    assert.ok(!after.includes(tool), `읽기 전용인데 ${tool} 이 남았다`);
+    assert.ok(!after.includes(tool), `계획 모드인데 ${tool} 이 남았다`);
   }
   assert.ok(after.includes("Read") && after.includes("Grep"), "읽기까지 막으면 아무것도 못 한다");
 });
 
-test("읽기 전용은 그 사실을 모델에게도 알린다 — 막힌 도구를 찾아 헤매지 않게", () => {
-  assert.match(applyMode(WRITER, "readonly").systemPrompt, /읽기 전용/);
+test("계획 모드는 그 사실을 모델에게도 알린다 — 막힌 도구를 찾아 헤매지 않게", () => {
+  assert.match(applyMode(WRITER, "plan").systemPrompt, /계획 모드/);
 });
 
 /* ---------- 지침에 그치는가 ---------- */
@@ -75,14 +75,14 @@ test("빠름이어도 위험한 변경은 멈추라고 적는다 — 검증 생�
 });
 
 test("강제인지 지침인지를 모드 자신이 밝힌다 — 화면에서 갈라 적어야 한다", () => {
-  assert.equal(modeOf("readonly").enforced, true);
+  assert.equal(modeOf("plan").enforced, true);
   assert.equal(modeOf("vibe").enforced, false);
 });
 
 /* ---------- 원본 보존 ---------- */
 
 test("원본 정의를 고치지 않는다 — 같은 정의가 다음 턴에도 쓰인다", () => {
-  applyMode(WRITER, "readonly");
+  applyMode(WRITER, "plan");
   applyMode(WRITER, "vibe");
   assert.equal(WRITER.role.allowMutations, true, "원본의 권한이 바뀌었다");
   assert.equal(WRITER.systemPrompt, "너는 writer 다.", "원본 지침이 오염됐다");
@@ -90,4 +90,12 @@ test("원본 정의를 고치지 않는다 — 같은 정의가 다음 턴에도
 
 test("기본 모드는 아무것도 바꾸지 않는다", () => {
   assert.equal(applyMode(WRITER, DEFAULT_MODE), WRITER);
+});
+
+test("계획 모드는 Provider 에게도 알린다 — 도구를 빼는 것만으로는 계획이 안 나온다", () => {
+  // claude CLI 는 이걸 받아 --permission-mode plan 을 넣는다. 그쪽은 막기만 하지 않고
+  // 계획을 내놓고 승인을 기다린다(실측).
+  assert.equal(applyMode(WRITER, "plan").planOnly, true);
+  assert.equal(applyMode(WRITER, "vibe").planOnly, undefined);
+  assert.equal(applyMode(WRITER, DEFAULT_MODE).planOnly, undefined);
 });

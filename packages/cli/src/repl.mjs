@@ -19,7 +19,7 @@ import {
   saveSession,
   toTitle,
 } from "@ax-navi/core";
-import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, sessionMode, sessionModel, setLineReader, setSessionMode, setSessionModel, setTypingProbe, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, takeFolded, sessionMode, sessionModel, setLineReader, setSessionMode, setSessionModel, setTypingProbe, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
 import { buildCommands, menuItems, renderCommandMenu } from "./completion.mjs";
 import { attachAutocomplete } from "./autocomplete.mjs";
@@ -294,13 +294,31 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
    * 도는 턴이 없을 때는 건드리지 않는다 — 자동완성 메뉴가 ESC 를 쓰기 때문이다.
    */
   if (process.stdin.isTTY) {
-    process.stdin.on("keypress", (/** @type {string} */ _ch, /** @type {{ name?: string, shift?: boolean }} */ key) => {
+    process.stdin.on("keypress", (/** @type {string} */ _ch, /** @type {{ name?: string, shift?: boolean, ctrl?: boolean }} */ key) => {
       if (key?.name === "escape") return interrupt("ESC");
       /*
        * Shift+Tab 으로 모드를 돌린다.
        * 자동완성 메뉴가 떠 있을 때는 그쪽이 Tab 을 쓴다 — 둠 다 가져가면 후보 이동과
        * 모드 변경이 동시에 일어난다.
        */
+      /*
+       * Ctrl+O — 방금 접은 결과를 펼쳐 보인다.
+       *
+       * Claude Code 처럼 그 자리에서 펼치지는 못한다 — 기록을 흘려보내는 구조라
+       * 지나간 줄을 다시 그릴 수 없다. 대신 아래에 덧붙인다.
+       */
+      if (key?.ctrl && key.name === "o") {
+        const item = takeFolded();
+        if (!item) {
+          process.stdout.write(`${NL}  ${ui.dim("펼쳐 볼 것이 없다.")}${NL}`);
+        } else {
+          const body = item.text.split(NL).map((l) => `  ${ui.dim(l)}`).join(NL);
+          process.stdout.write(`${NL}  ${ui.cyan("⎿")} ${ui.bold(item.label)} ${ui.dim("전문")}${NL}${body}${NL}`);
+        }
+        rl.prompt();
+        return;
+      }
+
       if (key?.name === "tab" && key.shift && !menu?.isOpen()) {
         setSessionMode(nextMode(sessionMode()));
         const mode = modeOf(sessionMode());
@@ -581,7 +599,7 @@ function statusLines(paths, state, picked) {
     lines.push("");
   }
   lines.push(
-    `  ${ui.dim("자연어로 물어보세요.")}   ${ui.cyan("/")} ${ui.dim("명령 목록")}   ${ui.dim("Tab 자동완성")}   ${ui.cyan("Shift+Tab")} ${ui.dim("모드")}   ${ui.cyan("/exit")} ${ui.dim("종료")}`,
+    `  ${ui.dim("자연어로 물어보세요.")}   ${ui.cyan("/")} ${ui.dim("명령 목록")}   ${ui.dim("Tab 자동완성")}   ${ui.cyan("Shift+Tab")} ${ui.dim("모드")}   ${ui.cyan("Ctrl+O")} ${ui.dim("펼치기")}   ${ui.cyan("/exit")} ${ui.dim("종료")}`,
   );
   lines.push("");
   return lines;
