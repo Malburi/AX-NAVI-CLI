@@ -109,7 +109,7 @@ export function createElicitor(readLine) {
   return {
     async ask(question, options, opts = {}) {
       process.stdout.write(`
-${ui.yellow("?")} ${ui.bold(question)}
+${ui.yellow("●")} ${ui.bold(question)}
 `);
       options.forEach((opt, i) => process.stdout.write(`  ${ui.cyan(String(i + 1))}. ${opt}
 `));

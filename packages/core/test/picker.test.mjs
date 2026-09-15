@@ -316,3 +316,14 @@ test("주제말이 길어도 폭을 넘지 않는다", () => {
     }
   }
 });
+
+test("주제말 테두리가 글자 폭에 맞는다 — 한글은 두 칸이다", () => {
+  const lines = render({ header: "프로젝트 구성", options: opts(1), width: 90 });
+  const [top, mid, bottom] = lines;
+  assert.equal(visibleLength(/** @type {string} */ (top)), visibleLength(/** @type {string} */ (mid)), "위 테두리와 내용 폭이 다르다");
+  assert.equal(visibleLength(/** @type {string} */ (top)), visibleLength(/** @type {string} */ (bottom)));
+});
+
+test("질문 표시는 도구 기록과 같은 ● 을 쓴다", () => {
+  assert.ok(/** @type {string} */ (render({ options: opts(1) })[0]).startsWith("●"));
+});

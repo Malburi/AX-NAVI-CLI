@@ -66,10 +66,16 @@ export function renderPicker({ question, options, cursor, checked, multiSelect, 
    * 한 마디로 먼저 걸어 주면 읽기 전에 감이 온다.
    */
   if (header) {
-    const label = clipToWidth(` ${header} `, cap - 4);
-    lines.push(ui.dim(`╭─${"─".repeat(Math.max(0, visibleLength(label)))}─╮`));
-    lines.push(`${ui.dim("│")} ${ui.cyan(ui.bold(label.trim()))} ${ui.dim("│")}`);
-    lines.push(ui.dim(`╰─${"─".repeat(Math.max(0, visibleLength(label)))}─╯`));
+    /*
+     * 테두리 폭은 **안에 들어갈 글자 칸 수**로 계산한다.
+     * 여백까지 센 길이로 테두리를 그리면 상자가 글자보다 넣어져 어긋난다(실측).
+     * 한글은 두 칸이라 글자 수로 세면 더 크게 벌어진다.
+     */
+    const label = clipToWidth(header.trim(), cap - 4);
+    const rule = "─".repeat(visibleLength(label) + 2);
+    lines.push(ui.dim(`╭${rule}╮`));
+    lines.push(`${ui.dim("│")} ${ui.cyan(ui.bold(label))} ${ui.dim("│")}`);
+    lines.push(ui.dim(`╰${rule}╯`));
     lines.push("");
   }
 
@@ -79,7 +85,8 @@ export function renderPicker({ question, options, cursor, checked, multiSelect, 
    * 질문문에 줄바꿈이 들어 있거나 줄이 폭을 넘으면 실제로 찍히는 줄 수가 늘어난다.
    * 그걸 한 줄로 세면 지울 때 모자라 매번 몇 줄씩 남는다(실측).
    */
-  push(question, ui.bold, " ");
+  // 도구 기록(● 줄)과 같은 표시를 쓴다 — 화면에서 기호가 한 종류일수록 읽힌다.
+  push(question, ui.bold, ui.yellow("●"));
   lines.push("");
 
   const { start, end } = windowFor(options.length, cursor);
@@ -140,7 +147,8 @@ export function splitOption(text) {
  */
 export function renderAnswer({ question, answers, width, ui }) {
   const { lines, push } = lineSink(Math.max(20, width - 1), ui);
-  push(question, ui.bold, ui.yellow("?"));
+  // 도구 기록(● 줄)과 같은 표시를 쓴다 — 화면에서 기호가 한 종류일수록 읽힌다.
+  push(question, ui.bold, ui.yellow("●"));
   push(answers.length ? answers.join(", ") : "건너뜀", ui.cyan, ui.cyan("❯"));
   return lines;
 }
