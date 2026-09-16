@@ -15,7 +15,7 @@
   ═══╧═══╧═══   Enterprise AI Development Navigator
 ```
 
-> **alpha (v0.1.0-alpha.3).** 실제 저장소에서 매일 쓰면서 다듬는 중입니다.
+> **alpha (v0.1.0-alpha.4).** 실제 저장소에서 매일 쓰면서 다듬는 중입니다.
 > 아래 [지금 되는 것 / 아직 안 되는 것](#지금-되는-것--아직-안-되는-것)을 먼저 읽어 주세요.
 
 ---
@@ -78,7 +78,7 @@ LLM이 매 세션 읽어서 따라가게 하고 있었습니다.
 GitHub 태그에서 바로 받습니다. npm 계정이 필요 없습니다.
 
 ```bash
-npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.3
+npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.4
 ```
 
 > **`npm i -g github:Malburi/AX-NAVI-CLI` 는 쓰지 마세요.** 그쪽은 npm 이 `git clone` 을
@@ -88,8 +88,8 @@ npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0
 망이 아예 닫혀 있으면 파일 하나로 옮깁니다.
 
 ```bash
-npm pack                                  # axnavi-0.1.0-alpha.3.tgz 생성
-npm i -g \\공유폴더\axnavi-0.1.0-alpha.3.tgz   # 받는 쪽
+npm pack                                  # axnavi-0.1.0-alpha.4.tgz 생성
+npm i -g \\공유폴더\axnavi-0.1.0-alpha.4.tgz   # 받는 쪽
 ```
 
 소스에서 쓰려면:
@@ -239,6 +239,35 @@ AX-NAVI > 하네스 초기화 해줘.
 | `Ctrl+C` | 작업 중단 · 빈 줄에서 두 번이면 종료 |
 | `Shift+Tab` (또는 빈 줄에서 `Tab`) | 실행 모드 바꾸기 |
 | `Ctrl+O` | 접힌 결과(`… +N줄`) 펼쳐 보기 |
+
+### 서브에이전트가 여럿 도는 동안
+
+오케스트레이터 스킬(`harness-init` 등)은 전문 에이전트를 **백그라운드로 여러 개 동시에**
+띄웁니다. 화면에는 누가 무엇을 하는지 귀속해서 나옵니다.
+
+```
+● Task(역할 확인 feature-finder)
+● Task(역할 확인 logic-tracer)
+│ 기능명·키워드를 입력받아 … "위치 탐색" 전담 에이전트입니다.
+  ⎿ 역할 확인 feature-finder 끝남 · 도구 3회 · 12s
+│ 저는 logic-tracer 입니다. 진입점부터 Controller → Service → …
+  ⎿ 역할 확인 logic-tracer 끝남 · 도구 5회 · 13s
+```
+
+화면은 흘러가므로, 지나간 것은 `/log` 로 되짚습니다. 전체 화면이 열리고
+턴 → 서브에이전트로 접었다 펴면서 그 에이전트가 낸 줄만 따로 볼 수 있습니다.
+나가면(`q`) 원래 화면이 그대로 돌아옵니다.
+
+| 명령 | 하는 일 |
+|---|---|
+| `/log` | 지나간 작업을 전체 화면으로 되짚기 (↑↓ 이동 · Enter 펼치기 · PgUp/PgDn 본문 · q 나가기) |
+| `/bg <요청>` | 백그라운드로 돌리기 — 도는 동안 계속 대화합니다 |
+| `/tasks` | 백그라운드 작업 목록. `/tasks stop <번호>` 로 중단 |
+
+`/bg` 로 띄운 작업은 **자기 대화를 씁니다.** 지금 대화에 얹지 않는 이유는, 위임 경로가
+claude 세션을 `--resume` 으로 이어 붙이기 때문입니다 — 같은 세션에 두 턴을 동시에 태우면
+둘째가 낡은 바탕에서 출발하고 끝난 뒤 세션 id 를 서로 덮어써 대화가 갈라집니다.
+진행 중에는 프롬프트에 `[⠿ 2]` 처럼 개수가 붙고, 끝나면 한 줄로 알립니다.
 
 ### 모드와 모델
 
