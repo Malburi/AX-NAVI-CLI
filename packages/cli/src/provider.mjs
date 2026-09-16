@@ -10,7 +10,7 @@
  */
 import { AnthropicProvider } from "../../provider-anthropic/src/index.mjs";
 import { ClaudeCliProvider, probeClaudeCli } from "../../provider-claude-cli/src/index.mjs";
-import { ui } from "./runtime.mjs";
+import { ui, REPO_ROOT } from "./runtime.mjs";
 
 /** @typedef {"anthropic" | "claude-cli" | "auto"} ProviderName */
 
@@ -63,6 +63,22 @@ function CLAUDE_CLI(version, cwd, mcp) {
     provider: new ClaudeCliProvider({
       ...(cwd ? { cwd } : {}),
       ...(mcp ? { mcpConfigPath: mcp.configPath, env: mcp.env } : {}),
+      /*
+       * 위임된 claude 에게 **우리 설치본을 세션 한정 플러그인으로** 물린다.
+       *
+       * 이게 없으면 오케스트레이터 스킬의 Agent(subagent_type="ax-navi:analyzer") 가
+       * 전부 실패한다(실측):
+       *   Agent type 'ax-navi:feature-finder' not found.
+       *   Available agents: claude, Explore, general-purpose, Plan, statusline-setup
+       * 서브에이전트가 안 보이는 게 아니라 아예 뜨지 않았다.
+       *
+       * --agents JSON 으로는 안 된다 — agents/ 합계가 211KB 고 analyzer.md 하나가
+       * 46.6KB 인데 윈도우 명령줄 상한은 32KB 다. 경로 하나만 넘기는 쪽이 맞다.
+       *
+       * 호스트에 설치된 플러그인을 끄는 설정과 함께 써도 이쪽은 살아 있다(실측).
+       * 그래서 "예전 설치본이 끼어들지 않는다"는 성질을 잃지 않는다.
+       */
+      pluginDir: REPO_ROOT,
     }),
     short: `claude-cli ${v} · 구독 인증`,
     note: `claude-cli ${v} · 구독 인증 · 도구 제약은 claude 권한 체계가 강제한다`,

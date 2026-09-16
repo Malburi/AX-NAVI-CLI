@@ -179,8 +179,34 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   /** 결과를 기다리는 호출들. @type {Map<string, { tool: string, input: unknown, parentId?: string }>} */
   const pending = new Map();
 
-  /** 지금 도는 서브에이전트들. @type {Map<string, { label: string, startedAt: number, tools: number }>} */
+  /** 지금 도는 서브에이전트들. @type {Map<string, { label: string, startedAt: number, tools: number, async?: boolean }>} */
   const subagents = new Map();
+
+  /**
+   * 판 오른쪽에 지금 도는 서브에이전트를 알린다.
+   *
+   * 여럿이 동시에 돈다 — 실측으로 두 개가 한 턴에 같이 떴다. 마지막 것만 보여 주면
+   * 나머지가 도는지 멈춼는지 알 수 없으므로 개수를 함께 적는다.
+   */
+  const showRunning = () => {
+    const names = [...subagents.values()].map((s) => s.label);
+    if (!names.length) return activity.set({ subagent: "" });
+    activity.set({ subagent: names.length === 1 ? String(names[0]) : `${names[0]} 외 ${names.length - 1}` });
+  };
+
+  /**
+   * 아직 열려 있는 서브에이전트 블록을 닫는다.
+   * @param {string} key
+   */
+  const closeSubagent = (key) => {
+    const done = subagents.get(key);
+    if (!done) return;
+    // 서브에이전트가 마지막에 한 말을 먼저 비운다. 닫는 줄 뒤에 나오면 블록 밖으로 샌다.
+    flushText(key);
+    subagents.delete(key);
+    showRunning();
+    emit(`  ${ui.dim("⎿")} ${ui.dim(`${done.label} 끝남 · 도구 ${done.tools}회 · ${elapsed(Date.now() - done.startedAt)}`)}`);
+  };
   const NEWLINE = String.fromCharCode(10);
 
   /** @param {string} text */
@@ -295,14 +321,16 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         if (SUBAGENT_TOOLS.has(tool)) {
           const label = describeTask(event.input);
           subagents.set(id, { label, startedAt: Date.now(), tools: 0 });
-          activity.set({ subagent: label, tool: "" });
+          activity.set({ tool: "" });
+          showRunning();
           emit(`${ui.cyan("●")} ${ui.bold(`Task(${label})`)}`);
           continue;
         }
 
         const parent = event.parentId ? subagents.get(event.parentId) : undefined;
         if (parent) parent.tools += 1;
-        activity.set({ tool, subagent: parent ? parent.label : "" });
+        activity.set({ tool });
+        showRunning();
         /*
          * 바로 찍지 않고 결과가 올 때까지 든다.
          *
@@ -314,14 +342,27 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
       } else if (event.type === "tool_result") {
         const key = event.id ?? [...pending.keys()][0];
 
-        // 서브에이전트가 끝났다 — 무엇을 얼마나 했는지 한 줄로 닫는다.
         const done = key === undefined ? undefined : subagents.get(key);
         if (done && key !== undefined) {
-          // 서브에이전트가 마지막에 한 말을 먼저 비운다. 닫는 줄 뒤에 나오면 블록 밖으로 샐다.
-          flushText(key);
-          subagents.delete(key);
-          activity.set({ subagent: "" });
-          emit(`  ${ui.dim("⎿")} ${ui.dim(`끝남 · 도구 ${done.tools}회 · ${elapsed(Date.now() - done.startedAt)}`)}`);
+          /*
+           * 비동기로 뜬 서브에이전트는 **결과가 곧바로 온다.**
+           *
+           *   [result] Async agent launched successfully. … agentId: …
+           *
+           * 이건 "끝났다"가 아니라 "띄웠다"다. 이걸 종료로 읽고 블록을 닫으면, 잠시 뒤
+           * 실제로 오는 서브에이전트의 말이 닫힌 블록 밖으로 떨어져 누가 한 말인지
+           * 사라진다(실측: 두 에이전트가 동시에 돌 때 둘 다 그랬다).
+           * 그래서 열어 둔 채 표시만 바꾸고, 닫는 것은 턴이 끝날 때 한다.
+           *
+           * 본문은 찍지 않는다 — claude 가 내부 메타데이터라고 명시한 내용이다.
+           */
+          if (/Async agent launched/i.test(String(event.result ?? ""))) {
+            done.async = true;
+            emit(`  ${ui.dim("⎿")} ${ui.dim("백그라운드에서 실행 중")}`);
+            continue;
+          }
+          // 동기로 끝난 경우 — 무엇을 얼마나 했는지 한 줄로 닫는다.
+          closeSubagent(key);
           if (event.isError) toolErrors += 1;
           continue;
         }
@@ -383,6 +424,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         emit(ui.red(`  오류: ${event.reason}`));
         failed = true;
       } else if (event.type === "done") {
+        // 백그라운드 서브에이전트는 자기 종료 이벤트가 없다. 턴이 끝날 때 여기서 닫는다.
+        for (const key of [...subagents.keys()]) closeSubagent(key);
         // 상한 도달·거절 같은 비정상 종료를 성공으로 보고하지 않는다.
         if (event.reason && !["end_turn", "stop_sequence"].includes(event.reason)) {
           emit(ui.yellow(`  종료 사유: ${event.reason}`));

@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { flattenToolContent, toDisallowedTools, translateEvent } from "../../provider-claude-cli/src/index.mjs";
+import { buildDelegatedArgs, flattenToolContent, toDisallowedTools, toolBriefing, translateEvent } from "../../provider-claude-cli/src/index.mjs";
 
 /** @param {string[]} names */
 const tools = (names) =>
@@ -142,4 +142,64 @@ test("도구 결과에서도 봉투가 벗겨진 채로 전달된다", () => {
     },
   });
   assert.equal(/** @type {any} */ (events[0]).content, "결과 본문");
+});
+
+/* ---------- 위임 배선 ---------- */
+
+/*
+ * 서브에이전트 팬아웃이 조용히 사라진 적이 있다.
+ *
+ * 오케스트레이터는 Agent(subagent_type="ax-navi:analyzer") 로 위임하는데, 위임된
+ * claude 는 우리 agents/ 를 모르고 호스트 플러그인도 꺼 둔 상태였다. 그래서 전부
+ *   Agent type 'ax-navi:feature-finder' not found.
+ *   Available agents: claude, Explore, general-purpose, Plan, statusline-setup
+ * 로 끝났고, 오케스트레이터가 혼자 다 했다. **화면에는 그냥 잘 도는 것처럼 보였다** —
+ * 그래서 오래 눈에 띄지 않았다. 여기서 배선 자체를 고정한다.
+ */
+
+/**
+ * 인자 조립만 보는 테스트라 도구는 이름만 있으면 된다.
+ * @param {object} [over]
+ * @returns {import("@ax-navi/core").SessionSpec}
+ */
+const spec = (over = {}) =>
+  /** @type {any} */ ({ tier: "standard", system: "", tools: [{ name: "Read" }], ...over });
+
+test("위임 실행에는 설치본을 플러그인으로 물린다 — 서브에이전트 이름이 여기서 나온다", () => {
+  const args = buildDelegatedArgs(spec({ allowDelegation: true }), { pluginDir: "/opt/axnavi" }, null);
+  const at = args.indexOf("--plugin-dir");
+  assert.ok(at >= 0, "--plugin-dir 이 빠졌다 — ax-navi:* 이름이 전부 not found 가 된다");
+  assert.equal(args[at + 1], "/opt/axnavi");
+  assert.ok(args.includes("--forward-subagent-text"), "서브에이전트가 한 말이 화면에 안 온다");
+});
+
+test("위임하지 않는 실행에는 플러그인을 물리지 않는다", () => {
+  /* 못 띄우는 역할에게 이름만 보여 주면 부르려다 한 턴을 날린다. */
+  const args = buildDelegatedArgs(spec(), { pluginDir: "/opt/axnavi" }, null);
+  assert.ok(!args.includes("--plugin-dir"));
+  assert.ok(!args.includes("--forward-subagent-text"));
+});
+
+test("호스트 플러그인을 끄는 설정은 위임 여부와 무관하게 유지된다", () => {
+  /* 예전 설치본이 끼어들면 어느 쪽이 돌았는지 화면에서 구분되지 않는다. */
+  for (const delegation of [true, false]) {
+    const args = buildDelegatedArgs(spec({ allowDelegation: delegation }), { pluginDir: "/opt/axnavi" }, "/tmp/s.json");
+    const at = args.indexOf("--settings");
+    assert.ok(at >= 0 && args[at + 1] === "/tmp/s.json", `delegation=${delegation} 에서 뮤트가 빠졌다`);
+  }
+});
+
+test("위임할 수 있으면 그 사실을 모델에게 알린다", () => {
+  /*
+   * 안내문을 Gateway 도구 목록만으로 만들었더니 모델이 위임을 포기했다(실측):
+   *   "서브에이전트 호출(Task/Agent) 도구가 이 실행 환경에 없어서 …
+   *    대신 각 에이전트 정의 파일을 직접 읽어 역할을 확인하겠다"
+   * 위임 도구는 Gateway 가 아니라 claude 자신이 가진 것이라 목록에 없었다.
+   */
+  const on = toolBriefing([{ name: "Read" }, { name: "Grep" }], true);
+  assert.match(on, /Task/);
+  assert.match(on, /ax-navi:/, "subagent_type 형식을 안 알려 주면 이름을 지어낸다");
+
+  const off = toolBriefing([{ name: "Read" }, { name: "Grep" }], false);
+  assert.ok(!/Task/.test(off), "못 쓰는 도구를 있다고 알렸다");
 });

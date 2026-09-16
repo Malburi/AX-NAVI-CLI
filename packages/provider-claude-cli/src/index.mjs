@@ -105,6 +105,79 @@ export function toDisallowedTools(tools, allowDelegation = false) {
   return CLAUDE_CODE_TOOLS.filter((name) => !keep.has(name));
 }
 
+/**
+ * 위임 실행의 claude 인자를 만든다.
+ *
+ * spawn 안에 묻어 두었더니 두 개가 조용히 틀린 채로 나갔다 — 서브에이전트 이름을
+ * 안 넘겨 팬아웃이 사라졌고, 도구 안내문이 위임 도구를 빼먹어 모델이 위임을 포기했다.
+ * 둘 다 화면에는 '그냥 혼자 다 한 것'처럼 보여서 오래 눈에 띄지 않았다.
+ * 순수 함수로 꺼내 두면 테스트가 잡는다.
+ *
+ * @param {SessionSpec} spec
+ * @param {{ extraArgs?: string[], mcpConfigPath?: string, pluginDir?: string }} options
+ * @param {string | null} muteSettings  호스트 플러그인을 끄는 설정 파일 경로
+ * @returns {string[]}
+ */
+export function buildDelegatedArgs(spec, options, muteSettings) {
+  const args = [
+    "-p",
+    "--output-format", "stream-json",
+    "--verbose",
+    "--model", MODEL_BY_TIER[spec.tier],
+    // 이어가기. 없으면 새 대화로 시작한다.
+    ...(spec.resumeFrom ? ["--resume", spec.resumeFrom] : []),
+    /*
+     * 사용자가 개인적으로 붙여 둔 MCP 서버는 우리 도구 계약 밖이다.
+     * --strict-mcp-config 로 그것들을 끊고, --mcp-config 로 우리 것만 올린다.
+     */
+    "--strict-mcp-config",
+    ...(options.mcpConfigPath ? ["--mcp-config", options.mcpConfigPath] : []),
+    // 호스트에 설치된 플러그인을 끌다 — 우리가 쓰는 것은 CLI 자기 설치 경로의 사본이다.
+    ...(muteSettings ? ["--settings", muteSettings] : []),
+    ...options.extraArgs ?? [],
+  ];
+
+  /*
+   * 서브에이전트가 무엇을 말하는지까지 받아온다.
+   * 도구 호출은 이 플래그 없이도 오지만, 서브에이전트가 내놓는 글은 이게 있어야 보인다.
+   * 위임이 꿠진 경우엔 서브에이전트 자체가 없으므로 붙일 이유가 없다.
+   */
+  if (spec.allowDelegation === true) args.push("--forward-subagent-text");
+
+  /*
+   * 서브에이전트 이름을 알려 준다.
+   *
+   * 오케스트레이터 스킬은 Agent(subagent_type="ax-navi:<이름>") 로 위임한다.
+   * 그런데 위임된 claude 는 우리 agents/ 를 모르고, 호스트 플러그인도 꺼 둔 상태라
+   * 그 이름이 어디에도 없다. 실측으로 전부 이렇게 끝났다.
+   *
+   *   Agent type 'ax-navi:feature-finder' not found.
+   *   Available agents: claude, Explore, general-purpose, Plan, statusline-setup
+   *
+   * 그래서 팬아웃이 아예 일어나지 않고 오케스트레이터가 혼자 다 했다. 화면에
+   * 서브에이전트가 안 보였던 것은 렌더링 문제가 아니라 이것이었다.
+   *
+   * --agents JSON 으로는 못 넘긴다 — agents/ 합계 211KB, analyzer.md 46.6KB 인데
+   * 윈도우 명령줄 상한이 32KB 다. 경로 하나만 주는 --plugin-dir 을 쓴다.
+   * 위임이 꺼진 실행에는 붙이지 않는다. 서브에이전트를 못 띄우는 역할에게
+   * 이름만 보여 주면 부르려다 한 턴을 날린다.
+   */
+  if (spec.allowDelegation === true && options.pluginDir) {
+    args.push("--plugin-dir", options.pluginDir);
+  }
+
+  const disallowed = toDisallowedTools(spec.tools, spec.allowDelegation === true);
+  if (disallowed.length) args.push("--disallowedTools", ...disallowed);
+
+  /*
+   * 우리 MCP 도구는 미리 승인해 둔다. -p 모드에는 승인해 줄 사람이 없어서
+   * 승인 대기 = 거부가 되기 때문이다.
+   */
+  if (options.mcpConfigPath) {
+    args.push("--allowedTools", ...MCP_TOOLS);
+  }
+  return args;
+}
 /*
  * 실행 파일 해석.
  *
@@ -297,6 +370,7 @@ export class ClaudeCliProvider {
    * @param {string} [options.cwd]
    * @param {string} [options.mcpConfigPath]  AX-NAVI MCP 서버 설정 파일
    * @param {Record<string, string>} [options.env]  MCP 서버에 넘길 환경변수
+   * @param {string} [options.pluginDir]  세션 한정으로 물릴 우리 설치본 경로. 서브에이전트 이름이 여기서 나온다.
    */
   constructor(options = {}) {
     this.id = "claude-cli";
@@ -341,46 +415,12 @@ export class ClaudeCliProvider {
      * 없다는 사실뿐 아니라 대신 무엇을 할지까지 적어 준다.
      */
     const payload = [
-      toolBriefing(spec.tools),
+      toolBriefing(spec.tools, spec.allowDelegation === true),
       spec.system ? `<역할 지침>\n${spec.system}\n</역할 지침>` : "",
       prompt,
     ].filter(Boolean).join("\n\n");
 
-    const args = [
-      "-p",
-      "--output-format", "stream-json",
-      "--verbose",
-      "--model", MODEL_BY_TIER[spec.tier],
-      // 이어가기. 없으면 새 대화로 시작한다.
-      ...(spec.resumeFrom ? ["--resume", spec.resumeFrom] : []),
-      /*
-       * 사용자가 개인적으로 붙여 둔 MCP 서버는 우리 도구 계약 밖이다.
-       * --strict-mcp-config 로 그것들을 끊고, --mcp-config 로 우리 것만 올린다.
-       */
-      "--strict-mcp-config",
-      ...(this.options.mcpConfigPath ? ["--mcp-config", this.options.mcpConfigPath] : []),
-      // 호스트에 설치된 플러그인을 끌다 — 우리가 쓰는 것은 CLI 자기 설치 경로의 사본이다.
-      ...(pluginMuteSettings() ? ["--settings", /** @type {string} */ (pluginMuteSettings())] : []),
-      ...this.options.extraArgs ?? [],
-    ];
-
-    /*
-     * 서브에이전트가 무엇을 말하는지까지 받아온다.
-     * 도구 호출은 이 플래그 없이도 오지만, 서브에이전트가 내놓는 글은 이게 있어야 보인다.
-     * 위임이 꿠진 경우엔 서브에이전트 자체가 없으므로 붙일 이유가 없다.
-     */
-    if (spec.allowDelegation === true) args.push("--forward-subagent-text");
-
-    const disallowed = toDisallowedTools(spec.tools, spec.allowDelegation === true);
-    if (disallowed.length) args.push("--disallowedTools", ...disallowed);
-
-    /*
-     * 우리 MCP 도구는 미리 승인해 둔다. -p 모드에는 승인해 줄 사람이 없어서
-     * 승인 대기 = 거부가 되기 때문이다.
-     */
-    if (this.options.mcpConfigPath) {
-      args.push("--allowedTools", ...MCP_TOOLS);
-    }
+    const args = buildDelegatedArgs(spec, this.options, pluginMuteSettings());
 
     const bin = resolveClaudeBin();
     if (!bin) {
@@ -563,12 +603,24 @@ let mutePath;
  * 다만 그 사실을 모르면 모델이 매번 한 번씩 부딛혀 보고 되돌아간다.
  *
  * @param {readonly { name: string }[]} tools
+ * @param {boolean} [allowDelegation]  서브에이전트를 띄울 수 있는 실행인가
  * @returns {string}
  */
-function toolBriefing(tools) {
+export function toolBriefing(tools, allowDelegation = false) {
   const names = tools.map((t) => t.name);
   if (!names.length) return "";
   const lines = [`<쓸 수 있는 도구>`, names.join(", ")];
+  /*
+   * 위임 도구는 우리 Gateway 의 목록에 없다. Gateway 가 실행하는 도구가 아니라
+   * claude 자신이 가진 것이기 때문이다. 그런데 이 안내문을 Gateway 목록만으로
+   * 만들었더니 모델이 **위임을 포기했다**(실측):
+   *   "서브에이전트 호출(Task/Agent) 도구가 이 실행 환경에 없어서 …
+   *    대신 각 에이전트 정의 파일을 직접 읽어 역할을 확인하겠다"
+   * 도구는 열려 있는데 없다고 알린 셈이라, 오케스트레이터가 혼자 다 했다.
+   */
+  if (allowDelegation) {
+    lines.push("Task(=Agent) 로 서브에이전트에 위임할 수 있다. subagent_type 은 ax-navi:<에이전트이름> 형식이다.");
+  }
   if (!names.includes("Edit")) {
     lines.push("Edit·MultiEdit 은 이 실행에 없다(서브에이전트도 마찬가지). 파일을 고치려면 Read 로 읽고 Write 로 전체를 다시 써라.");
   }

@@ -1,6 +1,6 @@
 {
   "name": "axnavi",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "type": "module",
   "description": "AX-NAVI CLI — ITO/SI 레거시 코드베이스를 위한 AI 개발 내비게이터. 에이전트 19종과 워크플로우 스킬 24종을 터미널에서 부른다.",
   "license": "MIT",
@@ -13,6 +13,7 @@
   "//files": "배포본에 들어갈 것. agents/·skills/ 는 CLI 가 자기 설치 경로에서 읽으므로 반드시 포함한다.",
   "files": [
     "packages/",
+    ".claude-plugin/",
     "agents/",
     "skills/",
     "docs/index-schema/",
