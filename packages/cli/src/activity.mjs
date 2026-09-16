@@ -107,7 +107,14 @@ export function createActivity({ output, ui }) {
   function paint() {
     if (!active || suspended) return;
     const lines = panel();
-    output.write(COL_ZERO + CLEAR_DOWN + lines.join(NEWLINE));
+    /*
+     * 다시 그리기 전에 **판의 첫 줄로 올라간다.**
+     *
+     * 그리고 나면 커서는 마지막 줄 끝에 있다. 거기서 그냥 지우고 써 버리면 앞서 그린
+     * 줄들은 그대로 남고 아래에 한 벌 더 쌓인다. 회전자 타이머가 120ms마다 부르므로
+     * 순식간에 화면이 판으로 덤인다(실측).
+     */
+    output.write(COL_ZERO + up(Math.max(0, painted - 1)) + CLEAR_DOWN + lines.join(NEWLINE));
     painted = lines.length;
   }
 

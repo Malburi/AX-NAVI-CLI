@@ -292,3 +292,126 @@ test("자리가 모자라면 우측을 버린다 — 진행 상황이 더 급하
   }
   activity.stop();
 });
+
+/*
+ * 실측으로 무너진 자리다. 회전자 타이머가 120ms마다 다시 그리는데, 그리기 전에
+ * 판의 첫 줄로 올라가지 않으면 앞서 그린 줄이 남아 순식간에 화면이 판으로 덮인다.
+ */
+test("다시 그릴 때마다 판의 첫 줄로 올라간다 — 안 그러면 순식간에 쌓인다", () => {
+  const out = fakeOutput(true, 100);
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("harness-init");
+
+  for (let i = 0; i < 5; i += 1) {
+    out.reset();
+    activity.set({ tool: `Tool${i}` });          // suspend 없이 그냥 다시 그리기
+    const text = out.text();
+    const up = Number(/\u001b\[(\d+)A/.exec(text)?.[1] ?? 0);
+    const newlines = (text.match(new RegExp(NEWLINE, "g")) ?? []).length;
+    assert.equal(up, newlines, `${i}번째: 올라간 ${up} / 그린 ${newlines + 1}줄`);
+  }
+  activity.stop();
+});
+
+test("판은 화면에 한 벌만 있다 — 여러 번 갱신해도 늘지 않는다", () => {
+  const out = fakeOutput(true, 100);
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("harness-init");
+  out.reset();
+  for (let i = 0; i < 10; i += 1) activity.set({ tool: `Tool${i}` });
+
+  // 마지막 프레임에만 입력 줄이 하나 있어야 한다.
+  const frame = out.text().split(CR).at(-1) ?? "";
+  const inputs = (frame.match(/❯/g) ?? []).length;
+  assert.equal(inputs, 1, `한 프레임에 입력 줄이 ${inputs}개다`);
+  activity.stop();
+});
+
+/* ---------- 가상 터미널로 실제 화면 보기 ---------- */
+
+/*
+ * 앞선 테스트들은 "쓴 내용"만 봤다. 그래서 다시 그리기 전에 올라가지 않는 결함을
+ * 통과시켰다 — 쓴 바이트는 매번 멀쩡했고 화면만 판으로 덮였다.
+ *
+ * 그래서 커서를 실제로 굴려 본다. 우리가 쓰는 시퀀스는 넷뿐이라 그만큼만 흉내 낸다.
+ */
+function vt(columns = 100) {
+  /** @type {string[]} */
+  const screen = [""];
+  let row = 0;
+  let col = 0;
+
+  const put = (/** @type {string} */ ch) => {
+    while (screen.length <= row) screen.push("");
+    const line = screen[row] ?? "";
+    screen[row] = line.padEnd(col, " ").slice(0, col) + ch + line.slice(col + 1);
+    col += 1;
+  };
+
+  return {
+    /** @param {string} chunk */
+    write(chunk) {
+      for (let i = 0; i < chunk.length; i += 1) {
+        const ch = /** @type {string} */ (chunk[i]);
+        if (ch === "\r") { col = 0; continue; }
+        if (ch === NEWLINE) { row += 1; col = 0; while (screen.length <= row) screen.push(""); continue; }
+        if (ch === ESC && chunk[i + 1] === "[") {
+          let j = i + 2;
+          while (j < chunk.length && !/[A-Za-z]/.test(/** @type {string} */ (chunk[j]))) j += 1;
+          const code = chunk.slice(i + 2, j);
+          const kind = chunk[j];
+          if (kind === "A") row = Math.max(0, row - (Number(code) || 1));
+          else if (kind === "J" && (code === "0" || code === "")) {
+            screen[row] = (screen[row] ?? "").slice(0, col);
+            screen.length = row + 1;
+          }
+          i = j;
+          continue;
+        }
+        put(ch);
+      }
+    },
+    isTTY: true,
+    columns,
+    lines: () => screen.map((l) => l.replace(/\u001b\[[\d;]*[A-Za-z]/g, "")),
+  };
+}
+
+test("화면에는 판이 딱 한 벌만 남는다 — 갱신을 몇 번 하든", () => {
+  const out = vt(100);
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("harness-init");
+  for (let i = 0; i < 12; i += 1) activity.set({ tool: `Tool${i}` });
+
+  const panels = out.lines().filter((l) => l.includes("❯")).length;
+  assert.equal(panels, 1, `화면에 판이 ${panels}벌 있다:\n${out.lines().join(NEWLINE)}`);
+  activity.stop();
+});
+
+test("출력이 끼어들어도 판은 한 벌이고, 출력은 위에 쌓인다", () => {
+  const out = vt(100);
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("harness-init");
+
+  for (let i = 0; i < 5; i += 1) {
+    activity.suspend();
+    out.write(`● Read(file${i}.java)${NEWLINE}`);
+    activity.resume();
+  }
+
+  const lines = out.lines();
+  assert.equal(lines.filter((l) => l.includes("❯")).length, 1, `판이 여러 벌이다:\n${lines.join(NEWLINE)}`);
+  assert.equal(lines.filter((l) => l.includes("● Read(")).length, 5, "출력이 사라졌다");
+  activity.stop();
+});
+
+test("멈추면 화면에 판이 한 줄도 남지 않는다", () => {
+  const out = vt(100);
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("harness-init");
+  activity.set({ tool: "Read" });
+  activity.stop();
+
+  const left = out.lines().join("").trim();
+  assert.equal(left, "", `남은 화면: ${JSON.stringify(left)}`);
+});
