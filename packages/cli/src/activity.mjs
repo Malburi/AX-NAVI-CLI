@@ -83,9 +83,8 @@ export function createActivity({ output, ui }) {
     // 입력 줄 — 작업 중에 친 글이 여기 그대로 보인다.
     const typed = state.typing ?? "";
     const waiting = state.queued ? ui.yellow(`  ⌨ ${state.queued}건 대기`) : "";
-    const input = typed
-      ? `${ui.cyan("❯")} ${typed}${ui.dim("▏")}${waiting}`
-      : `${ui.cyan("❯")} ${ui.dim("지금 쳐 두면 이 턴이 끝난 뒤 실행된다")}${waiting}`;
+    // 비어 있으면 비워 둔다. 안내문을 상주시켜 두면 한 번 읽히고 그 뒤로는 소음이다.
+    const input = `${ui.cyan("❯")} ${typed}${ui.dim("▏")}${waiting}`;
 
     // 진행 줄 — 누가 얼마나 무엇을 하고 있는가.
     const who = state.subagent ? `${state.label} › ${state.subagent}` : state.label;

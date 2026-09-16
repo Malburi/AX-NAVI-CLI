@@ -95,7 +95,7 @@ test("치는 중인 글이 입력 줄에 보인다 — 안 보이면 장님 타�
   activity.stop();
 });
 
-test("치는 중이 아니면 무엇을 하면 되는지 안내하고, 줄 선 건수도 밝힌다", () => {
+test("치는 중이 아니면 입력창을 비워 둔다 — 줄 선 건수만 밝힌다", () => {
   /** @type {string[]} */
   const chunks = [];
   const out = /** @type {any} */ ({ isTTY: true, columns: 100, write: (/** @type {string} */ s) => chunks.push(s) });
@@ -104,7 +104,8 @@ test("치는 중이 아니면 무엇을 하면 되는지 안내하고, 줄 선 �
   activity.set({ typing: "", queued: 2 });
   const text = chunks.join("");
   assert.match(text, /2건 대기/);
-  assert.match(text, /이 턴이 끝난 뒤 실행/, "빈 입력 줄에 안내가 없다");
+  // 비어 있을 때 안내문을 두지 않는다 — 한 번 읽히고 그 뒤로는 소음이다.
+  assert.ok(!text.includes("이 턴이 끝난 뒤 실행"), "안내문이 입력창을 차지하고 있다");
   activity.stop();
 });
 
