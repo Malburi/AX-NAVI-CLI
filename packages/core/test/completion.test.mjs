@@ -189,6 +189,24 @@ test("배포본에 에이전트·스킬·인덱스 스키마가 들어간다", (
   }
 });
 
+/*
+ * 사내망에서 레지스트리가 막혀도 설치는 끝나야 한다.
+ *
+ * 실측: 이 저장소를 npm 으로 설치하려던 머신에서 GitHub·registry 연결이
+ * EACCES 로 끊겼다. 그때 SDK 가 필수 의존이면 설치가 통째로 실패한다 —
+ * 정작 주 경로인 claude CLI 위임은 SDK 를 한 줄도 안 쓰는데도.
+ */
+test("SDK 는 선택적 의존이다 — 없어도 설치가 끝난다", () => {
+  assert.ok(!manifest.dependencies?.["@anthropic-ai/sdk"], "SDK 가 필수 의존으로 올라가 있다");
+  assert.ok(manifest.optionalDependencies?.["@anthropic-ai/sdk"], "SDK 선언이 아예 없다");
+});
+
+test("SDK 를 최상위에서 import 하지 않는다 — 없으면 CLI 가 통째로 안 뜬다", () => {
+  const src = readFileSync(fileURLToPath(new URL("../../provider-anthropic/src/index.mjs", import.meta.url)), "utf8");
+  assert.ok(!/^import .*@anthropic-ai\/sdk/m.test(src), "정적 import 가 남아 있다");
+  assert.match(src, /await import\("@anthropic-ai\/sdk"\)/);
+});
+
 test("전역 설치로 부를 이름이 정해져 있다", () => {
   assert.equal(manifest.bin?.axnavi, "packages/cli/src/bin.mjs");
   assert.ok(!manifest.private, "private 면 게시할 수 없다");

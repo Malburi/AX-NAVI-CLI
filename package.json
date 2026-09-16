@@ -18,7 +18,7 @@
     "docs/index-schema/",
     "README.md"
   ],
-  "dependencies": {
+  "optionalDependencies": {
     "@anthropic-ai/sdk": "^0.125.0"
   },
   "workspaces": ["packages/*"],

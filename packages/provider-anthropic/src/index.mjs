@@ -10,8 +10,46 @@
  * 도구는 정의만 넘기고 실행하지 않는다 — 실행은 Core의 ToolGateway가 한다.
  * 그래서 capabilities.ownsAgentLoop가 false이고, 그 덕에 Gateway가 실제 통제점으로 남는다.
  */
-import Anthropic from "@anthropic-ai/sdk";
 import { AsyncQueue } from "./queue.mjs";
+
+/*
+ * SDK 는 **쓸 때** 불러온다.
+ *
+ * 최상위 import 로 두면 @anthropic-ai/sdk 를 못 받은 환경에서 CLI 가 통째로 안 뜬다.
+ * 그런데 이 저장소의 주 경로는 claude CLI 위임(구독 인증)이라 SDK 가 아예 필요 없다 —
+ * 사내망처럼 레지스트리가 막힌 곳에서 설치 자체가 실패할 이유가 없다.
+ *
+ * 그래서 package.json 에서 optionalDependencies 로 내리고, 여기서 늦게 부른다.
+ * 없으면 "이 Provider 를 고를 때" 무엇이 없는지 말하고 멈춘다.
+ */
+
+/** SDK 의 **타입**만 참조한다. JSDoc 이라 런타임 import 를 만들지 않는다. */
+/** @typedef {typeof import("@anthropic-ai/sdk").default} Sdk */
+
+/** @type {Sdk | null} */
+let Anthropic = null;
+
+/**
+ * SDK 를 적재한다. 두 번째부터는 캐시를 돌려준다.
+ * @returns {Promise<Sdk>}
+ */
+export async function loadSdk() {
+  if (Anthropic) return Anthropic;
+  try {
+    const mod = await import("@anthropic-ai/sdk");
+    Anthropic = mod.default;
+  } catch (cause) {
+    throw new Error(
+      [
+        "anthropic Provider 를 쓰려면 @anthropic-ai/sdk 가 필요한데 없다.",
+        "  설치: npm i -g @anthropic-ai/sdk",
+        "  또는 claude CLI 경로를 쓴다: axnavi --provider claude-cli",
+      ].join(String.fromCharCode(10)),
+      { cause },
+    );
+  }
+  return Anthropic;
+}
 
 /** @typedef {import("@ax-navi/core").ProviderEvent} ProviderEvent */
 /** @typedef {import("@ax-navi/core").ContentBlock} ContentBlock */
@@ -45,6 +83,17 @@ const DEFAULT_MAX_TOKENS = 32_000;
  * @returns {import("@ax-navi/core").ProviderError}
  */
 export function normalizeError(error) {
+  /*
+   * SDK 가 아직 안 올라왔으면 타입 클래스가 없다. 그때는 형태로 본다 —
+   * 오류를 분류하다가 다시 오류를 내면 원래 오류가 사라진다.
+   */
+  if (!Anthropic) {
+    const status = /** @type {any} */ (error)?.status;
+    if (typeof status === "number") {
+      return { kind: status >= 500 ? "overloaded" : "unknown", message: `API ${status}`, retryable: status >= 500 };
+    }
+    return { kind: "unknown", message: error instanceof Error ? error.message : String(error), retryable: false };
+  }
   if (error instanceof Anthropic.AuthenticationError) {
     return { kind: "auth", message: "인증 실패 — ANTHROPIC_API_KEY를 확인하라.", retryable: false };
   }
@@ -112,7 +161,7 @@ export function toAnthropicMessages(turns) {
 /** @implements {LLMSession} */
 class AnthropicSession {
   /**
-   * @param {Anthropic} client
+   * @param {InstanceType<Sdk>} client
    * @param {SessionSpec} spec
    * @param {string} id
    */
@@ -247,8 +296,13 @@ export class AnthropicProvider {
       resumable: false,
       maxContextTokens: 1_000_000,
     };
-    // 키를 명시하지 않으면 SDK가 환경(ANTHROPIC_API_KEY 등)에서 찾는다.
-    this.client = options.apiKey ? new Anthropic({ apiKey: options.apiKey }) : new Anthropic();
+    /*
+     * 클라이언트는 첫 세션에서 만든다. 생성자에서 만들면 SDK 적재가 동기여야 하고,
+     * 그러면 SDK 를 선택적 의존으로 둘 수 없다.
+     */
+    this.apiKey = options.apiKey;
+    /** @type {InstanceType<Sdk> | null} */
+    this.client = null;
     this.counter = 0;
   }
 
@@ -257,6 +311,11 @@ export class AnthropicProvider {
    * @returns {Promise<LLMSession>}
    */
   async createSession(spec) {
+    if (!this.client) {
+      const Sdk = await loadSdk();
+      // 키를 명시하지 않으면 SDK가 환경(ANTHROPIC_API_KEY 등)에서 찾는다.
+      this.client = this.apiKey ? new Sdk({ apiKey: this.apiKey }) : new Sdk();
+    }
     this.counter += 1;
     return new AnthropicSession(this.client, spec, `${spec.label ?? "session"}_${this.counter}`);
   }
