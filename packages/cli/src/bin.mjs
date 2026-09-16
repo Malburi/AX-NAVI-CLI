@@ -7,6 +7,7 @@
  */
 import { inspectProject, resolveProjectPaths } from "@ax-navi/core";
 import { cmdAgent, cmdDoctor, cmdIndex, cmdInit, cmdSkill } from "./commands.mjs";
+import { cmdKeys } from "./keys.mjs";
 import { executeAgent } from "./execute.mjs";
 import { startRepl } from "./repl.mjs";
 import { ui } from "./runtime.mjs";
@@ -23,6 +24,7 @@ ${ui.bold("사용법")}
   axnavi ask <요청>               한 번 묻고 답받기 (읽기 전용)
   axnavi init                     .axnavi/ 설정 생성
   axnavi doctor                   실행 환경 진단
+  axnavi keys                     키 진단 (Shift+Tab 이 안 먹을 때)
 
   axnavi index build              결정론적 인덱싱 (LLM·API 키 불필요)
   axnavi index status             인덱스 신선도
@@ -105,6 +107,8 @@ async function main() {
   switch (command) {
     case "init":
       return cmdInit(args.root);
+    case "keys":
+      return cmdKeys();
     case "doctor":
       return cmdDoctor(args.root);
     case "index":

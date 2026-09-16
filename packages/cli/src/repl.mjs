@@ -461,6 +461,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
         code = await handleSlash({
           paths, line, commands, skillByName,
           onReset: () => { thread = null; },
+          onModeChange: applyPrompt,
           onResume: (record) => {
             thread = {
               id: record.id,
@@ -640,10 +641,11 @@ function route(input) {
  * @param {Map<string, { name: string }>} args.skillByName
  * @param {() => void} [args.onReset]
  * @param {(record: import("@ax-navi/core").SessionRecord) => void} [args.onResume]
+ * @param {() => void} [args.onModeChange]  프롬프트를 다시 그리게 한다
  * @param {() => ({ id: string, agent: string, turns: number, sessionId?: string } | null)} [args.onContext]
  * @returns {Promise<number>}
  */
-async function handleSlash({ paths, line, commands, skillByName, onReset, onResume, onContext }) {
+async function handleSlash({ paths, line, commands, skillByName, onReset, onResume, onModeChange, onContext }) {
   const spaceAt = line.indexOf(" ");
   const cmd = spaceAt === -1 ? line.slice(1) : line.slice(1, spaceAt);
   const argText = spaceAt === -1 ? "" : line.slice(spaceAt + 1).trim();
@@ -693,9 +695,27 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
     }
 
     case "mode": {
+      /*
+       * 이름으로도 바꿀 수 있게 해 둔다.
+       * Shift+Tab 은 터미널이 먼저 가로채면 Node 까지 오지 않는다 — 그럴 때
+       * 모드를 바꿀 길이 아예 없어지면 계획 모드를 못 쓴다.
+       */
+      const wanted = (rest[0] ?? "").trim();
+      if (wanted) {
+        const hit = MODES.find((m) => m.id === wanted || m.label === wanted);
+        if (!hit) {
+          process.stderr.write(`  ${ui.yellow("모르는 모드")} ${ui.dim(`— ${wanted} (${MODES.map((m) => m.label).join(", ")})`)}${NL}`);
+          return 2;
+        }
+        setSessionMode(hit.id);
+        onModeChange?.();
+        process.stdout.write(`  ${ui.yellow(hit.label)}  ${ui.dim(hit.hint)}${NL}`);
+        return 0;
+      }
+
       const mode = modeOf(sessionMode());
       const lines = MODES.map((m) => `  ${m.id === mode.id ? ui.cyan("❯") : " "} ${ui.cyan(m.label.padEnd(8))} ${ui.dim(m.hint)}${m.enforced ? "" : ui.dim("  (지침)")}`);
-      process.stdout.write(`${lines.join(NL)}${NL}  ${ui.dim("Shift+Tab 으로 돌린다.")}${NL}`);
+      process.stdout.write(`${lines.join(NL)}${NL}  ${ui.dim("Shift+Tab 으로 돌리거나 /mode <이름> 으로 바로 지정한다.")}${NL}`);
       return 0;
     }
 
