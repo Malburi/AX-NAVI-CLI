@@ -273,7 +273,8 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
      */
     const onKey = (/** @type {string | undefined} */ ch, /** @type {any} */ key) => {
       // 도는 중에도 모드를 바꿀 수 있어야 한다. 적용은 다음 턴부터다.
-      if (key?.name === "tab" && key.shift) {
+      // 턴 중에도 동일하게 — 치던 글이 없을 때만 받는다.
+      if (key?.name === "tab" && (key.shift || !typeahead.text())) {
         setPanelMode(cycleMode().label);
         return;
       }
@@ -338,7 +339,17 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
         return;
       }
 
-      if (key?.name === "tab" && key.shift && !menu?.isOpen()) {
+      /*
+       * 모드 돌리기 — Shift+Tab, 그리고 빈 줄에서의 Tab.
+       *
+       * Windows 콘솔은 Shift+Tab 을 그냥 ^I 로 보낸다(실측: axnavi keys 에서
+       * `tab 바이트: ^I`, shift 표시 없음). 그러면 우리쪽에서 둘을 가를 수가 없다.
+       *
+       * 그래서 빈 줄의 Tab 도 받는다. 거기서 Tab 은 원래 하는 일이 없고(메뉴가
+       * 떠 있을 때만 후보 이동에 쓰인다), 친 글이 있으면 건드리지 않으므로
+       * 놓칠 입력도 없다.
+       */
+      if (key?.name === "tab" && !menu?.isOpen() && (key.shift || !rl.line)) {
         cycleMode();
         applyPrompt();
         const mode = modeOf(sessionMode());
