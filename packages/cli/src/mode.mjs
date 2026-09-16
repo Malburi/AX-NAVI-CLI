@@ -17,14 +17,19 @@ const NEWLINE = String.fromCharCode(10);
  * @property {string} id
  * @property {string} label
  * @property {string} hint      한 줄 설명
- * @property {boolean} enforced 런타임이 막는가, 아니면 모델에게 부탁하는가
+ * @property {string} [caveat]   런타임이 막지 못하는 부분. 없으면 전부 강제된다.
  */
 
 /** @type {readonly Mode[]} */
 export const MODES = [
-  { id: "default", label: "기본", hint: "에이전트가 선언한 도구 그대로", enforced: true },
-  { id: "plan", label: "계획", hint: "고치지 않고 계획부터 낸다", enforced: true },
-  { id: "vibe", label: "빠름", hint: "영향도·안전 게이트를 건너뛰고 바로 수행", enforced: false },
+  { id: "default", label: "기본", hint: "에이전트가 선언한 도구 그대로" },
+  /*
+   * 계획 모드의 강제는 절반이다. Write·Edit 은 도구 목록에서 빠지지만,
+   * Bash 는 `echo > file` 처럼 쓸 수 있고 그걸 런타임이 가려낼 수 없다.
+   * 명령어를 글자로 보고 막는 것은 새는 검사라 하지 않는다 — 대신 그 사실을 적는다.
+   */
+  { id: "plan", label: "계획", hint: "고치지 않고 계획부터 낸다", caveat: "Bash 는 지침으로만 막는다" },
+  { id: "vibe", label: "빠름", hint: "영향도·안전 게이트를 건너뛰고 바로 수행", caveat: "전부 지침이다" },
 ];
 
 export const DEFAULT_MODE = "default";
@@ -71,6 +76,7 @@ const PLAN_POLICY = [
   "## 계획 모드",
   "사용자가 계획 모드를 골랐다. 파일을 고치지 말고, 무엇을 어떻게 바꿀지를 먼저 내놓는다.",
   "조사·분석은 제한 없이 한다 — 근거 없는 계획은 계획이 아니다.",
+  "Bash 로도 파일을 고치지 않는다. 리다이렉션·mv·rm·sed -i 같은 것은 쓰지 마라 — 그건 런타임이 막아 주지 않는다.",
   "계획에는 고칠 파일·줄, 순서, 검증 방법을 넣는다.",
 ].join(NEWLINE);
 

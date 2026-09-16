@@ -353,7 +353,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
         cycleMode();
         applyPrompt();
         const mode = modeOf(sessionMode());
-        const note = mode.enforced ? "" : ui.dim("  (강제가 아니라 지침이다)");
+        const note = mode.caveat ? ui.dim(`  (${mode.caveat})`) : "";
         process.stdout.write(`${NL}  ${ui.yellow(mode.label)}  ${ui.dim(mode.hint)}${note}${NL}`);
         rl.prompt();
       }
@@ -725,7 +725,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       }
 
       const mode = modeOf(sessionMode());
-      const lines = MODES.map((m) => `  ${m.id === mode.id ? ui.cyan("❯") : " "} ${ui.cyan(m.label.padEnd(8))} ${ui.dim(m.hint)}${m.enforced ? "" : ui.dim("  (지침)")}`);
+      const lines = MODES.map((m) => `  ${m.id === mode.id ? ui.cyan("❯") : " "} ${ui.cyan(m.label.padEnd(8))} ${ui.dim(m.hint)}${m.caveat ? ui.dim(`  (${m.caveat})`) : ""}`);
       process.stdout.write(`${lines.join(NL)}${NL}  ${ui.dim("Shift+Tab 으로 돌리거나 /mode <이름> 으로 바로 지정한다.")}${NL}`);
       return 0;
     }

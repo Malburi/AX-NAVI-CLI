@@ -74,9 +74,18 @@ test("빠름이어도 위험한 변경은 멈추라고 적는다 — 검증 생�
   assert.match(prompt, /3개 이상 파일/);
 });
 
-test("강제인지 지침인지를 모드 자신이 밝힌다 — 화면에서 갈라 적어야 한다", () => {
-  assert.equal(modeOf("plan").enforced, true);
-  assert.equal(modeOf("vibe").enforced, false);
+/*
+ * 계획 모드의 강제는 절반이다 — Write·Edit 은 막히지만 Bash 로는 고칠 수 있다.
+ * 그걸 "강제"라고 적어 두면 사용자가 믿어서 더 위험하다. 화면에 그대로 밝힌다.
+ */
+test("런타임이 못 막는 부분을 모드 자신이 밝힌다", () => {
+  assert.equal(modeOf("default").caveat, undefined, "기본은 단서가 없다");
+  assert.match(/** @type {string} */ (modeOf("plan").caveat), /Bash/);
+  assert.ok(modeOf("vibe").caveat, "빠름은 전부 지침이라고 밝혀야 한다");
+});
+
+test("계획 모드는 Bash 로도 고치지 말라고 적는다 — 런타임이 못 막는 자리다", () => {
+  assert.match(applyMode(WRITER, "plan").systemPrompt, /Bash 로도 파일을 고치지 않는다/);
 });
 
 /* ---------- 원본 보존 ---------- */

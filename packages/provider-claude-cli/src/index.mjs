@@ -248,11 +248,23 @@ export function translateEvent(msg) {
     // 권한 거부를 조용히 넘기지 않는다 — 역할 제약이 실제로 걸렸다는 증거이자,
     // 에이전트가 필요한 도구를 못 써서 결과가 부실해졌을 수 있다는 신호다.
     if (Array.isArray(msg.permission_denials) && msg.permission_denials.length) {
-      const names = msg.permission_denials.map((/** @type {any} */ d) => d.tool_name ?? d.tool ?? "?");
+      /*
+       * 같은 도구가 여러 번 거부되는 일이 흔하다 — 모델은 다시 부르며 버틴다.
+       * 이름을 나열하면 같은 것이 줄지어 서니 몇 종류가 막혔는지가 안 보인다.
+       */
+      /** @type {Map<string, number>} */
+      const tally = new Map();
+      for (const d of msg.permission_denials) {
+        const name = String(d.tool_name ?? d.tool ?? "?").replace(/^mcp__axnavi__/, "");
+        tally.set(name, (tally.get(name) ?? 0) + 1);
+      }
+      const names = [...tally].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name));
       out.push({
         type: "tool_result",
         toolUseId: "(권한)",
-        content: `권한으로 거부된 도구 ${msg.permission_denials.length}건: ${names.join(", ")}`,
+        // 도구 이름 자리에 무엇이 막혔는지를 넣는다 — "(위임)" 은 읽는 사람에게 아무 뜻도 없다.
+        toolName: "권한 거부",
+        content: `${names.join(", ")} — 이 실행에서 허용되지 않은 도구다. 그만큼 결과가 부실할 수 있다.`,
         isError: true,
       });
     }

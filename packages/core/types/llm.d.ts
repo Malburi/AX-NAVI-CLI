@@ -115,7 +115,8 @@ export type ProviderEvent =
    * 이게 없으면 서브에이전트 다섯이 동시에 돌 때 누가 무엇을 했는지 구분되지 않는다.
    */
   | { readonly type: "tool_use"; readonly id: string; readonly name: string; readonly input: unknown; readonly parentId?: string }
-  | { readonly type: "tool_result"; readonly toolUseId: string; readonly content: string; readonly isError: boolean; readonly parentId?: string }
+  /* toolName — 짝을 지을 호출이 없는 결과에 이름을 달아 준다(예: 권한 거부). */
+  | { readonly type: "tool_result"; readonly toolUseId: string; readonly content: string; readonly isError: boolean; readonly parentId?: string; readonly toolName?: string }
   | { readonly type: "usage"; readonly usage: Usage }
   | { readonly type: "turn_end"; readonly stopReason: StopReason; readonly content: readonly ContentBlock[] }
   | { readonly type: "error"; readonly error: ProviderError }

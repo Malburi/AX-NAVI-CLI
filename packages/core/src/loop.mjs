@@ -122,7 +122,7 @@ export async function* runAgent({ provider, agent, registry, gateway, ctx, userP
         yield { type: "tool_call", id: event.id, tool: event.name, input: event.input, ...(event.parentId ? { parentId: event.parentId } : {}) };
       }
       else if (event.type === "tool_result") {
-        yield { type: "tool_result", id: event.toolUseId, tool: "(위임)", result: event.content, isError: event.isError, ...(event.parentId ? { parentId: event.parentId } : {}) };
+        yield { type: "tool_result", id: event.toolUseId, tool: event.toolName ?? "(위임)", result: event.content, isError: event.isError, ...(event.parentId ? { parentId: event.parentId } : {}) };
       } else if (event.type === "usage") yield { type: "usage", usage: event.usage };
       else if (event.type === "error") {
         yield { type: "error", reason: `${event.error.kind}: ${event.error.message}` };
