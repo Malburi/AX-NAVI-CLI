@@ -75,8 +75,21 @@ LLM이 매 세션 읽어서 따라가게 하고 있었습니다.
 
 ### 설치하기
 
+GitHub 태그에서 바로 받습니다. npm 계정이 필요 없습니다.
+
 ```bash
-npm i -g axnavi
+npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.1
+```
+
+> **`npm i -g github:Malburi/AX-NAVI-CLI` 는 쓰지 마세요.** 그쪽은 npm 이 `git clone` 을
+> 하는 경로라, git 프로토콜이 막힌 사내망에서 `EACCES` 로 실패합니다(실측).
+> 위의 tarball URL 은 평범한 HTTPS GET 이라 같은 망에서 통과합니다.
+
+망이 아예 닫혀 있으면 파일 하나로 옮깁니다.
+
+```bash
+npm pack                                  # axnavi-0.1.0-alpha.1.tgz 생성
+npm i -g \\공유폴더\axnavi-0.1.0-alpha.1.tgz   # 받는 쪽
 ```
 
 소스에서 쓰려면:
@@ -88,8 +101,9 @@ npm install
 npm link            # axnavi 를 전역 명령으로 등록
 ```
 
-외부 런타임 의존성은 **`@anthropic-ai/sdk` 하나뿐**입니다. 구독 인증 경로만 쓴다면
-그것조차 실행에 쓰이지 않습니다. 인덱서(`agents/lib/`)는 의존성이 0입니다.
+**필수 런타임 의존성은 0입니다.** `@anthropic-ai/sdk` 는 선택적 의존이고 API 키 경로에서만
+늦게 적재됩니다 — 구독 인증(`claude` CLI)만 쓴다면 받지 않아도 설치와 실행이 끝납니다.
+인덱서(`agents/lib/`)도 의존성이 0입니다.
 
 ### 확인
 
