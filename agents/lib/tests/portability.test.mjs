@@ -22,14 +22,36 @@ export async function test(register, assert) {
      * 이름은 반드시 pythonBin()으로 결정한다.
      */
     const offenders = [];
-    for (const file of walk(join(ROOT, "agents", "lib"))) {
-      if (file.endsWith("python-bin.mjs")) continue;
-      const text = readFileSync(file, "utf8");
-      for (const match of text.matchAll(/execFileSync\(\s*"(python3?)"|spawnSync\(\s*"(python3?)"/g)) {
-        offenders.push(`${file.slice(ROOT.length + 1)}: ${match[1] || match[2]}`);
+    /*
+     * packages/ 까지 본다. 한때 agents/lib 만 봤고, 그래서 CLI 가 자기 사본을 들고 있는
+     * 것을 못 잡았다 — 그 사본에는 Store 별칭 방어가 없어서 회사 PC 에서 doctor 가
+     * 출력 한 줄 없이 죽었다. 검사 범위가 좁으면 규칙이 있어도 새 코드가 빠져나간다.
+     */
+    for (const root of [join(ROOT, "agents", "lib"), join(ROOT, "packages")]) {
+      for (const file of walk(root)) {
+        if (file.endsWith("python-bin.mjs")) continue;
+        const text = readFileSync(file, "utf8");
+        for (const match of text.matchAll(/execFileSync\(\s*"(python3?)"|spawnSync\(\s*"(python3?)"/g)) {
+          offenders.push(`${file.slice(ROOT.length + 1)}: ${match[1] || match[2]}`);
+        }
       }
     }
     assert.equal(offenders.length, 0, `하드코딩된 인터프리터: ${JSON.stringify(offenders)}`);
+  });
+
+  register("0바이트 Store 별칭은 실행해 보지 않고 건너뛴다", () => {
+    /*
+     * 실행하면 job object 안에서 **그 다음 spawn 이** libuv 수준 abort 로 죽는다
+     * (AssignProcessToJobObject: (87), 네이티브라 try/catch 불가).
+     * 그래서 후보를 spawn 하기 전에 크기 0 인지 본다. 이 방어가 빠지면 EDR 이 도는
+     * 사내 PC 에서 axnavi doctor 가 통째로 죽는다 — 실측으로 그랬다.
+     */
+    const text = readFileSync(join(ROOT, "agents", "lib", "python-bin.mjs"), "utf8");
+    assert.ok(/statSync\(/.test(text), "별칭 판별에 파일 크기 검사가 없다");
+    const guardAt = text.indexOf("isStoreAlias(name)) continue");
+    const spawnAt = text.indexOf('spawnSync(name, ["--version"]');
+    assert.ok(guardAt > 0 && spawnAt > 0, "후보 루프 구조가 바뀌었다");
+    assert.ok(guardAt < spawnAt, "spawn 뒤에 걸러낸다 — 그러면 이미 늦다");
   });
 
   register("pythonBin은 실제로 실행되는 인터프리터만 인정한다", () => {

@@ -8,6 +8,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { pythonInfo } from "../../../agents/lib/python-bin.mjs";
 import {
   buildIndex,
   indexStaleness,
@@ -134,19 +135,14 @@ export async function cmdDoctor(root) {
   return rows.some(([ok]) => ok === false) ? 1 : 0;
 }
 
-function probePython() {
-  for (const bin of ["python3", "python", "py"]) {
-    try {
-      const out = spawnSync(bin, ["--version"], { encoding: "utf8" });
-      const text = `${out.stdout || ""}${out.stderr || ""}`.trim();
-      // Windows Store 셰임은 exit 49에 "Python "만 출력한다 — 버전 숫자까지 확인해야 한다.
-      if (out.status === 0 && /Python\s+3/.test(text)) return { bin, version: text.replace(/^Python\s+/, "") };
-    } catch {
-      /* 다음 후보로 */
-    }
-  }
-  return null;
-}
+/*
+ * 파이썬 탐지는 agents/lib/python-bin.mjs 한 곳에만 둔다.
+ *
+ * 여기에 같은 로직을 한 벌 더 갖고 있었고, 그 사본에는 Store 별칭 방어가 빠져 있었다.
+ * 그래서 `axnavi doctor`가 회사 PC에서 출력 한 줄 없이 죽었다(AssignProcessToJobObject).
+ * 두 벌을 두면 한쪽만 고쳐진다 — 그 일이 실제로 일어났다.
+ */
+const probePython = pythonInfo;
 
 /* ---------- index ---------- */
 

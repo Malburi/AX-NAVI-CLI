@@ -11,21 +11,63 @@
  * 부르는 쪽이 "파이썬 없음"을 조용한 실패가 아니라 명시적인 사유로 다루게 한다.
  */
 import { spawnSync } from "node:child_process";
+import { statSync } from "node:fs";
 
 const CANDIDATES = ["python3", "python", "py"];
 
-let resolved;
-export function pythonBin() {
-  if (resolved !== undefined) return resolved;
+/**
+ * Windows Store 앱 실행 별칭인가.
+ *
+ * `%LOCALAPPDATA%\Microsoft\WindowsApps\python3.exe`는 **0바이트 리파스 포인트**다.
+ * 실행하면 스토어 앱을 띄우려다 즉시 죽는다. 그것만이면 exit code로 걸러도 됐는데,
+ * 실측으로 더 나쁜 일이 있었다 — **job object 안에서 이걸 spawn하면 그 다음 spawn이
+ * libuv 수준에서 프로세스를 죽인다.**
+ *
+ *   node -e "spawnSync('python3',…); spawnSync('python',…)"
+ *   → AssignProcessToJobObject: (87) 매개 변수가 틀립니다.   (출력 한 줄 없이 종료)
+ *
+ * 네이티브 abort라 try/catch로 못 잡는다. 회사 PC처럼 EDR이 job object를 쓰는 환경에서
+ * `axnavi doctor`가 통째로 죽었다. 그래서 **실행해 보기 전에** 걸러낸다.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isStoreAlias(name) {
+  if (process.platform !== "win32") return false;
+  // where.exe는 실제 실행 파일이라 이 경로 자체는 안전하다.
+  const lookup = spawnSync("where.exe", [name], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const first = (lookup.stdout || "").split(/\r?\n/).map((l) => l.trim()).find(Boolean);
+  if (!first) return false;
+  try {
+    // spawn이 집어들 첫 번째 후보만 본다 — 그게 실제로 실행될 파일이다.
+    return statSync(first).size === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 쓸 수 있는 파이썬을 찾는다. 이름과 버전을 함께 돌려준다.
+ * @returns {{ bin: string, version: string } | null}
+ */
+export function pythonInfo() {
   for (const name of CANDIDATES) {
+    if (isStoreAlias(name)) continue;
     /* `--version`이 실제로 성공해야 인정한다. Windows Store의 `python` stub은 존재하지만
      * 실행하면 스토어 앱을 띄우고 실패하므로 이름 존재 여부만으로는 판정할 수 없다. */
     const probe = spawnSync(name, ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    if (probe.status === 0 && /Python\s+3/.test(`${probe.stdout}${probe.stderr}`)) {
-      resolved = name;
-      return resolved;
+    const text = `${probe.stdout || ""}${probe.stderr || ""}`.trim();
+    if (probe.status === 0 && /Python\s+3/.test(text)) {
+      return { bin: name, version: text.replace(/^Python\s+/, "") };
     }
   }
-  resolved = null;
+  return null;
+}
+
+/** @type {string | null | undefined} */
+let resolved;
+export function pythonBin() {
+  if (resolved !== undefined) return resolved;
+  resolved = pythonInfo()?.bin ?? null;
   return resolved;
 }
