@@ -8,7 +8,11 @@
 
 const ESC = String.fromCharCode(27);
 const NEWLINE = new RegExp(`\\r?\\n`);
-const ANSI = new RegExp(`${ESC}\[[0-9;]*m`, "g");
+/*
+ * 제어 시퀀스 전부. 색(m)만 걷어내면 커서 이동(A·C·J …)이 글자로 센다 —
+ * 그러면 판을 그릴 때 폭을 과대 계산해 멀줦한 것을 잘라 낸다(테스트가 잡았다).
+ */
+const ANSI = new RegExp(`${ESC}\\[[0-9;]*[A-Za-z]`, "g");
 
 /*
  * 두 칸을 먹는 글자들.
@@ -32,6 +36,8 @@ const WIDE = [
  * @returns {number}
  */
 function charWidth(code) {
+  // 제어 문자는 자리를 차지하지 않는다. 복귀를 한 칸으로 세면 폭을 과대 계산한다.
+  if (code < 0x20 || code === 0x7f) return 0;
   for (const [lo, hi] of WIDE) if (code >= lo && code <= hi) return 2;
   return 1;
 }
@@ -60,8 +66,10 @@ export function clipToWidth(s, max) {
   let shown = 0;
   for (let i = 0; i < s.length; i += 1) {
     if (s[i] === ESC) {
-      const end = s.indexOf("m", i);
-      if (end !== -1) {
+      // 끝나는 글자를 찾는다. 색은 m 이지만 커서 이동은 A·C·J 등이다.
+      let end = i + 2;
+      while (end < s.length && !/[A-Za-z]/.test(/** @type {string} */ (s[end]))) end += 1;
+      if (end < s.length) {
         out += s.slice(i, end + 1);
         i = end;
         continue;

@@ -93,7 +93,9 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     if ("error" in picked) {
       process.stderr.write(`${picked.error}\n`);
       return 1;
-  }
+    }
+    // 실행 경로를 판에 밝힌다 — 구독인지 API 키인지가 비용과 기능을 가른다.
+    activity.set({ runtime: picked.short.split(" · ")[0] ?? picked.provider.id });
 
   /*
    * 실행자는 두 가지로 온다.
@@ -250,6 +252,11 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   const totals = { input: 0, output: 0, cacheRead: 0, costUsd: null };
 
   activity.start(agent.name);
+  /*
+   * 무엇으로 도는지를 판에 밝힌다.
+   * 이게 없으면 모델을 바꿔 놓고도 지금 어느 것으로 도는지 확인할 길이 없다.
+   */
+  activity.set({ model: agent.tier });
   /** 대기 입력이 늘면 상태줄에 반영한다 — 사라진 게 아니라 줄 섰다는 신호다. */
   const queueWatch = setInterval(() => {
     const typed = readTyping();
@@ -358,6 +365,9 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
          * 캐시 **생성**량까지 더해야 한다 — 첫 턴은 읽을 캐시가 없어 전부 생성으로 잡힌다.
          * 그걸 빼면 26k 를 실어 보내고도 "Ctx 2" 가 된다(실측).
          */
+        activity.set({
+          contextTokens: event.usage.inputTokens + event.usage.cacheReadTokens + event.usage.cacheWriteTokens,
+        });
         onContextSize?.(
           event.usage.inputTokens + event.usage.cacheReadTokens + event.usage.cacheWriteTokens,
         );

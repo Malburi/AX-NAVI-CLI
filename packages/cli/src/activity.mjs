@@ -1,25 +1,28 @@
 /*
- * 작업 중 상태 표시.
+ * 작업 중 화면 바닥에 붙는 판.
  *
- * 에이전트가 도는 동안 무슨 일이 얼마나 벌어지고 있는지 한 줄로 보여 준다.
- * 없으면 긴 작업이 그냥 멈춘 것처럼 보인다.
+ * 에이전트가 도는 동안 무슨 일이 얼마나 벌어지고 있는지, 그리고 지금 무엇을 치고
+ * 있는지를 함께 보여 준다. 없으면 긴 작업이 그냥 멈춘 것처럼 보인다.
  *
- * 설계에서 중요한 선택 하나 — **프롬프트에 상태줄을 붙박이로 달지 않는다.**
- * 처음엔 그렇게 했는데, 사용자가 Enter를 치면 readline이 줄바꿈을 내보내 커서가
- * 한 줄 내려가고, 우리가 세어 둔 "그린 줄 수"와 어긋나 상태줄이 화면에 남았다.
- * 출력할 때마다 하나씩 쌓였다(실측).
+ * 한때 한 줄만 그렸다. 프롬프트에 붙박이를 달았더니 Enter 가 커서를 한 줄 내려
+ * 우리가 센 줄 수와 어긋났기 때문이다(실측: 출력마다 상태줄이 쌓였다).
  *
- * 그래서 상태 표시는 **한 줄, 제자리 갱신**으로만 한다. Enter 직후부터 턴이 끝날
- * 때까지만 살아 있고, 그 구간에는 프롬프트가 화면에 없으므로 커서 다툼이 없다.
- * 한 줄만 다루니 접힘 계산도 필요 없다.
+ * 지금은 여러 줄을 그린다. 조건이 달라졌다 — 턴이 도는 동안에는 readline 을 물러나게
+ * 하고 키를 직접 받으므로 **화면 바닥을 온전히 우리가 소유한다.** 다툴 커서가 없으니
+ * 줄 수를 정확히 세면 된다. 대신 두 가지를 지킨다.
+ *   - 줄마다 폭을 넘지 않게 자른다. 접히면 올라갈 줄 수가 틀린다.
+ *   - 커서 이동은 전부 상대 이동이다. 화면이 스크롤해도 함께 밀린다.
  */
 
-import { clipToWidth } from "./width.mjs";
+import { clipToWidth, visibleLength } from "./width.mjs";
 
 const ESC = String.fromCharCode(27);
-/** 커서가 있는 줄을 끝까지 지운다. */
-const CLEAR_LINE = `${ESC}[2K`;
+/** 커서 아래를 끝까지 지운다. */
+const CLEAR_DOWN = `${ESC}[0J`;
 const COL_ZERO = "\r";
+const NEWLINE = String.fromCharCode(10);
+/** @param {number} n */
+const up = (n) => (n > 0 ? `${ESC}[${n}A` : "");
 
 /** 회전자. 유니코드 점 패턴이라 대부분의 터미널에서 폭이 1이다. */
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -33,6 +36,9 @@ const TICK_MS = 120;
  * @property {string} [typing]     지금 치고 있는 글
  * @property {number} outputTokens
  * @property {number} [queued]     처리 대기 중인 입력 줄 수
+ * @property {string} [runtime]    실행 경로 (예: "claude-cli 2.1.259")
+ * @property {string} [model]      이번 턴이 쓰는 등급
+ * @property {number} [contextTokens]
  */
 
 /**
@@ -54,7 +60,8 @@ export function createActivity({ output, ui }) {
   let timer = null;
   let frame = 0;
   let startedAt = 0;
-  let painted = false;
+  /** 지금 화면에 그려 둔 줄 수. 지울 때 그만큼 올라간다. */
+  let painted = 0;
   /*
    * 멈춰 세운 상태. 회전자 타이머는 계속 도니까, 이 표시가 없으면 suspend() 로 지워도
    * 120ms 뒤 타이머가 그대로 다시 그린다 — 질문의 입력 자리를 덮어써서 어디에 답해야
@@ -64,33 +71,52 @@ export function createActivity({ output, ui }) {
   /** @type {ActivityState} */
   let state = { label: "", outputTokens: 0 };
 
-  function line() {
-    // 서브에이전트가 도는 중이면 누가 도는지를 먼저 밝힌다.
+  /**
+   * 화면 바닥에 그릴 줄들.
+   * @returns {string[]}
+   */
+  function panel() {
+    const cap = Math.max(20, (output.columns ?? 80) - 1);
+    const rule = ui.dim("─".repeat(cap));
+
+    // 입력 줄 — 작업 중에 친 글이 여기 그대로 보인다.
+    const typed = state.typing ?? "";
+    const waiting = state.queued ? ui.yellow(`  ⌨ ${state.queued}건 대기`) : "";
+    const input = typed
+      ? `${ui.cyan("❯")} ${typed}${ui.dim("▏")}${waiting}`
+      : `${ui.cyan("❯")} ${ui.dim("지금 쳐 두면 이 턴이 끝난 뒤 실행된다")}${waiting}`;
+
+    // 진행 줄 — 누가 얼마나 무엇을 하고 있는가.
     const who = state.subagent ? `${state.label} › ${state.subagent}` : state.label;
     const bits = [ui.cyan(who), ui.dim(elapsed(Date.now() - startedAt))];
     if (state.outputTokens > 0) bits.push(ui.dim(`↓ ${compact(state.outputTokens)} tokens`));
     if (state.tool) bits.push(ui.dim(state.tool));
-    /*
-     * 작업 중에 친 입력. 치는 중이면 그 글을, 엔터까지 치고 기다리는 게 있으면 그 수를.
-     * 둘 다 보여 줄 자리는 없으니 치는 중인 글을 앞세운다 — 지금 손이 거기 있다.
-     */
-    if (state.typing) bits.push(ui.yellow(`⌨ ${state.typing}`));
-    else if (state.queued) bits.push(ui.yellow(`⌨ ${state.queued}건 대기`));
-    return `  ${ui.cyan(FRAMES[frame % FRAMES.length] ?? "")} ${bits.join(ui.dim(" · "))}`;
+    const left = `${ui.cyan(FRAMES[frame % FRAMES.length] ?? "")} ${bits.join(ui.dim(" · "))}`;
+
+    // 우측 — 무엇으로 돌고 있고 얼마나 실어 보냈는가.
+    const right = [
+      state.runtime,
+      state.model,
+      state.contextTokens ? `Ctx ${compact(state.contextTokens)}` : "",
+    ].filter(Boolean).join(" · ");
+
+    return [rule, input, rule, fit(left, right ? ui.dim(right) : "", cap)]
+      .map((l) => clipToWidth(l, cap));
   }
 
   function paint() {
     if (!active || suspended) return;
-    // 폭을 넘으면 줄이 접히고, 한 줄만 지우는 이 코드와 어긋나 잔상이 남는다.
-    output.write(COL_ZERO + CLEAR_LINE + clipToWidth(line(), (output.columns ?? 80) - 1));
-    painted = true;
+    const lines = panel();
+    output.write(COL_ZERO + CLEAR_DOWN + lines.join(NEWLINE));
+    painted = lines.length;
   }
 
   /** 화면에서 지운다. 출력이 끼어들 때와 끝날 때 쓴다. */
   function erase() {
     if (!painted) return;
-    output.write(COL_ZERO + CLEAR_LINE);
-    painted = false;
+    // 마지막 줄에 서 있으므로 painted-1 만큼 올라간다. 상대 이동이라 스크롤과 함께 밀린다.
+    output.write(COL_ZERO + up(painted - 1) + CLEAR_DOWN);
+    painted = 0;
   }
 
   return {
@@ -99,6 +125,7 @@ export function createActivity({ output, ui }) {
       state = { label, outputTokens: 0 };
       startedAt = Date.now();
       frame = 0;
+      suspended = false;
       if (!active) return;
       paint();
       timer = setInterval(() => {
@@ -133,6 +160,21 @@ export function createActivity({ output, ui }) {
       erase();
     },
   };
+}
+
+/**
+ * 왼쪽과 오른쪽을 한 줄에 밀어 붙인다.
+ * 자리가 모자라면 오른쪽을 버린다 — 진행 상황이 더 급하다.
+ *
+ * @param {string} left
+ * @param {string} right
+ * @param {number} cap
+ * @returns {string}
+ */
+export function fit(left, right, cap) {
+  if (!right) return left;
+  const gap = cap - visibleLength(left) - visibleLength(right);
+  return gap < 2 ? left : `${left}${" ".repeat(gap)}${right}`;
 }
 
 /**
