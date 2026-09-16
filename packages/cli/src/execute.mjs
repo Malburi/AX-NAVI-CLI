@@ -18,7 +18,7 @@ import { renderCall } from "./transcript.mjs";
 import { createMarkdown } from "./markdown.mjs";
 import { applyMode } from "./mode.mjs";
 import { join } from "node:path";
-import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, rememberFolded, sessionMode, sessionModel, debug, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, rememberFolded, sessionMode, sessionModel, setPanelModeSink, debug, ui } from "./runtime.mjs";
 
 /**
  * @param {object} args
@@ -257,6 +257,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 이게 없으면 모델을 바꿔 놓고도 지금 어느 것으로 도는지 확인할 길이 없다.
    */
   activity.set({ model: agent.tier });
+  // 턴 중에 Shift+Tab 을 누르면 판이 바로 바뀝다.
+  setPanelModeSink((label) => activity.set({ mode: label }));
   /** 대기 입력이 늘면 상태줄에 반영한다 — 사라진 게 아니라 줄 섰다는 신호다. */
   const queueWatch = setInterval(() => {
     const typed = readTyping();
@@ -405,6 +407,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     clearInterval(queueWatch);
     activity.stop();
     process.off("SIGINT", onSigint);
+    setPanelModeSink(null);
     endTurn(controller);
     onAnswer?.(answer);
     await audit.flush();

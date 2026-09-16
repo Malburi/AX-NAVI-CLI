@@ -237,6 +237,25 @@ export function setTypingProbe(fn) {
   typingProbe = fn;
 }
 
+/*
+ * 판에 모드를 알린다.
+ *
+ * 턴이 도는 중에 Shift+Tab 을 누르면 다음 턴부터 바뀜는데, 화면이 그걸 안 밝히면
+ * 바뀌었는지 알 길이 없다. 프롬프트는 그때 화면에 없어서 거기 붙이는 것만으로는 부족하다.
+ */
+/** @type {((label: string) => void) | null} */
+let panelMode = null;
+
+/** @param {((label: string) => void) | null} fn */
+export function setPanelModeSink(fn) {
+  panelMode = fn;
+}
+
+/** @param {string} label */
+export function setPanelMode(label) {
+  panelMode?.(label);
+}
+
 /** @returns {{ text: string, queued: number }} */
 export function readTyping() {
   return typingProbe?.() ?? { text: "", queued: 0 };

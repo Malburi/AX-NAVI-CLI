@@ -38,6 +38,7 @@ const TICK_MS = 120;
  * @property {number} [queued]     처리 대기 중인 입력 줄 수
  * @property {string} [runtime]    실행 경로 (예: "claude-cli 2.1.259")
  * @property {string} [model]      이번 턴이 쓰는 등급
+ * @property {string} [mode]       지금 실행 모드
  * @property {number} [contextTokens]
  */
 
@@ -95,6 +96,7 @@ export function createActivity({ output, ui }) {
 
     // 우측 — 무엇으로 돌고 있고 얼마나 실어 보냈는가.
     const right = [
+      state.mode,
       state.runtime,
       state.model,
       state.contextTokens ? `Ctx ${compact(state.contextTokens)}` : "",
@@ -129,7 +131,11 @@ export function createActivity({ output, ui }) {
   return {
     /** @param {string} label */
     start(label) {
-      state = { label, outputTokens: 0 };
+      /*
+       * 세션 내내 같은 것은 살려 둔다.
+       * 전부 초기화하면 턴 시작 전에 설정한 실행 경로가 지워져 판 오른쪽이 비었다(실측).
+       */
+      state = { label, outputTokens: 0, ...(state.runtime ? { runtime: state.runtime } : {}), ...(state.mode ? { mode: state.mode } : {}) };
       startedAt = Date.now();
       frame = 0;
       suspended = false;

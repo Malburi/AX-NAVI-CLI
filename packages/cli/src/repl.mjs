@@ -19,7 +19,7 @@ import {
   saveSession,
   toTitle,
 } from "@ax-navi/core";
-import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, takeFolded, sessionMode, sessionModel, setLineReader, setSessionMode, setSessionModel, setTypingProbe, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, setPanelMode, takeFolded, sessionMode, sessionModel, setLineReader, setSessionMode, setSessionModel, setTypingProbe, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
 import { buildCommands, menuItems, renderCommandMenu } from "./completion.mjs";
 import { attachAutocomplete } from "./autocomplete.mjs";
@@ -217,6 +217,18 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
    */
   let exitArmed = false;
 
+  /*
+   * 모드 돌리기.
+   *
+   * 프롬프트에서도, 턴이 도는 중에도 동작해야 한다. 턴 중에는 readline 을 물러나게
+   * 하고 키를 직접 받는데, 그때 Shift+Tab 을 그냥 버렸다(실측: 안 먹힌다).
+   * 도는 턴에는 적용되지 않지만 다음 턴부터 바뀜다 — 그 사실은 판이 보여 준다.
+   */
+  const cycleMode = () => {
+    setSessionMode(nextMode(sessionMode()));
+    return modeOf(sessionMode());
+  };
+
   /** @param {"Ctrl+C" | "ESC"} how */
   const interrupt = (how) => {
     if (!interruptTurn()) return false;
@@ -259,7 +271,14 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
      * @param {string | undefined} ch
      * @param {{ name?: string, ctrl?: boolean, meta?: boolean } | undefined} key
      */
-    const onKey = (ch, key) => typeahead.handle(ch, key);
+    const onKey = (/** @type {string | undefined} */ ch, /** @type {any} */ key) => {
+      // 도는 중에도 모드를 바꿀 수 있어야 한다. 적용은 다음 턴부터다.
+      if (key?.name === "tab" && key.shift) {
+        setPanelMode(cycleMode().label);
+        return;
+      }
+      typeahead.handle(ch, key);
+    };
     process.stdin.on("keypress", onKey);
 
     return () => {
@@ -320,9 +339,9 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
       }
 
       if (key?.name === "tab" && key.shift && !menu?.isOpen()) {
-        setSessionMode(nextMode(sessionMode()));
-        const mode = modeOf(sessionMode());
+        cycleMode();
         applyPrompt();
+        const mode = modeOf(sessionMode());
         const note = mode.enforced ? "" : ui.dim("  (강제가 아니라 지침이다)");
         process.stdout.write(`${NL}  ${ui.yellow(mode.label)}  ${ui.dim(mode.hint)}${note}${NL}`);
         rl.prompt();

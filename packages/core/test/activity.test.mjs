@@ -415,3 +415,23 @@ test("멈추면 화면에 판이 한 줄도 남지 않는다", () => {
   const left = out.lines().join("").trim();
   assert.equal(left, "", `남은 화면: ${JSON.stringify(left)}`);
 });
+
+test("턴을 새로 시작해도 실행 경로는 살려 둔다 — 세션 내내 같은 값이다", () => {
+  const out = vt(120);
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.set({ runtime: "claude-cli 2.1.259" });   // start 보다 먼저 정해진다
+  activity.start("axnavi");
+  activity.set({ model: "standard" });
+
+  assert.match(out.lines().join(NEWLINE), /claude-cli 2\.1\.259/, "start 가 실행 경로를 지웠다");
+  activity.stop();
+});
+
+test("모드를 판에 밝힌다 — 턴 중에 바꾸면 확인할 길이 있어야 한다", () => {
+  const out = vt(120);
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("axnavi");
+  activity.set({ mode: "계획" });
+  assert.match(out.lines().join(NEWLINE), /계획/);
+  activity.stop();
+});
