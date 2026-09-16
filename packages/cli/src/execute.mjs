@@ -18,6 +18,7 @@ import { renderCall } from "./transcript.mjs";
 import { createMarkdown } from "./markdown.mjs";
 import { applyMode } from "./mode.mjs";
 import { join } from "node:path";
+import { closeTurn, openTurn, recordAgentEnd, recordAgentStart, recordLine } from "./record.mjs";
 import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, rememberFolded, sessionMode, sessionModel, setPanelModeSink, debug, ui } from "./runtime.mjs";
 
 /**
@@ -34,9 +35,11 @@ import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, 
  * @param {() => number} [args.queuedCount]  대기 중인 입력 줄 수 (상태 표시에 쓴다)
  * @param {import("./provider.mjs").ProviderName} [args.providerName]
  * @param {AbortSignal} [args.signal]
+ * @param {boolean} [args.background]  화면에 찍지 않고 기록에만 담는다 (동시에 도는 작업용)
+ * @param {string} [args.title]        되짚기 목록에 뜰 이름. 없으면 요청 첫 줄을 쓴다
  * @returns {Promise<number>} 프로세스 종료 코드
  */
-export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, onCost, onContextSize, onAnswer, onSkillRequest, queuedCount, providerName, signal }) {
+export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, onCost, onContextSize, onAnswer, onSkillRequest, queuedCount, providerName, signal, background = false, title }) {
   /*
    * Provider를 먼저 고른다.
    *
@@ -49,7 +52,13 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 상태 표시를 먼저 만든다 — 질문이 뜰 때 이 줄을 걷어야 하기 때문이다.
    * 안 걷으면 회전자가 질문 위에 덮어써서 무엇을 묻는지 안 보인다.
    */
-  const activity = createActivity({ output: process.stdout, ui });
+  /*
+   * 백그라운드 작업은 화면 바닥 판을 만들지 않는다.
+   * 전경 턴과 판을 나눠 가지면 둘이 같은 줄을 서로 덮어써서 화면이 깨진다.
+   */
+  const activity = background
+    ? { start() {}, set() {}, bump() {}, suspend() {}, resume() {}, stop() {} }
+    : createActivity({ output: process.stdout, ui });
 
   /*
    * 질문 통로. 상태 표시를 걷었다 되살리며 묻는다 —
@@ -205,12 +214,31 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     flushText(key);
     subagents.delete(key);
     showRunning();
-    emit(`  ${ui.dim("⎿")} ${ui.dim(`${done.label} 끝남 · 도구 ${done.tools}회 · ${elapsed(Date.now() - done.startedAt)}`)}`);
+    recordAgentEnd(turn, key, done.tools);
+    emit(`  ${ui.dim("⎿")} ${ui.dim(`${done.label} 끝남 · 도구 ${done.tools}회 · ${elapsed(Date.now() - done.startedAt)}`)}`, key);
   };
   const NEWLINE = String.fromCharCode(10);
 
-  /** @param {string} text */
-  const emit = (text) => {
+  /*
+   * 이 턴의 기록.
+   *
+   * 화면이 흘러가 버리면 되짚을 수 없어서 남긴다 — 서브에이전트 블록은 특히 그렇다.
+   * 백그라운드 작업은 화면에 안 찍고 여기에만 담긴다.
+   */
+  const turn = openTurn({ title: title ?? String(prompt.split(NEWLINE)[0] ?? ""), background });
+
+  /**
+   * 한 줄 내보낸다.
+   *
+   * **찍는 것과 남기는 것을 한 자리에서** 한다. 두 곳으로 나누면 한쪽만 고쳐져
+   * 화면과 기록이 갈라지고, 그러면 되짚기가 "봤던 것"을 못 보여 준다.
+   *
+   * @param {string} text
+   * @param {string} [owner]  서브에이전트가 낸 줄이면 그 Task 호출 id
+   */
+  const emit = (text, owner) => {
+    recordLine(turn, text, owner);
+    if (background) return;
     activity.suspend();
     process.stdout.write(`${text}\n`);
     activity.resume();
@@ -248,7 +276,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    */
   const writeText = (line, parentId) => {
     // 서브에이전트가 한 말은 들여서 흐리게 — 부모가 한 말과 섞이면 누가 한 말인지 모른다.
-    if (parentId) return emit(`${ui.dim("│")} ${ui.dim(line)}`);
+    if (parentId) return emit(`${ui.dim("│")} ${ui.dim(line)}`, parentId);
     /*
      * 본문은 마크다운으로 온다. 그대로 흘리면 `**강조**` 가 기호째 보인다(실측).
      * 두 칸 들여쓰는 것은 도구 기록(● 줄)과 말을 가르기 위해서다.
@@ -323,7 +351,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
           subagents.set(id, { label, startedAt: Date.now(), tools: 0 });
           activity.set({ tool: "" });
           showRunning();
-          emit(`${ui.cyan("●")} ${ui.bold(`Task(${label})`)}`);
+          recordAgentStart(turn, id, label);
+          emit(`${ui.cyan("●")} ${ui.bold(`Task(${label})`)}`, id);
           continue;
         }
 
@@ -358,7 +387,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
            */
           if (/Async agent launched/i.test(String(event.result ?? ""))) {
             done.async = true;
-            emit(`  ${ui.dim("⎿")} ${ui.dim("백그라운드에서 실행 중")}`);
+            emit(`  ${ui.dim("⎿")} ${ui.dim("백그라운드에서 실행 중")}`, key);
             continue;
           }
           // 동기로 끝난 경우 — 무엇을 얼마나 했는지 한 줄로 닫는다.
@@ -388,6 +417,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
             width: process.stdout.columns ?? 100,
             ui,
           }).join("\n"),
+          call?.parentId ?? event.parentId,
         );
         /*
          * 도구 실패 하나를 실행 전체의 실패로 보지 않는다.
@@ -447,6 +477,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
       );
     }
     pending.clear();
+    // 기록을 닫아 둔다 — 안 닫으면 되짚기 화면에서 영영 "도는 중"으로 보인다.
+    closeTurn(turn, toolErrors > 0 ? "failed" : "done");
     clearInterval(queueWatch);
     activity.stop();
     process.off("SIGINT", onSigint);

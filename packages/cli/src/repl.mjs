@@ -26,6 +26,9 @@ import { attachAutocomplete } from "./autocomplete.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { cmdIndex, runSkill } from "./commands.mjs";
+import { allTasks, runningCount, startTask, stopAllTasks, stopTask } from "./tasks.mjs";
+import { openViewer } from "./viewer.mjs";
+import { elapsed } from "./activity.mjs";
 import { renderStatus } from "./status.mjs";
 import { estimateTokens } from "../../core/src/index.mjs";
 import { createNaviPersona } from "./persona.mjs";
@@ -102,7 +105,17 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
    */
   const applyPrompt = () => {
     const mode = modeOf(sessionMode());
-    rl.setPrompt(mode.id === DEFAULT_MODE ? PROMPT : `${ui.cyan("AX-NAVI")} ${ui.yellow(`(${mode.label})`)} ${ui.dim(">")} `);
+    const head = mode.id === DEFAULT_MODE
+      ? ui.cyan("AX-NAVI")
+      : `${ui.cyan("AX-NAVI")} ${ui.yellow(`(${mode.label})`)}`;
+    /*
+     * 백그라운드로 도는 작업 수를 프롬프트에 단다.
+     *
+     * 화면에 안 찍기로 했으니 이 표시가 유일한 단서다. 없으면 띄워 놓고 잊어버리고,
+     * 끝났는지 물어볼 자리도 없다.
+     */
+    const bg = runningCount();
+    rl.setPrompt(`${head}${bg ? ` ${ui.dim(`[⠿ ${bg}]`)}` : ""} ${ui.dim(">")} `);
   };
   applyPrompt();
 
@@ -432,6 +445,49 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     return live;
   };
 
+  /**
+   * 백그라운드로 한 건 띄운다.
+   *
+   * **자기 대화를 준다.** 지금 대화에 얹으면 안 된다 — 위임 경로는 claude 세션을
+   * `--resume <id>` 로 이어 붙이는데, 같은 세션에 두 턴을 동시에 태우면 둘째가
+   * 낡은 바탕에서 출발하고 끝난 뒤 세션 id 를 서로 덮어써 대화가 갈라진다.
+   *
+   * 화면에도 안 찍는다. 전경 턴과 터미널 바닥을 두고 다투면 둘 다 못 읽는 화면이 된다.
+   * 진행은 프롬프트 옆 개수로, 내용은 /log 로 본다.
+   *
+   * @param {string} request
+   * @returns {import("./tasks.mjs").BackgroundTask}
+   */
+  const startBackground = (request) => {
+    const agent = route(request);
+    return startTask({
+      title: request.length > 48 ? `${request.slice(0, 47)}…` : request,
+      run: (signal) => executeAgent({
+        root: paths.root,
+        ...(agent === DEFAULT_AGENT ? { agent: navi } : { agentName: agent }),
+        prompt: request,
+        conversation: { turns: [] },
+        onCost: (usd) => { sessionCost += usd; },
+        background: true,
+        title: request,
+        signal,
+      }),
+      onDone: (task) => {
+        /*
+         * 끝났음을 그 자리에서 알린다. 프롬프트 위에 한 줄 끼워 넣고 프롬프트를 다시 그린다 —
+         * 안 그리면 사용자가 치던 줄이 알림에 먹혀 어디까지 썼는지 사라진다.
+         */
+        const mark = task.status === "done" ? ui.green("●") : ui.red("●");
+        const took = elapsed((task.endedAt ?? Date.now()) - task.startedAt);
+        process.stdout.write(
+          `${NL}  ${mark} ${ui.dim(`백그라운드 #${task.id} 끝남 · ${took} — /log 로 확인`)}${NL}`,
+        );
+        applyPrompt();
+        rl.prompt(true);
+      },
+    });
+  };
+
   /** 한 턴이 끝날 때마다 저장한다 — 마지막에 한 번 저장하면 죽는 순간 전부 잃는다. */
   const persist = async () => {
     if (!thread) return;
@@ -473,6 +529,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
           paths, line, commands, skillByName,
           onReset: () => { thread = null; },
           onModeChange: applyPrompt,
+          onBackground: startBackground,
           onResume: (record) => {
             thread = {
               id: record.id,
@@ -579,6 +636,14 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
   }
 
   menu?.dispose();
+  /*
+   * 남은 백그라운드 작업을 끊는다.
+   * 안 끊으면 claude 자식 프로세스가 살아 있어 CLI 가 안 끝난다 — 화면은 나갔는데
+   * 셸이 안 돌아오는 상태가 된다.
+   */
+  const left = runningCount();
+  if (left) process.stdout.write(`  ${ui.dim(`백그라운드 ${left}건을 멈춘다.`)}${NL}`);
+  stopAllTasks();
   rl.close();
   return code;
 }
@@ -649,6 +714,7 @@ function route(input) {
  * @param {import("@ax-navi/core").ProjectPaths} args.paths
  * @param {string} args.line
  * @param {import("./completion.mjs").SlashCommand[]} args.commands
+ * @param {(request: string) => import("./tasks.mjs").BackgroundTask} [args.onBackground]  백그라운드로 띄운다
  * @param {Map<string, { name: string }>} args.skillByName
  * @param {() => void} [args.onReset]
  * @param {(record: import("@ax-navi/core").SessionRecord) => void} [args.onResume]
@@ -656,7 +722,7 @@ function route(input) {
  * @param {() => ({ id: string, agent: string, turns: number, sessionId?: string } | null)} [args.onContext]
  * @returns {Promise<number>}
  */
-async function handleSlash({ paths, line, commands, skillByName, onReset, onResume, onModeChange, onContext }) {
+async function handleSlash({ paths, line, commands, skillByName, onReset, onResume, onModeChange, onContext, onBackground }) {
   const spaceAt = line.indexOf(" ");
   const cmd = spaceAt === -1 ? line.slice(1) : line.slice(1, spaceAt);
   const argText = spaceAt === -1 ? "" : line.slice(spaceAt + 1).trim();
@@ -800,6 +866,69 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
           "",
         ].join("\n"),
       );
+      return 0;
+    }
+
+    case "bg": {
+      /*
+       * 백그라운드로 돌린다.
+       *
+       * 화면에는 찍지 않는다 — 전경 턴과 같은 터미널 바닥을 두고 다투면 둘 다 못 읽는
+       * 화면이 된다. 진행은 프롬프트 옆 개수로, 내용은 /log 로 본다.
+       */
+      if (!argText) {
+        process.stderr.write(`  ${ui.yellow("무엇을 돌릴지 적어라")} ${ui.dim("— /bg 결제 모듈 전체 훑어줘")}${NL}`);
+        return 2;
+      }
+      if (!onBackground) return 2;
+      const task = onBackground(argText);
+      onModeChange?.();
+      process.stdout.write(
+        `  ${ui.green("백그라운드")} ${ui.dim(`#${task.id} — ${task.title}`)}${NL}` +
+          `  ${ui.dim("도는 동안 계속 대화해도 된다. /tasks 로 상태, /log 로 내용.")}${NL}`,
+      );
+      return 0;
+    }
+
+    case "tasks": {
+      if (rest[0] === "stop") {
+        const id = Number(rest[1]);
+        const stopped = Number.isFinite(id) && stopTask(id);
+        process.stdout.write(
+          stopped
+            ? `  ${ui.green("멈췄다")} ${ui.dim(`#${id}`)}${NL}`
+            : `  ${ui.yellow("그 번호로 도는 작업이 없다")} ${ui.dim(`— ${rest[1] ?? ""}`)}${NL}`,
+        );
+        return stopped ? 0 : 2;
+      }
+      const list = allTasks();
+      if (!list.length) {
+        process.stdout.write(`  ${ui.dim("백그라운드 작업이 없다. /bg <요청> 으로 띄운다.")}${NL}`);
+        return 0;
+      }
+      process.stdout.write("\n");
+      for (const t of list) {
+        const mark = t.status === "running" ? ui.yellow("◍") : t.status === "done" ? ui.green("●") : ui.red("●");
+        const took = elapsed((t.endedAt ?? Date.now()) - t.startedAt);
+        process.stdout.write(`  ${mark} ${ui.dim(`#${t.id}`)} ${t.title}  ${ui.dim(took)}${NL}`);
+      }
+      process.stdout.write(`\n  ${ui.dim("내용은 /log · 멈추려면 /tasks stop <번호>")}${NL}`);
+      return 0;
+    }
+
+    case "log": {
+      /*
+       * 지나간 작업을 되짚는다.
+       *
+       * 흘러가는 기록 위에서 제자리 펼치기는 불가능하다 — 그 아래 줄을 전부 다시
+       * 그려야 하는데 스크롤백은 우리 것이 아니다. 대신 딴 장(대체 화면 버퍼)을
+       * 펴고, 나올 때 원래 기록을 그대로 되돌린다.
+       */
+      if (!process.stdout.isTTY) {
+        process.stderr.write(`  ${ui.yellow("터미널에서만 쓸 수 있다")}${NL}`);
+        return 2;
+      }
+      await openViewer({ input: process.stdin, output: process.stdout, ui });
       return 0;
     }
 
