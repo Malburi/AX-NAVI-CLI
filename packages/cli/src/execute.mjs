@@ -10,7 +10,7 @@ import {
   resolveProjectPaths,
   runAgent,
   ToolGateway,
-} from "@ax-navi/core";
+} from "../../core/src/index.mjs";
 import { selectProvider } from "./provider.mjs";
 import { startMcpBridge } from "./mcp/bridge.mjs";
 import { createActivity, elapsed } from "./activity.mjs";

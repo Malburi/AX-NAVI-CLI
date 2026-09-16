@@ -5,7 +5,7 @@
  * call_graph.json 36MB다. "호출자 5개만 알고 싶다"에 143MB를 여는 것은 성립하지 않는다.
  * COMMANDS는 상한이 걸린 순수 함수 테이블이라 그대로 in-process로 부른다.
  */
-import { COMMANDS } from "@ax-navi/indexer";
+import { COMMANDS } from "../../../../indexer/index.mjs";
 
 /** @typedef {import("../../../types/tools.js").ToolHandler} ToolHandler */
 

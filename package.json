@@ -1,22 +1,34 @@
 {
-  "name": "ax-navi-workspace",
-  "version": "0.0.0",
-  "private": true,
+  "name": "axnavi",
+  "version": "0.1.0-alpha.1",
   "type": "module",
-  "description": "AX-NAVI CLI v2 monorepo. Claude Code 플러그인(.claude-plugin/, agents/, skills/)과 같은 저장소에 공존한다.",
+  "description": "AX-NAVI CLI — ITO/SI 레거시 코드베이스를 위한 AI 개발 내비게이터. 에이전트 19종과 워크플로우 스킬 24종을 터미널에서 부른다.",
   "license": "MIT",
-  "engines": {
-    "node": ">=18.18"
-  },
-  "workspaces": [
-    "packages/*"
+  "homepage": "https://github.com/Malburi/AX-NAVI-CLI",
+  "repository": { "type": "git", "url": "git+https://github.com/Malburi/AX-NAVI-CLI.git" },
+  "bugs": { "url": "https://github.com/Malburi/AX-NAVI-CLI/issues" },
+  "keywords": ["claude", "cli", "legacy", "code-analysis", "ito", "si", "agents", "korean"],
+  "engines": { "node": ">=18.18" },
+  "bin": { "axnavi": "packages/cli/src/bin.mjs" },
+  "//files": "배포본에 들어갈 것. agents/·skills/ 는 CLI 가 자기 설치 경로에서 읽으므로 반드시 포함한다.",
+  "files": [
+    "packages/",
+    "agents/",
+    "skills/",
+    "docs/index-schema/",
+    "README.md"
   ],
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0"
+  },
+  "workspaces": ["packages/*"],
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:harness": "node agents/lib/tests/run.js",
     "test:cli": "node --test packages/core/test/",
     "test": "npm run test:harness && npm run test:cli",
-    "validate:plugin": "claude plugin validate . --strict"
+    "validate:plugin": "claude plugin validate . --strict",
+    "prepublishOnly": "npm test && npm run typecheck"
   },
   "devDependencies": {
     "@types/node": "^22.20.2",

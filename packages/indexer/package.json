@@ -4,7 +4,12 @@
   "private": true,
   "type": "module",
   "description": "결정론적 인덱서 파사드. agents/lib/*.mjs를 복사하지 않고 re-export만 한다 (계획 D3).",
-  "exports": { ".": { "types": "./index.d.ts", "default": "./index.mjs" } },
-  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.mts",
+      "default": "./index.mjs"
+    }
+  },
+  "types": "./index.d.mts",
   "main": "./index.mjs"
 }

@@ -16,7 +16,7 @@ import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
 
 const NEWLINE = String.fromCharCode(10);
-import { COMMANDS } from "@ax-navi/indexer";
+import { COMMANDS } from "../../../indexer/index.mjs";
 
 const ELICIT_ADDR = process.env["AXNAVI_ELICIT_ADDR"] ?? "";
 const PROJECT_ROOT = process.env["AXNAVI_PROJECT_ROOT"] ?? process.cwd();

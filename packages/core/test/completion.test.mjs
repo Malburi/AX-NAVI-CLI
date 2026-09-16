@@ -6,6 +6,7 @@
  * 실제 skills/ 를 읽어 만들기 때문에 스킬이 추가·삭제되면 여기서 먼저 드러난다.
  */
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -165,4 +166,30 @@ test("길이 상한은 자리마다 다르게 준다 — 메뉴는 짧게, 실�
   const long = "가".repeat(200);
   assert.equal(firstSentence(long).length, 47, "메뉴 기본 상한(46자+말줄임)이 아니다");
   assert.equal(firstSentence(long, 120).length, 121);
+});
+
+/* ---------- 배포본 무결성 ---------- */
+
+const manifest = JSON.parse(readFileSync(new URL("../../../package.json", import.meta.url), "utf8"));
+
+/*
+ * 배포된 도구에서 --version 이 거짓말을 하면 버그 제보를 받아도 어느 번호인지 모른다.
+ * 실측으로 그랬다 — 배포본은 alpha.1 인데 --version 은 alpha.0 을 말했다.
+ */
+test("--version 이 package.json 과 같은 곳에서 온다", async () => {
+  const bin = readFileSync(fileURLToPath(new URL("../../cli/src/bin.mjs", import.meta.url)), "utf8");
+  assert.ok(!/const VERSION = "\d/.test(bin), "버전이 소스에 박혀 있다 — package.json 과 갈라진다");
+  assert.match(bin, /readVersion\(\)/);
+});
+
+test("배포본에 에이전트·스킬·인덱스 스키마가 들어간다", () => {
+  // CLI 는 자기 설치 경로에서 이것들을 읽는다. 빠지면 설치본이 아무것도 못 한다.
+  for (const need of ["packages/", "agents/", "skills/", "docs/index-schema/"]) {
+    assert.ok(manifest.files.includes(need), `files 에 ${need} 가 없다`);
+  }
+});
+
+test("전역 설치로 부를 이름이 정해져 있다", () => {
+  assert.equal(manifest.bin?.axnavi, "packages/cli/src/bin.mjs");
+  assert.ok(!manifest.private, "private 면 게시할 수 없다");
 });

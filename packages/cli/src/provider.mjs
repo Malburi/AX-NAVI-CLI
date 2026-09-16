@@ -8,8 +8,8 @@
  * 기본값은 "쓸 수 있는 쪽"이다. 키가 있으면 Gateway가 통제하는 경로를 택하고,
  * 없으면 claude CLI로 간다. 둘 다 없으면 무엇이 없는지 구체적으로 말하고 멈춘다.
  */
-import { AnthropicProvider } from "@ax-navi/provider-anthropic";
-import { ClaudeCliProvider, probeClaudeCli } from "@ax-navi/provider-claude-cli";
+import { AnthropicProvider } from "../../provider-anthropic/src/index.mjs";
+import { ClaudeCliProvider, probeClaudeCli } from "../../provider-claude-cli/src/index.mjs";
 import { ui } from "./runtime.mjs";
 
 /** @typedef {"anthropic" | "claude-cli" | "auto"} ProviderName */

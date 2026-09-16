@@ -5,7 +5,8 @@
  * 명령 하나가 곧 사용자와의 계약이므로, 알 수 없는 인자를 조용히 무시하지 않고 멈춘다.
  * 기존 agents/lib/*.mjs의 parseArgs가 하던 방식과 같다.
  */
-import { inspectProject, resolveProjectPaths } from "@ax-navi/core";
+import { readFileSync } from "node:fs";
+import { inspectProject, resolveProjectPaths } from "../../core/src/index.mjs";
 import { cmdAgent, cmdDoctor, cmdIndex, cmdInit, cmdSkill } from "./commands.mjs";
 import { cmdKeys } from "./keys.mjs";
 import { executeAgent } from "./execute.mjs";
@@ -13,7 +14,14 @@ import { startRepl } from "./repl.mjs";
 import { ui } from "./runtime.mjs";
 import { renderBanner } from "./banner.mjs";
 
-const VERSION = "0.1.0-alpha.0";
+/*
+ * 버전은 package.json 이 유일한 출처다.
+ *
+ * 소스에 적어 두었더니 npm 이 설치한 번호와 갈라졌다(실측: 배포본 0.1.0-alpha.1 인데
+ * --version 은 alpha.0 을 말했다). 버그 제보를 받을 때 어느 번호인지 몰라지는 것은
+ * 배포된 도구에서 치명적이다.
+ */
+const VERSION = readVersion();
 
 const HELP = `${renderBanner(VERSION)}
 
@@ -149,3 +157,16 @@ main()
     process.stderr.write(`${ui.red("실패")}: ${error?.stack || error}\n`);
     process.exitCode = 1;
   });
+
+/**
+ * @returns {string}
+ */
+function readVersion() {
+  try {
+    const manifest = new URL("../../../package.json", import.meta.url);
+    return JSON.parse(readFileSync(manifest, "utf8")).version ?? "0.0.0";
+  } catch {
+    // 버전을 몷 읽었다고 실행을 막을 이유는 없다. 모른다고 말한다.
+    return "(버전 미상)";
+  }
+}

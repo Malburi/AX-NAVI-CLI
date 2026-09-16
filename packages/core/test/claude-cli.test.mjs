@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { flattenToolContent, toDisallowedTools, translateEvent } from "@ax-navi/provider-claude-cli";
+import { flattenToolContent, toDisallowedTools, translateEvent } from "../../provider-claude-cli/src/index.mjs";
 
 /** @param {string[]} names */
 const tools = (names) =>

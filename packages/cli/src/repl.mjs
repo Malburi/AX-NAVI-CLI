@@ -7,7 +7,7 @@
  */
 import { createInterface } from "node:readline";
 import { basename } from "node:path";
-import { indexStaleness } from "@ax-navi/indexer";
+import { indexStaleness } from "../../indexer/index.mjs";
 import {
   latestSession,
   listSessions,
@@ -18,7 +18,7 @@ import {
   newSessionId,
   saveSession,
   toTitle,
-} from "@ax-navi/core";
+} from "../../core/src/index.mjs";
 import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, setPanelMode, takeFolded, sessionMode, sessionModel, setLineReader, setSessionMode, setSessionModel, setTypingProbe, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
 import { buildCommands, menuItems, renderCommandMenu } from "./completion.mjs";
@@ -27,7 +27,7 @@ import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { cmdIndex, runSkill } from "./commands.mjs";
 import { renderStatus } from "./status.mjs";
-import { estimateTokens } from "@ax-navi/core";
+import { estimateTokens } from "../../core/src/index.mjs";
 import { createNaviPersona } from "./persona.mjs";
 import { createTypeahead } from "./typeahead.mjs";
 import { renderReplay, replayFrame } from "./replay.mjs";

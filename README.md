@@ -76,16 +76,16 @@ LLM이 매 세션 읽어서 따라가게 하고 있었습니다.
 ### 설치하기
 
 ```bash
+npm i -g axnavi
+```
+
+소스에서 쓰려면:
+
+```bash
 git clone https://github.com/Malburi/AX-NAVI-CLI.git
 cd AX-NAVI-CLI
 npm install
-npm link -w packages/cli     # axnavi 를 전역 명령으로 등록
-```
-
-`npm link` 를 쓰지 않으려면 직접 실행해도 됩니다.
-
-```bash
-node /path/to/AX-NAVI-CLI/packages/cli/src/bin.mjs --help
+npm link            # axnavi 를 전역 명령으로 등록
 ```
 
 외부 런타임 의존성은 **`@anthropic-ai/sdk` 하나뿐**입니다. 구독 인증 경로만 쓴다면

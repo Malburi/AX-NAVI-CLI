@@ -13,14 +13,14 @@ import {
   indexStaleness,
   INDEXER_VERSION,
   resolveIndexDir,
-} from "@ax-navi/indexer";
+} from "../../indexer/index.mjs";
 import {
   inspectProject,
   loadAllAgents,
   loadAllSkills,
   resolveSkill,
   resolveProjectPaths,
-} from "@ax-navi/core";
+} from "../../core/src/index.mjs";
 import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";

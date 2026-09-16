@@ -1,5 +1,9 @@
 /*
- * 손으로 쓴 타입 선언. 원본 `agents/lib/*.mjs`는 순수 JS이고 무수정으로 둔다.
+ * 손으로 쓴 타입 선언.
+ *
+ * 확장자가 .d.mts 인 이유 — 이웃 index.mjs 를 **상대경로로** 불러도 tsc 가 이 선언을
+ * 집게 하기 위해서다. .d.ts 였을 때는 패키지 이름(@ax-navi/indexer)으로 불러야만 잡혔고,
+ * 그러지 않으면 194KB 짜리 agents/lib 원본을 그대로 타입 검사해 에러가 쌏아졌다. 원본 `agents/lib/*.mjs`는 순수 JS이고 무수정으로 둔다.
  * 여기 적힌 형태는 build-index.mjs / query-index.mjs의 실제 반환값에서 확인한 것이다.
  */
 
