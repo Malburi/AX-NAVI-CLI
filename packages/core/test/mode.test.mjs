@@ -92,10 +92,15 @@ test("기본 모드는 아무것도 바꾸지 않는다", () => {
   assert.equal(applyMode(WRITER, DEFAULT_MODE), WRITER);
 });
 
-test("계획 모드는 Provider 에게도 알린다 — 도구를 빼는 것만으로는 계획이 안 나온다", () => {
-  // claude CLI 는 이걸 받아 --permission-mode plan 을 넣는다. 그쪽은 막기만 하지 않고
-  // 계획을 내놓고 승인을 기다린다(실측).
-  assert.equal(applyMode(WRITER, "plan").planOnly, true);
-  assert.equal(applyMode(WRITER, "vibe").planOnly, undefined);
-  assert.equal(applyMode(WRITER, DEFAULT_MODE).planOnly, undefined);
+/*
+ * 한때 claude 의 --permission-mode plan 을 같이 썼다. 그쪽은 계획까지 내놓아 더 나아
+ * 보였는데, MCP 도구를 함께 막아 인덱스 질의가 죽는다(실측).
+ * 그래서 계획 모드는 우리 쪽에서만 강제한다.
+ */
+test("계획 모드는 읽기 도구를 살려 둔다 — 근거 없는 계획은 계획이 아니다", () => {
+  const registry = createDefaultRegistry();
+  const tools = registry.definitionsFor(applyMode(WRITER, "plan").role).map((t) => t.name);
+  for (const need of ["Read", "Grep", "Glob", "Bash", "QueryIndex"]) {
+    assert.ok(tools.includes(need), `계획 모드에서 ${need} 까지 막혔다`);
+  }
 });

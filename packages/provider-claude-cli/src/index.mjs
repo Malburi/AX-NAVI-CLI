@@ -345,12 +345,6 @@ export class ClaudeCliProvider {
        * 사용자가 개인적으로 붙여 둔 MCP 서버는 우리 도구 계약 밖이다.
        * --strict-mcp-config 로 그것들을 끊고, --mcp-config 로 우리 것만 올린다.
        */
-      /*
-       * 계획만 세우라는 요청은 claude 자기 permission-mode 로 넘긴다.
-       * 우리가 도구를 빼는 것보다 낫다 — 그쪽은 막기만 하는 게 아니라 계획을 내놓고
-       * 승인을 기다린다(실측: 파일을 안 고치고 "승인해 주시면 바로 적용하겠습니다").
-       */
-      ...(spec.planOnly ? ["--permission-mode", "plan"] : []),
       "--strict-mcp-config",
       ...(this.options.mcpConfigPath ? ["--mcp-config", this.options.mcpConfigPath] : []),
       // 호스트에 설치된 플러그인을 끌다 — 우리가 쓰는 것은 CLI 자기 설치 경로의 사본이다.

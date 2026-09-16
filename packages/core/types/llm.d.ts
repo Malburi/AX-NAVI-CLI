@@ -45,13 +45,6 @@ export interface SessionSpec {
   /** 로그·세션 기록용 라벨 (예: "feature-finder"). */
   readonly label?: string;
   /*
-   * 계획만 세우고 실행하지 않는다.
-   *
-   * **무엇**만 정하고 **어떻게**는 Provider 가 정한다. claude CLI 는 자기 permission-mode
-   * 를 쓰고, 직접 루프를 도는 쪽은 쓰기 도구를 뺀다. Core 가 그 수단을 알 필요는 없다.
-   */
-  readonly planOnly?: boolean;
-  /*
    * 이 실행이 서브에이전트를 띄워도 되는가.
    *
    * 오케스트레이터 스킬(harness-init 등)은 여러 전문 에이전트를 순서대로 부르는 것이

@@ -86,16 +86,20 @@ const PLAN_POLICY = [
 export function applyMode(agent, modeId) {
   if (modeId === "plan") {
     /*
-     * 두 겹으로 건다.
+     * 쓰기 도구를 뺀다. 그게 전부다.
      *
-     * planOnly 는 Provider 에게 넘긴다 — claude CLI 는 자기 permission-mode plan 을 써서
-     * 막기만 하는 게 아니라 계획을 내놓고 승인을 기다린다.
-     * allowMutations 는 우리 경로의 보험이다 — 직접 루프를 도는 Provider 에는 그 수단이 없다.
+     * 한때 claude 의 --permission-mode plan 을 같이 썼다. 그쪽은 계획까지 내놓아 더
+     * 나아 보였는데, **MCP 도구를 함께 막는다.** --allowedTools 에 명시해도 그렇다.
+     *
+     *   plan 모드 : permission_denials = [mcp__axnavi__QueryIndex]
+     *   기본 모드 : permission_denials = []
+     *
+     * 그러면 인덱스 질의가 막혀 근거 없는 계획이 나온다. 계획 모드의 값은
+     * 근거에 있으므로 쓰지 않는다. 계획을 내놓으라는 것은 지침으로 말한다.
      */
     return {
       ...agent,
       systemPrompt: `${agent.systemPrompt}\n\n${PLAN_POLICY}`,
-      planOnly: true,
       role: { ...agent.role, allowMutations: false },
     };
   }
