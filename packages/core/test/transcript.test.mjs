@@ -341,3 +341,17 @@ test("숫자를 이어 붙이지 않는다 — total·returned·truncated 가 �
 test("건질 게 없으면 손대지 않는다", () => {
   assert.equal(summarizeResult("QueryIndex", '{ "query": { "q"'), null);
 });
+
+test("질문은 기록에 다시 찍지 않는다 — 선택기가 이미 남겼다", () => {
+  const lines = render({ tool: "mcp__axnavi__AskUserQuestion", input: { question: "어떤 색?" }, result: "파랑" });
+  assert.deepEqual(lines, [], `질문이 두 번 나온다: ${JSON.stringify(lines)}`);
+});
+
+test("질문이 실패하면 보여 준다 — 답을 못 받았는데 조용하면 안 된다", () => {
+  const lines = render({
+    tool: "mcp__axnavi__AskUserQuestion", input: { question: "어떤 색?" },
+    result: "질문 통로가 끊겼다", isError: true,
+  });
+  assert.ok(lines.length > 0);
+  assert.match(lines.join("\n"), /끊겼다/);
+});

@@ -29,7 +29,7 @@ const NEWLINE = String.fromCharCode(10);
  * 찍으면 같은 말을 두 번 하는 것이고, 그 문구가 모델에게 주는 지시면 사용자에게는
  * 엉뚱한 소리로 보인다(실측: "설명을 덧붙이지 말고 여기서 끝내라" 가 화면에 떴다).
  */
-const HEADER_ONLY = new Set(["AskUserQuestion", "Skill"]);
+const HEADER_ONLY = new Set(["Skill"]);
 
 const PRIMARY = {
   Bash: ["command"],
@@ -222,8 +222,15 @@ export function renderCall({ tool, input, result, isError, pending, root, depth 
 
   const tint = isError ? ui.red : ui.dim;
 
-  // 실패는 보여 준다 — 접수된 줄 알고 지나가면 무엇이 안 돌았는지 모른다.
-  if (!isError && HEADER_ONLY.has(toolName(tool))) return lines;
+  /*
+   * 질문은 선택기가 이미 질문과 답을 기록으로 남겼다. 여기서 또 찍으면 같은 질문이
+   * 두 번 나온다(실측). 스킬은 그 실행이 바로 이어지므로 머리말만 남긴다.
+   * 실패는 둘 다 보여 준다 — 접수된 줄 알고 지나가면 무엇이 안 돌았는지 모른다.
+   */
+  if (!isError) {
+    if (toolName(tool) === "AskUserQuestion") return [];
+    if (HEADER_ONLY.has(toolName(tool))) return lines;
+  }
 
   /*
    * 결과는 항상 ⎿ 줄로 내린다.
