@@ -27,6 +27,7 @@ import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { firstSentence } from "./completion.mjs";
 import { renderSkillHeader } from "./transcript.mjs";
+import { compareVersions, readVersion, resolveLatestTag, runUpgrade } from "./upgrade.mjs";
 
 const NEWLINE = String.fromCharCode(10);
 
@@ -483,4 +484,43 @@ async function runOrchestratorSkill(root, skill, prompt, providerName, ctx = {})
     title: `/${skill.name} ${prompt}`.trim(),
     ...(providerName ? { providerName } : {}),
   });
+}
+
+/* ---------- upgrade ---------- */
+
+/**
+ * 새 판으로 올린다.
+ *
+ * 플러그인은 마켓플레이스가 갱신해 줬지만 npm 전역 설치는 그런 것이 없다.
+ * 알려 주지 않으면 몇 달 전 판을 계속 쓰면서 이미 고친 버그를 다시 겪는다.
+ *
+ * 인자로 태그를 주면 그것으로, 안 주면 최신으로 간다.
+ *
+ * @param {string} [tag]
+ * @returns {Promise<number>}
+ */
+export async function cmdUpgrade(tag) {
+  const say = (/** @type {string} */ line) => process.stdout.write(`  ${line}${NEWLINE}`);
+  const current = readVersion();
+
+  if (tag) return runUpgrade(tag.startsWith("v") ? tag : `v${tag}`, say);
+
+  const latest = await resolveLatestTag();
+  if (!latest) {
+    /*
+     * 못 물어봤다고 멈추지 않는다. 폐쇄망에서는 확인 자체가 안 되는 것이 정상이고,
+     * 그때도 손으로 올릴 길은 알려 줘야 한다.
+     */
+    process.stderr.write(
+      `  ${ui.yellow("최신 판을 확인하지 못했다")} ${ui.dim("— 망이 막혀 있을 수 있다.")}${NEWLINE}` +
+        `  ${ui.dim(`태그를 직접 지정할 수 있다:  axnavi upgrade v0.1.0-alpha.5`)}${NEWLINE}`,
+    );
+    return 1;
+  }
+  if (compareVersions(latest, current) <= 0) {
+    say(`${ui.green("이미 최신")} ${ui.dim(`— ${current}`)}`);
+    return 0;
+  }
+  say(`${ui.cyan(current)} ${ui.dim("→")} ${ui.cyan(latest)}`);
+  return runUpgrade(latest, say);
 }

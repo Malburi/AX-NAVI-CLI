@@ -11,6 +11,8 @@ import { cmdAgent, cmdDoctor, cmdIndex, cmdInit, cmdSkill } from "./commands.mjs
 import { cmdKeys } from "./keys.mjs";
 import { executeAgent } from "./execute.mjs";
 import { startRepl } from "./repl.mjs";
+import { cmdUpgrade } from "./commands.mjs";
+import { readVersion } from "./upgrade.mjs";
 import { ui } from "./runtime.mjs";
 import { renderBanner } from "./banner.mjs";
 
@@ -119,6 +121,8 @@ async function main() {
       return cmdKeys();
     case "doctor":
       return cmdDoctor(args.root);
+    case "upgrade":
+      return cmdUpgrade(rest[0]);
     case "index":
       return cmdIndex(args.root, rest[0] ?? "status", {
         ...(args.tier ? { tier: args.tier } : {}),
@@ -158,15 +162,4 @@ main()
     process.exitCode = 1;
   });
 
-/**
- * @returns {string}
- */
-function readVersion() {
-  try {
-    const manifest = new URL("../../../package.json", import.meta.url);
-    return JSON.parse(readFileSync(manifest, "utf8")).version ?? "0.0.0";
-  } catch {
-    // 버전을 몷 읽었다고 실행을 막을 이유는 없다. 모른다고 말한다.
-    return "(버전 미상)";
-  }
-}
+

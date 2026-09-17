@@ -15,7 +15,7 @@
   ═══╧═══╧═══   Enterprise AI Development Navigator
 ```
 
-> **alpha (v0.1.0-alpha.5).** 실제 저장소에서 매일 쓰면서 다듬는 중입니다.
+> **alpha (v0.1.0-alpha.6).** 실제 저장소에서 매일 쓰면서 다듬는 중입니다.
 > 아래 [지금 되는 것 / 아직 안 되는 것](#지금-되는-것--아직-안-되는-것)을 먼저 읽어 주세요.
 
 ---
@@ -78,7 +78,7 @@ LLM이 매 세션 읽어서 따라가게 하고 있었습니다.
 GitHub 태그에서 바로 받습니다. npm 계정이 필요 없습니다.
 
 ```bash
-npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.5
+npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.6
 ```
 
 > **`npm i -g github:Malburi/AX-NAVI-CLI` 는 쓰지 마세요.** 그쪽은 npm 이 `git clone` 을
@@ -88,8 +88,8 @@ npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0
 망이 아예 닫혀 있으면 파일 하나로 옮깁니다.
 
 ```bash
-npm pack                                  # axnavi-0.1.0-alpha.5.tgz 생성
-npm i -g \\공유폴더\axnavi-0.1.0-alpha.5.tgz   # 받는 쪽
+npm pack                                  # axnavi-0.1.0-alpha.6.tgz 생성
+npm i -g \\공유폴더\axnavi-0.1.0-alpha.6.tgz   # 받는 쪽
 ```
 
 소스에서 쓰려면:
@@ -100,6 +100,24 @@ cd AX-NAVI-CLI
 npm install
 npm link            # axnavi 를 전역 명령으로 등록
 ```
+
+### 업그레이드
+
+npm 전역 설치는 스스로 갱신되지 않습니다(플러그인은 마켓플레이스가 해 줬습니다).
+대화형 모드를 띄우면 하루 한 번 새 판이 있는지 보고 한 줄로 알립니다.
+
+```
+  새 판  0.1.0-alpha.4 → v0.1.0-alpha.5 · axnavi upgrade
+```
+
+```bash
+axnavi upgrade                  # 최신 태그로
+axnavi upgrade v0.1.0-alpha.5   # 특정 판으로 (되돌릴 때)
+```
+
+확인은 **시작을 막지 않습니다.** 폐쇄망이라 물어볼 수 없으면 아무 말도 하지 않습니다 —
+그건 오류가 아니니까요. 알리기만 하고 **스스로 올리지는 않습니다.** 전역 설치를 모르는 사이에
+바꾸는 것은 되돌리기 어려운 변경이라, 명령을 보여 주고 실행은 사용자가 정합니다.
 
 **필수 런타임 의존성은 0입니다.** `@anthropic-ai/sdk` 는 선택적 의존이고 API 키 경로에서만
 늦게 적재됩니다 — 구독 인증(`claude` CLI)만 쓴다면 받지 않아도 설치와 실행이 끝납니다.
@@ -475,6 +493,7 @@ axnavi --resume <세션id>         특정 대화를 이어서
 axnavi ask <요청>               한 번 묻고 답받기 (읽기 전용)
 axnavi init                     .axnavi/ 설정 생성
 axnavi doctor                   실행 환경 진단
+axnavi upgrade [태그]            최신 판으로 (태그를 주면 그 판으로)
 
 axnavi index build              결정론적 인덱싱 (LLM·API 키 불필요)
 axnavi index status             인덱스 신선도

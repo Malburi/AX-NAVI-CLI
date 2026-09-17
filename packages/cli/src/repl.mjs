@@ -29,6 +29,7 @@ import { cmdIndex, runSkill } from "./commands.mjs";
 import { allTasks, runningCount, startTask, stopAllTasks, stopTask } from "./tasks.mjs";
 import { openViewer } from "./viewer.mjs";
 import { elapsed } from "./activity.mjs";
+import { checkForUpdate } from "./upgrade.mjs";
 import { renderStatus } from "./status.mjs";
 import { estimateTokens } from "../../core/src/index.mjs";
 import { createNaviPersona } from "./persona.mjs";
@@ -118,6 +119,20 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     rl.setPrompt(`${head}${bg ? ` ${ui.dim(`[⠿ ${bg}]`)}` : ""} ${ui.dim(">")} `);
   };
   applyPrompt();
+
+  /*
+   * 새 판이 나왔는지 본다.
+   *
+   * 플러그인은 마켓플레이스가 갱신해 줬지만 npm 전역 설치는 아무도 안 알려 준다 —
+   * 그러면 몇 달 전 판을 계속 쓰면서 이미 고친 버그를 다시 겪는다.
+   * 시작을 막지 않는다. 늦게 오면 그때 한 줄 끼워 넣고 프롬프트를 다시 그린다.
+   */
+  checkForUpdate(version, (latest) => {
+    process.stdout.write(
+      `${NL}  ${ui.yellow("새 판")} ${ui.dim(`${version} → ${latest} · axnavi upgrade`)}${NL}`,
+    );
+    rl.prompt(true);
+  });
 
   /**
    * 이어서 열 때 지난 대화를 되살린다.
