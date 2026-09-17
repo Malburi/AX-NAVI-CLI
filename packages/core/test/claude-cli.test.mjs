@@ -203,3 +203,38 @@ test("위임할 수 있으면 그 사실을 모델에게 알린다", () => {
   const off = toolBriefing([{ name: "Read" }, { name: "Grep" }], false);
   assert.ok(!/Task/.test(off), "못 쓰는 도구를 있다고 알렸다");
 });
+
+/* ---------- 중단해도 이어붙기 ---------- */
+
+/*
+ * 사용자가 /find 를 59초에 끊고 "계속 해줘" 라고 했더니 앞 맥락이 없다고 답했다.
+ *
+ * 원인은 세션 식별자를 result 이벤트에서만 받았던 것이다. 중단하면 result 가 오지
+ * 않으니 이어 붙일 id 가 없고, 그 대화는 통째로 사라진다. claude 는 맨 첫 메시지부터
+ * session_id 를 주므로 거기서 받는다.
+ */
+test("세션 식별자를 스트림 첫머리에서 받는다 — 중단돼도 이어붙일 수 있어야 한다", () => {
+  const events = translateEvent({
+    type: "system",
+    subtype: "hook_started",
+    session_id: "2aa9797c-7787-4946-acaf-e1db324c4b99",
+  });
+  const session = events.find((e) => e.type === "session");
+  assert.ok(session, "첫머리에서 세션을 못 받았다 — 중단하면 대화가 사라진다");
+  assert.equal(/** @type {any} */ (session).id, "2aa9797c-7787-4946-acaf-e1db324c4b99");
+});
+
+test("assistant 메시지마다 세션을 다시 내보내지는 않는다", () => {
+  /* 매 메시지마다 같은 값을 흘리면 이벤트가 본문보다 많아진다. */
+  const events = translateEvent({
+    type: "assistant",
+    session_id: "s1",
+    message: { content: [{ type: "text", text: "가" }] },
+  });
+  assert.ok(!events.some((e) => e.type === "session"));
+});
+
+test("result 에서도 여전히 받는다 — 첫머리를 놓친 경우의 마지막 기회다", () => {
+  const events = translateEvent({ type: "result", subtype: "success", session_id: "s2", usage: {} });
+  assert.ok(events.some((e) => e.type === "session" && /** @type {any} */ (e).id === "s2"));
+});

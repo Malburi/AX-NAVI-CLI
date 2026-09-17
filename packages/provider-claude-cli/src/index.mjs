@@ -277,6 +277,22 @@ export function translateEvent(msg) {
    */
   const parent = typeof msg.parent_tool_use_id === "string" ? { parentId: msg.parent_tool_use_id } : {};
 
+  /*
+   * 세션 식별자를 **첫머리에서** 받는다.
+   *
+   * 예전에는 result 이벤트에서만 받았다. 그런데 사용자가 턴을 중단하면 result 가
+   * 오지 않는다 — 그러면 그 대화는 이어 붙일 id 가 없어서 통째로 사라진다.
+   * 실측으로 그랬다: /find 를 59초에 끊고 "계속 해줘" 라고 하니 앞 맥락이 없다고 답했다.
+   *
+   * claude 는 맨 첫 메시지(system/hook_started)부터 session_id 를 준다. 그래서 여기서
+   * 받는다. system 과 result 로만 한정하는 것은 assistant 메시지마다 같은 값을 다시
+   * 내보내지 않기 위해서다.
+   */
+  if ((msg.type === "system" || msg.type === "result") && typeof msg.session_id === "string") {
+    out.push({ type: "session", id: msg.session_id });
+  }
+  if (msg.type === "system") return out;
+
   if (msg.type === "assistant" && msg.message?.content) {
     for (const block of msg.message.content) {
       if (block.type === "text" && block.text) out.push({ type: "text_delta", text: block.text, ...parent });
@@ -303,8 +319,6 @@ export function translateEvent(msg) {
   }
 
   if (msg.type === "result") {
-    // 다음 턴에 --resume 으로 이어 붙일 식별자. 이게 있어야 REPL이 대화를 기억한다.
-    if (msg.session_id) out.push({ type: "session", id: msg.session_id });
     const u = msg.usage ?? {};
     out.push({
       type: "usage",

@@ -280,8 +280,10 @@ export async function cmdSkill(root, argv, providerName) {
  * @param {string} name
  * @param {string} prompt
  * @param {import("./provider.mjs").ProviderName} [providerName]
+ * @param {{ conversation?: import("@ax-navi/core").Conversation, onAnswer?: (text: string) => void }} [ctx]
+ *   대화를 이어갈 자리. 주면 이 스킬 실행도 같은 대화에 얹힌다.
  */
-export async function runSkill(root, name, prompt, providerName) {
+export async function runSkill(root, name, prompt, providerName, ctx = {}) {
   if (!existsSync(join(SKILLS_DIR, name, "SKILL.md"))) {
     process.stderr.write(`그런 스킬이 없다: ${name} (axnavi skill list)\n`);
     return 2;
@@ -315,7 +317,7 @@ export async function runSkill(root, name, prompt, providerName) {
    * 그건 ownsAgentLoop Provider(claude CLI 위임)에서만 가능하다.
    */
   if (skill.isOrchestrator) {
-    return runOrchestratorSkill(root, skill, prompt, providerName);
+    return runOrchestratorSkill(root, skill, prompt, providerName, ctx);
   }
 
   const agentName = skill.agents[0];
@@ -373,6 +375,16 @@ export async function runSkill(root, name, prompt, providerName) {
     root,
     agentName,
     prompt: instruction,
+    /*
+     * 스킬 실행도 **같은 대화에 얹는다.**
+     *
+     * 예전에는 한 번 쓰고 버리는 실행이었다. 그래서 /find 로 한참 조사한 뒤
+     * "계속 해줘" 라고 하면 앞의 일이 대화에 없어서 무엇을 이어갈지 모른다고 답했다(실측).
+     * 사용자에게는 한 흐름인데 우리만 둘로 갈라 놓고 있었다.
+     */
+    ...(ctx.conversation ? { conversation: ctx.conversation } : {}),
+    ...(ctx.onAnswer ? { onAnswer: ctx.onAnswer } : {}),
+    title: `/${skill.name} ${prompt}`.trim(),
     ...(providerName ? { providerName } : {}),
   });
 }
@@ -391,9 +403,10 @@ export async function runSkill(root, name, prompt, providerName) {
  * @param {import("@ax-navi/core").SkillDefinition} skill
  * @param {string} prompt
  * @param {import("./provider.mjs").ProviderName} [providerName]
+ * @param {{ conversation?: import("@ax-navi/core").Conversation, onAnswer?: (text: string) => void }} [ctx]
  * @returns {Promise<number>}
  */
-async function runOrchestratorSkill(root, skill, prompt, providerName) {
+async function runOrchestratorSkill(root, skill, prompt, providerName, ctx = {}) {
   const picked = selectProvider({ ...(providerName ? { provider: providerName } : {}), cwd: root });
   if ("error" in picked) {
     process.stderr.write(`${picked.error}\n`);
@@ -464,6 +477,10 @@ async function runOrchestratorSkill(root, skill, prompt, providerName) {
       // 하네스 파일을 만들어야 하므로 쓰기가 필요하다. 이 사실은 화면에 드러난다.
       role: { name: skill.name, allowedTools: null, allowMutations: true },
     },
+    // 오케스트레이터도 같은 대화에 얹는다. 중단하고 "계속 해줘" 가 통해야 한다.
+    ...(ctx.conversation ? { conversation: ctx.conversation } : {}),
+    ...(ctx.onAnswer ? { onAnswer: ctx.onAnswer } : {}),
+    title: `/${skill.name} ${prompt}`.trim(),
     ...(providerName ? { providerName } : {}),
   });
 }

@@ -429,7 +429,20 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
 
   /** @param {string} agentName @param {string} firstLine @returns {Thread} */
   const threadFor = (agentName, firstLine) => {
-    if (!thread || thread.agent !== agentName) {
+    /*
+     * 역할이 바뀌어도 **대화는 끊지 않는다.**
+     *
+     * 예전에는 라우팅된 역할이 달라지면 대화를 새로 열었다. 그런데 사용자에게는
+     * "수강승인 로직 찾아줘"(feature-finder) 다음의 "계속 해줘"(axnavi) 가 한 흐름이다.
+     * 역할이 다르다고 끊으면 뒤 턴에 앞의 일이 통째로 없다 — 실측으로 "이전 대화 맥락이
+     * 없어서 계속이 어떤 작업을 가리키는지 확인이 필요합니다" 가 나왔다.
+     *
+     * 위임 경로에서 대화를 들고 있는 것은 claude 세션이고, 역할은 매 턴 지침으로
+     * 다시 얹힌다. 그래서 역할이 달라져도 같은 세션에 이어 붙이는 데 문제가 없다.
+     * 일부러 끊고 싶으면 /new 가 있다.
+     */
+    if (thread && thread.agent !== agentName) thread.agent = agentName;
+    if (!thread) {
       thread = {
         id: newSessionId(),
         agent: agentName,
@@ -443,6 +456,39 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     const live = /** @type {Thread} */ (thread);
     live.turns += 1;
     return live;
+  };
+
+  /**
+   * 스킬 실행을 얹을 대화를 준다.
+   *
+   * **에이전트가 달라도 같은 대화를 쓴다.** 보통은 역할이 바뀌면 대화를 새로 여는데,
+   * 스킬은 그러면 안 된다 — 사용자에게 `/find` 로 한참 조사한 것과 그다음 "계속 해줘" 는
+   * 한 흐름이다. 둘로 갈라 놓으면 뒤 턴에 앞의 일이 아예 없다(실측: "이전 대화 맥락이
+   * 없어서 계속이 어떤 작업을 가리키는지 확인이 필요합니다").
+   *
+   * @param {string} label  대화가 없을 때 붙일 제목
+   * @returns {{ conversation: import("@ax-navi/core").Conversation, onAnswer: (text: string) => void }}
+   */
+  const skillContext = (label) => {
+    if (!thread) {
+      thread = {
+        id: newSessionId(),
+        agent: DEFAULT_AGENT,
+        turns: 0,
+        conversation: { turns: [] },
+        messages: [],
+        title: toTitle(label),
+        createdAt: new Date().toISOString(),
+      };
+    }
+    const live = /** @type {Thread} */ (thread);
+    live.turns += 1;
+    return {
+      conversation: live.conversation,
+      onAnswer: (text) => {
+        live.messages = appendMessage(appendMessage(live.messages ?? [], "user", label), "assistant", text);
+      },
+    };
   };
 
   /**
@@ -530,6 +576,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
           onReset: () => { thread = null; },
           onModeChange: applyPrompt,
           onBackground: startBackground,
+          onSkillContext: skillContext,
           onResume: (record) => {
             thread = {
               id: record.id,
@@ -601,7 +648,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
         if (pendingSkill) {
           const { name, request } = pendingSkill;
           pendingSkill = null;
-          code = await runSkill(paths.root, name, request);
+          code = await runSkill(paths.root, name, request, undefined, skillContext(`/${name} ${request}`.trim()));
         }
         await persist();
         /*
@@ -715,6 +762,7 @@ function route(input) {
  * @param {string} args.line
  * @param {import("./completion.mjs").SlashCommand[]} args.commands
  * @param {(request: string) => import("./tasks.mjs").BackgroundTask} [args.onBackground]  백그라운드로 띄운다
+ * @param {(request: string) => { conversation: import("@ax-navi/core").Conversation, onAnswer: (text: string) => void }} [args.onSkillContext]  스킬을 얹을 대화
  * @param {Map<string, { name: string }>} args.skillByName
  * @param {() => void} [args.onReset]
  * @param {(record: import("@ax-navi/core").SessionRecord) => void} [args.onResume]
@@ -722,7 +770,7 @@ function route(input) {
  * @param {() => ({ id: string, agent: string, turns: number, sessionId?: string } | null)} [args.onContext]
  * @returns {Promise<number>}
  */
-async function handleSlash({ paths, line, commands, skillByName, onReset, onResume, onModeChange, onContext, onBackground }) {
+async function handleSlash({ paths, line, commands, skillByName, onReset, onResume, onModeChange, onContext, onBackground, onSkillContext }) {
   const spaceAt = line.indexOf(" ");
   const cmd = spaceAt === -1 ? line.slice(1) : line.slice(1, spaceAt);
   const argText = spaceAt === -1 ? "" : line.slice(spaceAt + 1).trim();
@@ -986,7 +1034,14 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
 
     default: {
       // 스킬 이름이면 그대로 실행한다 — 원래 플러그인의 /modify·/impact 와 같은 감각.
-      if (skillByName.has(cmd)) return runSkill(paths.root, cmd, argText);
+      /*
+       * 스킬도 지금 대화 위에서 돈다.
+       *
+       * 예전에는 한 번 쓰고 버리는 실행이라, /find 로 한참 조사한 뒤 "계속 해줘" 라고 하면
+       * 앞의 일이 대화에 없어서 무엇을 이어갈지 모른다고 답했다(실측). 사용자에게는
+       * 한 흐름인데 우리만 둘로 갈라 놓고 있었다.
+       */
+      if (skillByName.has(cmd)) return runSkill(paths.root, cmd, argText, undefined, onSkillContext?.(`/${cmd} ${argText}`.trim()) ?? {});
 
       const near = commands
         .map((c) => c.name)

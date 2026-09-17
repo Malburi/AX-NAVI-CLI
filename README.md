@@ -15,7 +15,7 @@
   ═══╧═══╧═══   Enterprise AI Development Navigator
 ```
 
-> **alpha (v0.1.0-alpha.4).** 실제 저장소에서 매일 쓰면서 다듬는 중입니다.
+> **alpha (v0.1.0-alpha.5).** 실제 저장소에서 매일 쓰면서 다듬는 중입니다.
 > 아래 [지금 되는 것 / 아직 안 되는 것](#지금-되는-것--아직-안-되는-것)을 먼저 읽어 주세요.
 
 ---
@@ -78,7 +78,7 @@ LLM이 매 세션 읽어서 따라가게 하고 있었습니다.
 GitHub 태그에서 바로 받습니다. npm 계정이 필요 없습니다.
 
 ```bash
-npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.4
+npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.5
 ```
 
 > **`npm i -g github:Malburi/AX-NAVI-CLI` 는 쓰지 마세요.** 그쪽은 npm 이 `git clone` 을
@@ -88,8 +88,8 @@ npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0
 망이 아예 닫혀 있으면 파일 하나로 옮깁니다.
 
 ```bash
-npm pack                                  # axnavi-0.1.0-alpha.4.tgz 생성
-npm i -g \\공유폴더\axnavi-0.1.0-alpha.4.tgz   # 받는 쪽
+npm pack                                  # axnavi-0.1.0-alpha.5.tgz 생성
+npm i -g \\공유폴더\axnavi-0.1.0-alpha.5.tgz   # 받는 쪽
 ```
 
 소스에서 쓰려면:
