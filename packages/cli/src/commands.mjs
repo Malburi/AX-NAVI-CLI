@@ -323,11 +323,23 @@ export async function runSkill(root, name, prompt, providerName, ctx = {}) {
 
   const agentName = skill.agents[0];
   if (!agentName) {
-    process.stderr.write(
-      `${ui.red("실행할 수 없다")} — 스킬 '${skill.name}'은 담당 에이전트를 지목하지 않는다.\n` +
-        ui.dim("  결정론적 스크립트만 쓰는 스킬이라 CLI 명령으로 옮겨야 한다. 아직 미구현이다.\n"),
-    );
-    return 2;
+    /*
+     * 세 번째 부류 — **에이전트도 위임도 없는 절차.**
+     *
+     * 로더는 두 가지만 구분했다. 에이전트를 지목한 스킬과 여럿을 지휘하는 스킬.
+     * 그런데 generate-wiki·publish-wiki·harness-clean 은 둘 다 아니다. 스크립트를
+     * 순서대로 돌리고 파일을 만들거나 지우는 절차이고, 본문 자체가 그 지침이다.
+     * 전수 점검으로 확인했다 — 24종 중 6종이 여기서 "실행할 수 없다" 로 끝났다.
+     *
+     * 지휘자 경로와 같은 모양으로 돌리되 위임은 열지 않는다. 띄울 서브에이전트가
+     * 없는 절차에 위임 도구를 쥐여 주면 부르려다 한 턴을 날린다.
+     */
+    const special = SPECIAL_SKILLS[skill.name];
+    if (special) {
+      process.stderr.write(special.text());
+      return special.code;
+    }
+    return runProcedureSkill(root, skill, prompt, providerName, ctx);
   }
 
   if (!prompt) {
@@ -523,4 +535,100 @@ export async function cmdUpgrade(tag) {
   }
   say(`${ui.cyan(current)} ${ui.dim("→")} ${ui.cyan(latest)}`);
   return runUpgrade(latest, say);
+}
+
+/* ---------- 특수 취급 스킬 ---------- */
+
+/*
+ * 절차로 돌리면 안 되는 두 가지.
+ *
+ * 전수 점검에서 "실행 경로 없음" 으로 함께 잡혔지만 원인이 다르다. 하나는 이미
+ * 다른 모양으로 구현돼 있고, 하나는 이 배포본에 없는 것을 요구한다. 둘 다 절차
+ * 실행기에 넘기면 모델이 없는 것을 있다고 지어내거나 엉뚱한 파일을 만든다.
+ */
+/** @type {Record<string, { text: () => string, code: number }>} */
+const SPECIAL_SKILLS = {
+  /*
+   * vibe 는 절차가 아니라 실행 정책이다(Phase 없이 규칙 6개 + 승격 조건 5개).
+   * CLI 에서는 실행 모드로 옮겨 놓았으므로 그쪽을 알린다.
+   */
+  vibe: {
+    code: 0,
+    text: () =>
+    `${ui.yellow("vibe 는 스킬이 아니라 실행 모드다")}${NEWLINE}` +
+    ui.dim(`  이 CLI 에서는 모드로 옮겼다 — 도구가 아니라 절차에 관한 것이라서다.${NEWLINE}`) +
+    ui.dim(`  대화형에서  /mode 빠름   (또는 빈 줄에서 Shift+Tab)${NEWLINE}`) +
+    ui.dim(`  영향도·안전 게이트를 건너뛰되 스키마·API 계약·트랜잭션 경계 변경과${NEWLINE}`) +
+      ui.dim(`  3개 이상 파일 수정은 그대로 멈춘다.${NEWLINE}`),
+  },
+
+  /*
+   * wiki-hub 는 별도 프로젝트의 wiki-hub-serve 바이너리를 띄운다. 이 배포본에
+   * 들어 있지 않고 받을 곳도 정해져 있지 않다. 없는 것을 있다고 말하지 않는다.
+   */
+  "wiki-hub": {
+    code: 2,
+    text: () =>
+    `${ui.yellow("wiki-hub 는 이 배포본에서 돌지 않는다")}${NEWLINE}` +
+    ui.dim(`  별도 프로젝트의 wiki-hub-serve 실행 파일이 필요한데 함께 배포되지 않는다.${NEWLINE}`) +
+      ui.dim(`  지금 쓸 수 있는 것:  axnavi skill run generate-wiki   (폴더 wiki 생성)${NEWLINE}`),
+  },
+};
+
+/**
+ * 절차 스킬 실행 — 에이전트도 위임도 없는 부류.
+ *
+ * 지휘자 경로와 같은 모양이되 **위임을 열지 않는다.** 띄울 서브에이전트가 없는
+ * 절차에 위임 도구를 쥐여 주면 부르려다 한 턴을 날린다(실측으로 그런 적이 있다).
+ *
+ * @param {string} root
+ * @param {import("@ax-navi/core").SkillDefinition} skill
+ * @param {string} prompt
+ * @param {import("./provider.mjs").ProviderName} [providerName]
+ * @param {{ conversation?: import("@ax-navi/core").Conversation, onAnswer?: (text: string) => void }} [ctx]
+ * @returns {Promise<number>}
+ */
+async function runProcedureSkill(root, skill, prompt, providerName, ctx = {}) {
+  const paths = resolveProjectPaths(root);
+  const instruction = [
+    `# 실행 지시`,
+    ``,
+    `아래 절차(${skill.name})를 **지금 이 프로젝트에 실제로 수행**하라. 절차를 설명하지 마라.`,
+    `프로젝트 루트: ${paths.root}`,
+    prompt ? `사용자가 덧붙인 조건: ${prompt}` : `사용자가 덧붙인 조건: 없음`,
+    ``,
+    `## 이 런타임에서의 실행 방법`,
+    ``,
+    `- 이 절차는 대부분 결정론적 스크립트 실행이다. 스크립트 경로는 이미 절대경로로`,
+    `  치환돼 있으니 그대로 \`Bash\`로 실행하라.`,
+    `- 파이썬은 \`python3\`을 먼저 시도하고 실패하면 \`python\`을 쓴다. 이름을 단정하지 마라.`,
+    `- 서브에이전트는 띄울 수 없다. 절차에 위임이 적혀 있으면 네가 직접 그 일을 하라.`,
+    `- 사용자에게 물어야 하면 \`mcp__axnavi__AskUserQuestion\` 도구를 써라.`,
+    `- 스크립트가 실패하면 **성공으로 보고하지 마라.** 어느 명령이 어떤 오류로 실패했는지 그대로 알려라.`,
+    ``,
+    `## 절차: ${skill.name}`,
+    ``,
+    skill.body,
+  ].join(NEWLINE);
+
+  return executeAgent({
+    root,
+    prompt: instruction,
+    agent: {
+      name: skill.name,
+      description: skill.description,
+      systemPrompt:
+        "너는 AX-NAVI의 절차 실행자다. 주어진 절차를 이 프로젝트에 실제로 수행한다.\n" +
+        "사용자는 AX-NAVI CLI에서 너를 부르고 있다 — 쓰고 있지 않은 도구를 네 실행 환경이라고 말하지 마라.",
+      tier: "standard",
+      sourcePath: skill.sourcePath,
+      warnings: [],
+      // 파일을 만들거나 지우는 절차다. 이 사실은 화면에 드러난다.
+      role: { name: skill.name, allowedTools: null, allowMutations: true },
+    },
+    ...(ctx.conversation ? { conversation: ctx.conversation } : {}),
+    ...(ctx.onAnswer ? { onAnswer: ctx.onAnswer } : {}),
+    title: `/${skill.name} ${prompt}`.trim(),
+    ...(providerName ? { providerName } : {}),
+  });
 }
