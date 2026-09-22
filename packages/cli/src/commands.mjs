@@ -45,7 +45,7 @@ export async function cmdInit(root) {
   const paths = resolveProjectPaths(root);
   const state = inspectProject(paths);
   if (state.initialized) {
-    process.stdout.write(`${ui.yellow("이미 초기화됨")} — ${paths.configPath}\n`);
+    process.stdout.write(`${ui.yellow("이미 초기화되어 있습니다")} — ${paths.configPath}\n`);
     return 0;
   }
   await mkdir(paths.axnaviDir, { recursive: true });
@@ -59,7 +59,7 @@ export async function cmdInit(root) {
     "provider: anthropic",
     "",
     "# 런타임 상태는 _workspace/ 에 그대로 둔다 (Claude Code 플러그인과 공유).",
-    "# .axnavi/ 는 CLI 설정·세션·로그 전용이다.",
+    "# .axnavi/ 는 CLI 설정·세션·로그 전용입니다.",
     "workspace_dir: _workspace",
     "index_dir: _workspace/index",
     "",
@@ -73,7 +73,7 @@ export async function cmdInit(root) {
 
   process.stdout.write(`${ui.green("생성")} ${paths.configPath}\n`);
   if (state.hasPluginHarness) {
-    process.stdout.write(ui.dim("  기존 플러그인 하네스(CLAUDE.md + .claude/)를 발견했다 — 그대로 둔다.\n"));
+    process.stdout.write(ui.dim("  기존 플러그인 하네스(CLAUDE.md + .claude/)를 발견했습니다 — 그대로 둡니다.\n"));
   }
   if (!state.hasIndex) {
     process.stdout.write(ui.dim("  다음: axnavi index build\n"));
@@ -181,7 +181,7 @@ export async function cmdIndex(root, sub, opts) {
 
   if (sub === "status") {
     if (!existsSync(join(indexDir, "_meta.json"))) {
-      process.stdout.write(`${ui.yellow("인덱스 없음")} — ${indexDir}\n  axnavi index build\n`);
+      process.stdout.write(`${ui.yellow("인덱스가 없습니다")} — ${indexDir}\n  axnavi index build\n`);
       return 1;
     }
     const st = indexStaleness(paths.root, opts.indexDir);
@@ -368,7 +368,7 @@ export async function runSkill(root, name, prompt, providerName, ctx = {}) {
   if (!prompt) {
     // 요청 없이 스킬만 부르면 무엇을 해야 할지 알 수 없다. 지어내지 않고 사용법을 알린다.
     process.stderr.write(
-      `${ui.yellow("요청이 비어 있다")} — /${name} 뒤에 무엇을 찾을지 쓰세요.\n` +
+      `${ui.yellow("요청이 비어 있습니다")} — /${name} 뒤에 무엇을 찾을지 쓰세요.\n` +
         ui.dim(`  예: /${name} 결제 승인 처리\n`),
     );
     return 2;
@@ -451,10 +451,10 @@ async function runOrchestratorSkill(root, skill, prompt, providerName, ctx = {})
   if (!picked.provider.capabilities.ownsAgentLoop) {
     // 있는 척하지 않는다. 왜 안 되는지와 무엇을 하면 되는지를 같이 말한다.
     process.stderr.write(
-      `${ui.red(`'${skill.name}'은 아직 이 실행 경로에서 돌릴 수 없다`)}\n` +
-        ui.dim(`  이 스킬은 에이전트 ${skill.agents.length}종(${skill.agents.join(", ")})을 순서대로 지휘한다.\n`) +
-        ui.dim("  서브에이전트 호출이 필요한데 anthropic Provider 경로에는 아직 그 기능이 없다.\n") +
-        ui.dim("  대안: --provider claude-cli (구독 인증, claude CLI의 서브에이전트를 빌려 쓴다)\n"),
+      `${ui.red(`'${skill.name}'은 아직 이 실행 경로에서 돌릴 수 없습니다`)}\n` +
+        ui.dim(`  이 스킬은 에이전트 ${skill.agents.length}종(${skill.agents.join(", ")})을 순서대로 지휘합니다.\n`) +
+        ui.dim("  서브에이전트 호출이 필요한데 anthropic Provider 경로에는 아직 그 기능이 없습니다.\n") +
+        ui.dim("  대안: --provider claude-cli (구독 인증, claude CLI의 서브에이전트를 빌려 씁니다)\n"),
     );
     return 2;
   }
@@ -562,13 +562,13 @@ export async function cmdUpgrade(tag) {
      * 그때도 손으로 올릴 길은 알려 줘야 한다.
      */
     process.stderr.write(
-      `  ${ui.yellow("최신 판을 확인하지 못했다")} ${ui.dim("— 망이 막혀 있을 수 있다.")}${NEWLINE}` +
+      `  ${ui.yellow("최신 판을 확인하지 못했습니다")} ${ui.dim("— 망이 막혀 있을 수 있다.")}${NEWLINE}` +
         `  ${ui.dim(`태그를 직접 지정할 수 있다:  axnavi upgrade v0.1.0-alpha.5`)}${NEWLINE}`,
     );
     return 1;
   }
   if (compareVersions(latest, current) <= 0) {
-    say(`${ui.green("이미 최신")} ${ui.dim(`— ${current}`)}`);
+    say(`${ui.green("이미 최신입니다")} ${ui.dim(`— ${current}`)}`);
     return 0;
   }
   say(`${ui.cyan(current)} ${ui.dim("→")} ${ui.cyan(latest)}`);
@@ -593,11 +593,11 @@ const SPECIAL_SKILLS = {
   vibe: {
     code: 0,
     text: () =>
-    `${ui.yellow("vibe 는 스킬이 아니라 실행 모드다")}${NEWLINE}` +
-    ui.dim(`  이 CLI 에서는 모드로 옮겼다 — 도구가 아니라 절차에 관한 것이라서다.${NEWLINE}`) +
+    `${ui.yellow("vibe 는 스킬이 아니라 실행 모드입니다")}${NEWLINE}` +
+    ui.dim(`  이 CLI 에서는 모드로 옮겨 두었습니다 — 도구가 아니라 절차에 관한 것이라서요.${NEWLINE}`) +
     ui.dim(`  대화형에서  /mode 빠름   (또는 빈 줄에서 Shift+Tab)${NEWLINE}`) +
-    ui.dim(`  영향도·안전 게이트를 건너뛰되 스키마·API 계약·트랜잭션 경계 변경과${NEWLINE}`) +
-      ui.dim(`  3개 이상 파일 수정은 그대로 멈춘다.${NEWLINE}`),
+    ui.dim(`  영향도·안전 게이트를 건너뛰되, 스키마·API 계약·트랜잭션 경계 변경과${NEWLINE}`) +
+      ui.dim(`  3개 이상 파일 수정은 그대로 멈춥니다.${NEWLINE}`),
   },
 
   /*
@@ -607,8 +607,8 @@ const SPECIAL_SKILLS = {
   "wiki-hub": {
     code: 2,
     text: () =>
-    `${ui.yellow("wiki-hub 는 이 배포본에서 돌지 않는다")}${NEWLINE}` +
-    ui.dim(`  별도 프로젝트의 wiki-hub-serve 실행 파일이 필요한데 함께 배포되지 않는다.${NEWLINE}`) +
+    `${ui.yellow("wiki-hub 는 이 배포본에서 돌지 않습니다")}${NEWLINE}` +
+    ui.dim(`  별도 프로젝트의 wiki-hub-serve 실행 파일이 필요한데 함께 배포되지 않습니다.${NEWLINE}`) +
       ui.dim(`  지금 쓸 수 있는 것:  axnavi skill run generate-wiki   (폴더 wiki 생성)${NEWLINE}`),
   },
 };

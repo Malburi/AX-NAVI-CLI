@@ -295,7 +295,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
       emit(`  ${ui.dim("⎿")} ${ui.dim(`${done.label} · 도구 ${done.tools}회 · 마지막 출력 ${idle} 전`)}`, key);
     } else {
       emit(
-        `  ${ui.dim("⎿")} ${ui.yellow(`${done.label} — 출력 없이 턴이 끝났다`)} ${ui.dim(`· ${took}`)}`,
+        `  ${ui.dim("⎿")} ${ui.yellow(`${done.label} — 출력 없이 턴이 끝났습니다`)} ${ui.dim(`· ${took}`)}`,
         key,
       );
     }
@@ -625,8 +625,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         }
         if (silent.length) {
           emit(
-            ui.yellow(`  서브에이전트 ${silent.length}건이 아무 출력 없이 턴이 끝났다.`) +
-              ui.dim(` 이어서 물어보면 그 결과를 받아 계속한다 — /log 로 지금까지 낸 말을 볼 수 있다.`),
+            ui.yellow(`  서브에이전트 ${silent.length}건이 아무 출력 없이 턴이 끝났습니다.`) +
+              ui.dim(` 이어서 물어보시면 그 결과를 받아 계속합니다 — /log 로 지금까지 낸 말을 볼 수 있습니다.`),
           );
         }
         // 상한 도달·거절 같은 비정상 종료를 성공으로 보고하지 않는다.

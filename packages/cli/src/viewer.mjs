@@ -125,7 +125,7 @@ export function renderViewer({ rows, cursor, body, bodyTop, columns, rowsHeight,
     const text = `${selected ? ui.cyan("❯") : " "} ${row.text}`;
     out.push(clipToWidth(text, width));
   }
-  if (!rows.length) out.push(ui.dim("  아직 기록이 없다."));
+  if (!rows.length) out.push(ui.dim("  아직 기록이 없습니다."));
 
   out.push(ui.dim("─".repeat(width)));
   const room = Math.max(1, rowsHeight - out.length - 1);

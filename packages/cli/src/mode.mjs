@@ -28,8 +28,8 @@ export const MODES = [
    * Bash 는 `echo > file` 처럼 쓸 수 있고 그걸 런타임이 가려낼 수 없다.
    * 명령어를 글자로 보고 막는 것은 새는 검사라 하지 않는다 — 대신 그 사실을 적는다.
    */
-  { id: "plan", label: "계획", hint: "고치지 않고 계획부터 낸다", caveat: "Bash 는 지침으로만 막는다" },
-  { id: "vibe", label: "빠름", hint: "영향도·안전 게이트를 건너뛰고 바로 수행", caveat: "전부 지침이다" },
+  { id: "plan", label: "계획", hint: "고치지 않고 계획부터 냅니다", caveat: "Bash 는 지침으로만 막습니다" },
+  { id: "vibe", label: "빠름", hint: "영향도·안전 게이트를 건너뛰고 바로 수행합니다", caveat: "전부 지침입니다" },
 ];
 
 export const DEFAULT_MODE = "default";

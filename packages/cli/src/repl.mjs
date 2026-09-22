@@ -152,7 +152,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
        * 사용자가 쓸데없이 앞 질문을 다시 쓰지 않는다.
        */
       process.stdout.write(
-        `  ${ui.dim("지난 내용을 되살리지 못한다 — 기록을 남기기 전에 만든 대화다. 대화는 그대로 이어진다.")}${NL}`,
+        `  ${ui.dim("지난 내용을 되살리지 못합니다 — 기록을 남기기 전에 만든 대화입니다. 대화는 그대로 이어집니다.")}${NL}`,
       );
       return false;
     }
@@ -438,7 +438,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
         );
       }
     } else {
-      process.stdout.write(`  ${ui.yellow("이어갈 세션이 없다")} ${ui.dim("— 새 대화로 시작한다.")}\n\n`);
+      process.stdout.write(`  ${ui.yellow("이어갈 세션이 없습니다")} ${ui.dim("— 새 대화로 시작한다.")}\n\n`);
     }
   }
 
@@ -704,7 +704,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
    * 셸이 안 돌아오는 상태가 된다.
    */
   const left = runningCount();
-  if (left) process.stdout.write(`  ${ui.dim(`백그라운드 ${left}건을 멈춘다.`)}${NL}`);
+  if (left) process.stdout.write(`  ${ui.dim(`백그라운드 ${left}건을 멈춥니다.`)}${NL}`);
   stopAllTasks();
   rl.close();
   return code;
@@ -798,7 +798,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
        * 엉뚱한 맥락이 섞인다.
        */
       onReset?.();
-      process.stdout.write(`  ${ui.dim("새 대화를 시작한다.")}\n`);
+      process.stdout.write(`  ${ui.dim("새 대화를 시작합니다.")}\n`);
       return 0;
 
     case "model": {
@@ -814,7 +814,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
           ? null
           : MODEL_CHOICES.find((m) => m.id === wanted)?.tier;
         if (pickTier === undefined) {
-          process.stderr.write(`  ${ui.yellow("모르는 모델")} ${ui.dim(`— ${wanted} (${MODEL_CHOICES.map((m) => m.id).join(", ")}, 기본)`)}${NL}`);
+          process.stderr.write(`  ${ui.yellow("모르는 모델입니다")} ${ui.dim(`— ${wanted} (${MODEL_CHOICES.map((m) => m.id).join(", ")}, 기본)`)}${NL}`);
           return 2;
         }
         setSessionModel(pickTier);
@@ -823,7 +823,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       }
 
       const labels = [
-        `기본 — 에이전트가 선언한 모델을 따른다`,
+        `기본 — 에이전트가 선언한 모델을 따릅니다`,
         ...MODEL_CHOICES.map((m) => `${m.id} — ${m.hint}`),
       ];
       const [picked] = await createHostElicitor().ask("어느 모델로 돌릴까요?", labels, {});
@@ -844,7 +844,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       if (wanted) {
         const hit = MODES.find((m) => m.id === wanted || m.label === wanted);
         if (!hit) {
-          process.stderr.write(`  ${ui.yellow("모르는 모드")} ${ui.dim(`— ${wanted} (${MODES.map((m) => m.label).join(", ")})`)}${NL}`);
+          process.stderr.write(`  ${ui.yellow("모르는 모드입니다")} ${ui.dim(`— ${wanted} (${MODES.map((m) => m.label).join(", ")})`)}${NL}`);
           return 2;
         }
         setSessionMode(hit.id);
@@ -868,7 +868,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       if (wanted) {
         const record = await loadSession(paths, wanted);
         if (!record) {
-          process.stderr.write(`  ${ui.yellow("그런 세션이 없다")} ${ui.dim(`— ${wanted} (/sessions 로 확인)`)}${NL}`);
+          process.stderr.write(`  ${ui.yellow("그런 세션이 없습니다")} ${ui.dim(`— ${wanted} (/sessions 로 확인)`)}${NL}`);
           return 2;
         }
         onResume?.(record);
@@ -915,7 +915,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       }
       const resume = info.sessionId
         ? `${ui.green("활성")} ${ui.dim(`(${info.sessionId.slice(0, 8)}…)`)}`
-        : ui.dim("없음 — 이번 턴이 끝나면 잡힌다");
+        : ui.dim("없음 — 이번 턴이 끝나면 잡힙니다");
       process.stdout.write(
         [
           "",
@@ -940,7 +940,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
        * 화면이 된다. 진행은 프롬프트 옆 개수로, 내용은 /log 로 본다.
        */
       if (!argText) {
-        process.stderr.write(`  ${ui.yellow("무엇을 돌릴지 적어라")} ${ui.dim("— /bg 결제 모듈 전체 훑어줘")}${NL}`);
+        process.stderr.write(`  ${ui.yellow("무엇을 돌릴지 적어 주세요")} ${ui.dim("— /bg 결제 모듈 전체 훑어줘")}${NL}`);
         return 2;
       }
       if (!onBackground) return 2;
@@ -948,7 +948,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       onModeChange?.();
       process.stdout.write(
         `  ${ui.green("백그라운드")} ${ui.dim(`#${task.id} — ${task.title}`)}${NL}` +
-          `  ${ui.dim("도는 동안 계속 대화해도 된다. /tasks 로 상태, /log 로 내용.")}${NL}`,
+          `  ${ui.dim("도는 동안 계속 대화하셔도 됩니다. /tasks 로 상태, /log 로 내용을 봅니다.")}${NL}`,
       );
       return 0;
     }
@@ -959,14 +959,14 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
         const stopped = Number.isFinite(id) && stopTask(id);
         process.stdout.write(
           stopped
-            ? `  ${ui.green("멈췄다")} ${ui.dim(`#${id}`)}${NL}`
-            : `  ${ui.yellow("그 번호로 도는 작업이 없다")} ${ui.dim(`— ${rest[1] ?? ""}`)}${NL}`,
+            ? `  ${ui.green("멈췄습니다")} ${ui.dim(`#${id}`)}${NL}`
+            : `  ${ui.yellow("그 번호로 도는 작업이 없습니다")} ${ui.dim(`— ${rest[1] ?? ""}`)}${NL}`,
         );
         return stopped ? 0 : 2;
       }
       const list = allTasks();
       if (!list.length) {
-        process.stdout.write(`  ${ui.dim("백그라운드 작업이 없다. /bg <요청> 으로 띄운다.")}${NL}`);
+        process.stdout.write(`  ${ui.dim("백그라운드 작업이 없습니다. /bg <요청> 으로 띄웁니다.")}${NL}`);
         return 0;
       }
       process.stdout.write("\n");
@@ -988,7 +988,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
        * 펴고, 나올 때 원래 기록을 그대로 되돌린다.
        */
       if (!process.stdout.isTTY) {
-        process.stderr.write(`  ${ui.yellow("터미널에서만 쓸 수 있다")}${NL}`);
+        process.stderr.write(`  ${ui.yellow("터미널에서만 쓸 수 있습니다")}${NL}`);
         return 2;
       }
       await openViewer({ input: process.stdin, output: process.stdout, ui });
@@ -1065,7 +1065,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       process.stderr.write(
         `알 수 없는 명령: ${ui.cyan(`/${cmd}`)}\n` +
           (near.length ? `  ${ui.dim(`혹시: ${near.map((n) => `/${n}`).join("  ")}`)}\n` : "") +
-          `  ${ui.dim("/ 를 치면 전체 목록이 나온다.")}\n`,
+          `  ${ui.dim("/ 를 치면 전체 목록이 나옵니다.")}\n`,
       );
       return 2;
     }
@@ -1088,7 +1088,7 @@ const MODEL_CHOICES = [
 /** @returns {string} */
 function describeModel() {
   const tier = sessionModel();
-  if (!tier) return "기본 — 에이전트 선언을 따른다";
+  if (!tier) return "기본 — 에이전트 선언을 따릅니다";
   const hit = MODEL_CHOICES.find((m) => m.tier === tier);
   return `${hit?.id ?? tier} — ${hit?.hint ?? ""}`;
 }

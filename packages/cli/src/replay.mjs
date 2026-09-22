@@ -36,7 +36,7 @@ export function renderReplay({ messages, width, ui, shown = MESSAGES_SHOWN }) {
 
   if (start > 0) {
     // 잘라 냈다는 사실을 숨기지 않는다 — 앞 내용이 없는 이유가 된다.
-    out.push(clipToWidth(ui.dim(`  ⋯ 앞선 ${start}마디는 접었다`), cap));
+    out.push(clipToWidth(ui.dim(`  ⋯ 앞선 ${start}마디는 접었습니다`), cap));
   }
 
   for (const message of messages.slice(start)) {

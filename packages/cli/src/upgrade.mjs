@@ -138,11 +138,11 @@ export function checkForUpdate(current, notify) {
  */
 export function runUpgrade(tag, say) {
   const url = installUrl(tag);
-  say(`설치 중 — ${url}`);
+  say(`설치 중입니다 — ${url}`);
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const out = spawnSync(npm, ["i", "-g", url], { encoding: "utf8", shell: process.platform === "win32" });
   if (out.status === 0) {
-    say(`${tag} 로 올렸다. 다시 시작하면 적용된다.`);
+    say(`${tag} 로 올렸습니다. 다시 시작하면 적용됩니다.`);
     return 0;
   }
   /*
@@ -150,7 +150,7 @@ export function runUpgrade(tag, say) {
    * 그리고 손으로 칠 명령을 그대로 보여 준다.
    */
   say((out.stderr || out.stdout || "").trim().split(String.fromCharCode(10)).slice(-4).join(String.fromCharCode(10)));
-  say(`직접 실행해 보라:  npm i -g ${url}`);
+  say(`직접 실행해 보세요:  npm i -g ${url}`);
   return out.status ?? 1;
 }
 

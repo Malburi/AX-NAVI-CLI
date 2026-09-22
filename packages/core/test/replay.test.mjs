@@ -85,7 +85,7 @@ test("오래된 마디는 접고 몇 개를 접었는지 밝힌다", () => {
     Array.from({ length: 20 }, (_, i) => [i % 2 ? "assistant" : "user", `말 ${i}`])
   );
   const lines = render({ messages: log(many), shown: 4 });
-  assert.match(/** @type {string} */ (lines[0]), /앞선 16마디는 접었다/);
+  assert.match(/** @type {string} */ (lines[0]), /앞선 16마디는 접었습니다/);
   assert.match(lines.join("\n"), /말 19/, "가장 최근 말이 빠졌다");
 });
 
