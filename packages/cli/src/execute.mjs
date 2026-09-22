@@ -14,7 +14,7 @@ import {
 import { selectProvider } from "./provider.mjs";
 import { startMcpBridge } from "./mcp/bridge.mjs";
 import { createActivity, elapsed } from "./activity.mjs";
-import { renderCall } from "./transcript.mjs";
+import { headline, renderCall } from "./transcript.mjs";
 import { createMarkdown } from "./markdown.mjs";
 import { clipToWidth, visibleLength } from "./width.mjs";
 import { applyMode } from "./mode.mjs";
@@ -196,9 +196,49 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 비동기로 뜬 에이전트는 완료를 알리는 이벤트가 없다. 우리가 받는 것은 그 에이전트에
    * 귀속된 글과 도구 호출뿐이다. 그래서 끝났다/못 끝났다를 단정하지 않고 관측한 것만 적는다.
    *
-   * @type {Map<string, { label: string, startedAt: number, tools: number, produced: number, lastAt: number, async?: boolean }>}
+   * @type {Map<string, { label: string, startedAt: number, tools: number, produced: number, lastAt: number, tail: string[], async?: boolean }>}
    */
   const subagents = new Map();
+
+  /*
+   * 제자리 갱신을 쓸 수 있는 실행인가.
+   *
+   * 판이 없는 곳(파이프·백그라운드 작업)에서는 블록을 그릴 자리가 없다. 그때는
+   * 예전처럼 전부 기록으로 흘려보낸다 — 안 그러면 아무것도 안 보인다.
+   */
+  const liveUi = !background && Boolean(process.stdout.isTTY);
+
+  /** 꼬리로 들고 있을 줄 수. 판이 보여 주는 것보다 조금 넉넉히 둔다. */
+  const TAIL_KEEP = 6;
+
+  /**
+   * 열린 블록을 판에 반영한다.
+   *
+   * 화면 바닥은 우리가 소유하고 매 프레임 다시 그린다. 그래서 **도는 동안의 잡음은
+   * 거기에 두고, 끝나면 한 줄 요약만 기록으로 올린다.** 지나간 줄을 되돌릴 수 없다는
+   * 제약은 그대로지만, 아직 안 지나간 줄은 얼마든지 고쳐 그릴 수 있다.
+   */
+  /**
+   * 살아 있는 블록에 한 줄 얹는다. 앞쪽은 버린다 — 지금 무엇을 하는지가 중요하다.
+   * @param {string} key
+   * @param {string} line
+   */
+  const pushTail = (key, line) => {
+    const who = subagents.get(key);
+    if (!who) return;
+    who.tail.push(line);
+    if (who.tail.length > TAIL_KEEP) who.tail.splice(0, who.tail.length - TAIL_KEEP);
+    who.produced += 1;
+    who.lastAt = Date.now();
+  };
+
+  const pushBlocks = () => {
+    activity.set({
+      blocks: [...subagents.values()].map((b) => ({
+        label: b.label, tools: b.tools, startedAt: b.startedAt, tail: b.tail,
+      })),
+    });
+  };
 
   /**
    * 판 오른쪽에 지금 도는 서브에이전트를 알린다.
@@ -234,6 +274,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     flushText(key);
     subagents.delete(key);
     showRunning();
+    pushBlocks();
     recordAgentEnd(turn, key, done.tools);
     const took = elapsed(Date.now() - done.startedAt);
     /*
@@ -332,9 +373,20 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
        * 말인지 사라진다. 잘라서라도 한 줄에 두면 `│` 세로줄이 일정하게 서서 읽힌다.
        * 전문은 어차피 기록에 남고 /log 로 펼쳐 볼 수 있다.
        */
-      const room = Math.max(20, (process.stdout.columns ?? 100) - 3);
+      const room = Math.max(20, (process.stdout.columns ?? 100) - 6);
       const clipped = visibleLength(line) > room ? `${clipToWidth(line, room - 1)}…` : line;
-      return emit(`${ui.dim("│")} ${ui.dim(clipped)}`, parentId);
+      /*
+       * 살아 있는 화면에서는 **기록에 남기지 않는다.**
+       *
+       * 서브에이전트의 중간 서술은 도는 동안에만 쓸모가 있다. 스물 몇이 동시에 말하면
+       * 그게 그대로 스크롤백이 되어 정작 결론을 밀어낸다(실측). 판에 보여 주고,
+       * 끝나면 한 줄 요약만 올린다. 전문은 기록(record)에 그대로 들어가 /log 로 본다.
+       */
+      recordLine(turn, `${ui.dim("│")} ${ui.dim(clipped)}`, parentId);
+      if (!liveUi) return emit(`${ui.dim("│")} ${ui.dim(clipped)}`, parentId);
+      pushTail(parentId, clipped);
+      pushBlocks();
+      return;
     }
     /*
      * 본문은 마크다운으로 온다. 그대로 흘리면 `**강조**` 가 기호째 보인다(실측).
@@ -407,9 +459,10 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
          */
         if (SUBAGENT_TOOLS.has(tool)) {
           const label = describeTask(event.input);
-          subagents.set(id, { label, startedAt: Date.now(), tools: 0, produced: 0, lastAt: Date.now() });
+          subagents.set(id, { label, startedAt: Date.now(), tools: 0, produced: 0, lastAt: Date.now(), tail: [] });
           activity.set({ tool: "" });
           showRunning();
+          pushBlocks();
           recordAgentStart(turn, id, label);
           emit(`${ui.cyan("●")} ${ui.bold(`Task(${label})`)}`, id);
           continue;
@@ -469,19 +522,31 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         if (full.split(NEWLINE).length > 4) {
           rememberFolded(`${call?.tool ?? toolLabel(event.tool ?? "")}`, full);
         }
-        emit(
-          renderCall({
-            tool: call?.tool ?? toolLabel(event.tool ?? ""),
-            input: call?.input,
-            result: event.result ?? "",
-            isError: event.isError === true,
-            root: paths.root,
-            depth: (call?.parentId ?? event.parentId) ? 1 : 0,
-            width: process.stdout.columns ?? 100,
-            ui,
-          }).join("\n"),
-          call?.parentId ?? event.parentId,
-        );
+        const owner = call?.parentId ?? event.parentId;
+        const toolFor = call?.tool ?? toolLabel(event.tool ?? "");
+        const block = renderCall({
+          tool: toolFor,
+          input: call?.input,
+          result: event.result ?? "",
+          isError: event.isError === true,
+          root: paths.root,
+          depth: owner ? 1 : 0,
+          width: process.stdout.columns ?? 100,
+          ui,
+        }).join("\n");
+        /*
+         * 서브에이전트가 부른 도구도 판에 둔다.
+         *
+         * 스물 몇이 동시에 도구를 굴리면 그 호출들이 그대로 스크롤백이 된다 —
+         * 도는 동안만 보이면 되는 것들이다. 기록에는 남으니 /log 로 되짚을 수 있다.
+         */
+        if (owner && liveUi && subagents.has(owner)) {
+          recordLine(turn, block, owner);
+          pushTail(owner, headline(toolFor, call?.input, { root: paths.root }));
+          pushBlocks();
+        } else {
+          emit(block, owner);
+        }
         /*
          * 도구 실패 하나를 실행 전체의 실패로 보지 않는다.
          * 에이전트는 잘못된 경로로 grep 했다가 고쳌 다시 부르는 식으로 스스로 복구한다 —

@@ -435,3 +435,75 @@ test("모드를 판에 밝힌다 — 턴 중에 바꾸면 확인할 길이 있�
   assert.match(out.lines().join(NEWLINE), /계획/);
   activity.stop();
 });
+
+/* ---------- 살아 있는 Task 블록 ---------- */
+
+/*
+ * 판이 블록까지 담게 되면서 높이가 가변이 됐다. 그게 이 구조의 유일한 위험이다 —
+ * 판이 터미널보다 높아지면 올라갈 줄 수가 틀려 판이 쌓인다. 이 저장소가 이미 한 번
+ * 겪은 사고이므로, 화면을 실제로 굴려 확인한다.
+ */
+const block = (/** @type {string} */ label, /** @type {string[]} */ tail = []) => ({
+  label, tools: 3, startedAt: Date.now() - 5000, tail,
+});
+
+test("블록이 있어도 화면에는 판이 한 벌만 남는다", () => {
+  const out = vt(100);
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("harness-init");
+  for (let i = 0; i < 10; i += 1) {
+    activity.set({ blocks: [block(`B-A analyzer`, [`줄 ${i}`, `줄 ${i + 1}`])] });
+  }
+  const panels = out.lines().filter((l) => l.includes("❯")).length;
+  assert.equal(panels, 1, `판이 ${panels}벌 남았다:\n${out.lines().join(NEWLINE)}`);
+  activity.stop();
+});
+
+test("블록이 스물 몇 개여도 판이 터미널 높이를 넘지 않는다", () => {
+  const out = vt(100);
+  /* 실제 터미널처럼 높이를 준다 — 이게 없으면 예산 계산이 무의미하다. */
+  /** @type {any} */ (out).rows = 24;
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("harness-init");
+  activity.set({
+    blocks: Array.from({ length: 21 }, (_, i) => block(`agent-${i}`, ["가".repeat(200), "나", "다"])),
+  });
+  const drawn = out.lines().filter((l) => l.trim()).length;
+  assert.ok(drawn <= 24, `${drawn}줄이나 그렸다 (터미널 24줄)`);
+  activity.stop();
+});
+
+test("보여 주지 못한 블록은 수를 밝힌다 — 조용히 감추지 않는다", () => {
+  const out = vt(100);
+  /** @type {any} */ (out).rows = 24;
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("t");
+  activity.set({ blocks: Array.from({ length: 21 }, (_, i) => block(`agent-${i}`, ["가", "나", "다"])) });
+  assert.ok(out.lines().some((l) => /그 외 \d+건/.test(l)), `감춘 수를 안 밝혔다:\n${out.lines().join(NEWLINE)}`);
+  activity.stop();
+});
+
+test("블록이 비면 판은 예전 높이로 돌아온다", () => {
+  const out = vt(100);
+  /** @type {any} */ (out).rows = 24;
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("t");
+  activity.set({ blocks: [block("a", ["x", "y"]), block("b", ["z"])] });
+  activity.set({ blocks: [] });
+  const drawn = out.lines().filter((l) => l.trim()).length;
+  // 규칙 2줄 + 입력 1줄 + 진행 1줄
+  assert.ok(drawn <= 4, `블록을 걷었는데 ${drawn}줄 남았다:\n${out.lines().join(NEWLINE)}`);
+  activity.stop();
+});
+
+test("블록 줄도 폭을 넘지 않는다 — 접히면 올라갈 줄 수가 틀린다", () => {
+  const out = vt(60);
+  /** @type {any} */ (out).rows = 24;
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("t");
+  activity.set({ blocks: [block("아주 긴 이름".repeat(10), ["가".repeat(300)])] });
+  for (const line of out.lines()) {
+    assert.ok(visibleLength(line) < 60, `${visibleLength(line)}칸 — 폭 60을 넘었다`);
+  }
+  activity.stop();
+});

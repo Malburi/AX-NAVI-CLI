@@ -28,6 +28,15 @@ const up = (n) => (n > 0 ? `${ESC}[${n}A` : "");
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const TICK_MS = 120;
 
+/*
+ * 살아 있는 블록이 차지할 수 있는 최대 높이와 블록당 꼬리 줄 수.
+ *
+ * 판은 매번 통째로 다시 그리므로 높이가 터미널을 넘으면 안 된다. 넘으면 우리가
+ * 센 줄 수와 실제가 어긋나 판이 쌓인다 — 이 저장소가 이미 한 번 겪은 사고다.
+ */
+const MAX_LIVE_ROWS = 14;
+const TAIL_LINES = 3;
+
 /**
  * @typedef {object} ActivityState
  * @property {string} label        지금 도는 역할
@@ -40,6 +49,21 @@ const TICK_MS = 120;
  * @property {string} [model]      이번 턴이 쓰는 등급
  * @property {string} [mode]       지금 실행 모드
  * @property {number} [contextTokens]
+ * @property {LiveBlock[]} [blocks]  지금 열려 있는 Task 블록들. 끝나면 목록에서 빠진다
+ */
+
+/**
+ * 살아 있는 Task 블록.
+ *
+ * 화면 바닥은 우리가 소유하고 매번 다시 그린다. 그래서 **아직 도는 블록은 여기에
+ * 두고, 끝나면 한 줄 요약만 기록으로 올려보낸다.** Claude Code 가 Task 를 접었다
+ * 펴는 것과 같은 효과를, 스크롤백을 건드리지 않고 얻는다.
+ *
+ * @typedef {object} LiveBlock
+ * @property {string} label
+ * @property {number} tools
+ * @property {number} startedAt
+ * @property {string[]} tail   최근에 낸 말. 앞쪽은 버린다
  */
 
 /**
@@ -101,7 +125,29 @@ export function createActivity({ output, ui }) {
       state.contextTokens ? `Ctx ${compact(state.contextTokens)}` : "",
     ].filter(Boolean).join(" · ");
 
-    return [rule, input, rule, fit(left, right ? ui.dim(right) : "", cap)]
+    /*
+     * 열린 Task 블록을 판 위에 그린다.
+     *
+     * 높이를 반드시 묶는다 — 판이 터미널보다 높아지면 올라갈 줄 수가 틀려 화면이
+     * 무너진다(실측으로 그 사고를 겪었다). 블록 수와 블록당 줄 수를 둘 다 제한하고,
+     * 넘치면 몇 개가 더 있는지만 적는다.
+     */
+    const rows = output.rows ?? 24;
+    const budget = Math.max(0, Math.min(MAX_LIVE_ROWS, rows - 8));
+    /** @type {string[]} */
+    const live = [];
+    const blocks = state.blocks ?? [];
+    for (const b of blocks) {
+      if (live.length >= budget) break;
+      const took = elapsed(Date.now() - b.startedAt);
+      live.push(`${ui.cyan("●")} ${b.label} ${ui.dim(`· 도구 ${b.tools}회 · ${took}`)}`);
+      const room = Math.min(TAIL_LINES, Math.max(0, budget - live.length));
+      for (const line of b.tail.slice(-room)) live.push(`  ${ui.dim("│")} ${ui.dim(line)}`);
+    }
+    const shown = blocks.filter((b) => live.some((l) => l.includes(b.label))).length;
+    if (blocks.length > shown) live.push(ui.dim(`  … 그 외 ${blocks.length - shown}건`));
+
+    return [...live, rule, input, rule, fit(left, right ? ui.dim(right) : "", cap)]
       .map((l) => clipToWidth(l, cap));
   }
 
@@ -134,7 +180,7 @@ export function createActivity({ output, ui }) {
        * 세션 내내 같은 것은 살려 둔다.
        * 전부 초기화하면 턴 시작 전에 설정한 실행 경로가 지워져 판 오른쪽이 비었다(실측).
        */
-      state = { label, outputTokens: 0, ...(state.runtime ? { runtime: state.runtime } : {}), ...(state.mode ? { mode: state.mode } : {}) };
+      state = { label, outputTokens: 0, blocks: [], ...(state.runtime ? { runtime: state.runtime } : {}), ...(state.mode ? { mode: state.mode } : {}) };
       startedAt = Date.now();
       frame = 0;
       suspended = false;
