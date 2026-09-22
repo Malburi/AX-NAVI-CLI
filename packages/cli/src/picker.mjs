@@ -278,3 +278,99 @@ export function pick({ question, options, multiSelect = false, header, input, ou
     paint();
   });
 }
+
+/**
+ * 자유 입력 질문 — 선택지가 없을 때.
+ *
+ * 왜 따로 만드는가. 예전에는 이 경우만 REPL 의 줄 큐로 받았다. 그런데 턴이 도는
+ * 동안에는 readline 이 물러나 있고, 대신 들어선 typeahead 는 **화면에 글자를 찍지
+ * 않는다** — 친 글을 바닥 판에 보여 주는 구조인데, 질문을 띄우려고 그 판을 걷어 낸
+ * 상태다. 그래서 사용자는 눈먼 채로 타이핑하게 된다. 실측으로 이렇게 보고됐다.
+ *
+ *   "이 상황에서 입력이 안 되. 엔터도 안 쳐지고"
+ *
+ * 선택지 질문이 쓰는 방법을 그대로 쓴다 — keypress 를 직접 받고 우리가 그린다.
+ * 줄 큐와 무관해지므로 미리 쳐 둔 명령이 답으로 먹히는 일도 없다.
+ *
+ * @param {object} args
+ * @param {string} args.question
+ * @param {string} [args.header]
+ * @param {NodeJS.ReadStream} args.input
+ * @param {NodeJS.WriteStream} args.output
+ * @param {{ dim: (s: string) => string, cyan: (s: string) => string, bold: (s: string) => string, yellow: (s: string) => string }} args.ui
+ * @param {(how: "Ctrl+C") => void} [args.onInterrupt]
+ * @returns {Promise<string[]>} 답 한 줄. 건너뛰면 빈 배열
+ */
+export function askText({ question, header, input, output, ui, onInterrupt }) {
+  return new Promise((resolve) => {
+    let typed = "";
+    let drawn = 0;
+
+    const width = () => Math.max(20, (output.columns ?? 80) - 1);
+
+    const draw = () => {
+      /** @type {string[]} */
+      const lines = [""];
+      if (header) lines.push(`  ${ui.dim(header)}`);
+      for (const l of wrapToWidth(`${ui.yellow("●")} ${ui.bold(question)}`, width())) lines.push(l);
+      lines.push("");
+      // 커서 자리를 ▏로 표시한다 — 실제 커서는 숨겨 두었다.
+      lines.push(clipToWidth(`  ${ui.cyan("답")} ${ui.dim(">")} ${typed}${ui.dim("▏")}`, width()));
+      lines.push(`  ${ui.dim("Enter 확인 · Esc 건너뜀")}`);
+      output.write(cursorUp(drawn) + CLEAR_DOWN + lines.join("\n") + "\n");
+      drawn = lines.length;
+    };
+
+    /* 선택지 질문과 같은 이유로 readline 의 키 처리를 잠시 뗀다. */
+    const saved = /** @type {Function[]} */ (input.listeners("keypress"));
+    for (const fn of saved) input.off("keypress", /** @type {any} */ (fn));
+    const wasRaw = input.isRaw === true;
+    input.setRawMode?.(true);
+    output.write(HIDE_CURSOR);
+
+    /** @param {string[]} answer */
+    const finish = (answer) => {
+      input.off("keypress", onKey);
+      for (const fn of saved) input.on("keypress", /** @type {any} */ (fn));
+      input.setRawMode?.(wasRaw);
+      output.write(SHOW_CURSOR);
+      // 고른 결과를 한 줄로 남긴다. 질문 블록을 걷어 내고 답만 남겨야 기록이 읽힌다.
+      const shown = answer[0]?.trim() ? answer[0] : ui.dim("(건너뜀)");
+      output.write(cursorUp(drawn) + CLEAR_DOWN + `  ${ui.cyan("답")} ${ui.dim(">")} ${shown}\n`);
+      resolve(answer);
+    };
+
+    /**
+     * @param {string | undefined} ch
+     * @param {{ name?: string, ctrl?: boolean, meta?: boolean } | undefined} key
+     */
+    const onKey = (ch, key) => {
+      if (key?.ctrl && key.name === "c") {
+        finish([]);
+        onInterrupt?.("Ctrl+C");
+        return;
+      }
+      // ESC 는 "이 질문 건너뜀"이다. 작업 전체 중단이 아니다 — 선택지 질문과 같다.
+      if (key?.name === "escape") return finish([]);
+      if (key?.name === "return" || key?.name === "enter") return finish(typed.trim() ? [typed.trim()] : []);
+      if (key?.name === "backspace") {
+        typed = typed.slice(0, -1);
+        return draw();
+      }
+      /* 붙여넣기로 한 번에 들어오는 경우가 있다 — 여러 글자를 통째로 받는다. */
+      if (ch && !key?.ctrl && !key?.meta) {
+        const add = [...ch].filter((c) => {
+          const code = c.codePointAt(0) ?? 0;
+          return code >= 0x20 && code !== 0x7f;
+        }).join("");
+        if (add) {
+          typed += add;
+          draw();
+        }
+      }
+    };
+
+    input.on("keypress", onKey);
+    draw();
+  });
+}

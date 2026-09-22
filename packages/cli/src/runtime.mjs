@@ -9,7 +9,7 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { pick } from "./picker.mjs";
+import { askText, pick } from "./picker.mjs";
 import { DEFAULT_MODE } from "./mode.mjs";
 
 /** @typedef {import("@ax-navi/core").AuditRecord} AuditRecord */
@@ -310,8 +310,26 @@ export function createHostElicitor() {
 
   return {
     async ask(question, options, opts = {}) {
-      // 자유 입력은 고를 게 없다 — 그때만 줄 입력을 그대로 둔다.
-      if (!options.length || !process.stdin.isTTY) return byLine.ask(question, options, opts);
+      /*
+       * TTY 가 아니면 줄 입력으로 간다 — 파이프·CI 경로다.
+       * TTY 라면 선택지가 있든 없든 **키를 직접 받는다.**
+       *
+       * 예전에는 자유 입력만 줄 큐로 받았는데, 턴이 도는 동안에는 readline 이 물러나
+       * 있고 대신 들어선 typeahead 가 화면에 글자를 안 찍는다(친 글은 바닥 판에
+       * 보여 주는데, 질문을 띄우려고 그 판을 걷어 낸 상태다). 사용자는 눈먼 채로
+       * 타이핑하게 됐다 — 실측으로 "입력이 안 되고 엔터도 안 쳐진다"였다.
+       */
+      if (!process.stdin.isTTY) return byLine.ask(question, options, opts);
+      if (!options.length) {
+        return askText({
+          question,
+          ...(opts.header ? { header: opts.header } : {}),
+          input: process.stdin,
+          output: process.stdout,
+          ui,
+          onInterrupt: () => { interruptTurn(); },
+        });
+      }
       return pick({
         question,
         options,
