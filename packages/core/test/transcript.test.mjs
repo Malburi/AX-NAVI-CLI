@@ -266,20 +266,33 @@ test("어떤 폭에서도 머리말이 폭을 넘지 않는다", () => {
  * 두 줄까지 이어 보이되, 그래도 남으면 줄임표로 끝낸다 — 본문보다 명령이 화면을
  * 차지하면 그것대로 안 읽힌다.
  */
-test("긴 명령은 잘라 버리지 않고 한 줄 더 이어 보인다", () => {
-  const long = { command: `cd "D:/AI/새 폴더/AX-NAVI" && PYTHONIOENCODING=utf-8 python -c "import json; print(len(json.load(open('_workspace/index/dead_code.json'))))"` };
-  const lines = render({ tool: "Bash", input: long, result: "count 0", width: 100 });
-  assert.ok(lines.length >= 3, "이어지는 줄이 없다");
-  assert.match(lines.slice(0, 2).join(""), /dead_code\.json/, "뒷부분이 통째로 잘렸다");
+/*
+ * 예전에는 두 줄까지 썼다. 한 줄에서 자르면 `cd "<절대경로>" && python -c "` 에서
+ * 끝나 정작 무엇을 했는지가 안 보였기 때문이다. 지금은 headline 이 그 cd 접두사를
+ * 걷어 내므로 첫 줄에 실제 명령이 온다 — 두 번째 줄을 쓸 이유가 사라졌다.
+ *
+ * 한 줄로 고정하면 도구 호출 하나의 높이가 일정해진다. 서브에이전트 스물 몇이
+ * 동시에 말할 때 그 일정함이 화면을 읽히게 만든다(실측으로 그 화면이 "엉망"이었다).
+ */
+test("프로젝트 루트로 가는 cd 접두사는 걷어 낸다 — 아는 값이 40칸을 먹는다", () => {
+  const root = "D:/AI/새 폴더/AX-NAVI";
+  const head = headline("Bash", { command: `cd "${root}" && grep -rn TODO src` }, { root });
+  assert.equal(head, "Bash(grep -rn TODO src)", head);
 });
 
-test("아무리 길어도 두 줄을 넘지 않는다", () => {
+test("다른 곳으로 가는 cd 는 남긴다 — 그건 정보다", () => {
+  const head = headline("Bash", { command: 'cd "D:/다른곳" && ls' }, { root: "D:/AI/새 폴더/AX-NAVI" });
+  assert.ok(head.includes('cd "D:/다른곳"'), head);
+});
+
+test("호출은 한 줄로 끝난다 — 높이가 일정해야 읽힌다", () => {
   const lines = render({ tool: "Bash", input: { command: "x".repeat(2000) }, result: "ok", width: 80 });
-  // 제목 2줄 + 결과 1줄
-  assert.equal(lines.length, 3, `${lines.length}줄이나 됐다`);
+  // 제목 1줄 + 결과 1줄
+  assert.equal(lines.length, 2, `${lines.length}줄이나 됐다`);
+  assert.ok((lines[0] ?? "").endsWith("…)"), "잘렸다는 표시가 없다");
 });
 
-test("이어 보이는 줄도 폭을 넘지 않는다", () => {
+test("어떤 폭에서도 줄이 폭을 넘지 않는다", () => {
   for (const width of [40, 80, 120]) {
     const lines = render({ tool: "Bash", input: { command: "가".repeat(500) }, result: "ok", width });
     for (const line of lines) assert.ok(visibleLength(line) < width, `폭 ${width}에서 ${visibleLength(line)}칸`);

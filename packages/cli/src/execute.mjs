@@ -16,6 +16,7 @@ import { startMcpBridge } from "./mcp/bridge.mjs";
 import { createActivity, elapsed } from "./activity.mjs";
 import { renderCall } from "./transcript.mjs";
 import { createMarkdown } from "./markdown.mjs";
+import { clipToWidth, visibleLength } from "./width.mjs";
 import { applyMode } from "./mode.mjs";
 import { join } from "node:path";
 import { closeTurn, openTurn, recordAgentEnd, recordAgentStart, recordLine } from "./record.mjs";
@@ -323,7 +324,17 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         who.produced += 1;
         who.lastAt = Date.now();
       }
-      return emit(`${ui.dim("│")} ${ui.dim(line)}`, parentId);
+      /*
+       * **한 줄은 한 줄로 끝낸다.**
+       *
+       * 서브에이전트가 내놓는 문단은 길다 — 실측으로 174칸짜리 한 줄이 폭 120 터미널에서
+       * 두 줄로 접혔다. 에이전트 스물 몇이 동시에 말하면 접힌 줄들이 서로 엉켜 누가 한
+       * 말인지 사라진다. 잘라서라도 한 줄에 두면 `│` 세로줄이 일정하게 서서 읽힌다.
+       * 전문은 어차피 기록에 남고 /log 로 펼쳐 볼 수 있다.
+       */
+      const room = Math.max(20, (process.stdout.columns ?? 100) - 3);
+      const clipped = visibleLength(line) > room ? `${clipToWidth(line, room - 1)}…` : line;
+      return emit(`${ui.dim("│")} ${ui.dim(clipped)}`, parentId);
     }
     /*
      * 본문은 마크다운으로 온다. 그대로 흘리면 `**강조**` 가 기호째 보인다(실측).
@@ -522,7 +533,31 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
          * 경고가 늘 뜨면 경고가 아니다.
          */
         const silent = open.filter((k) => (subagents.get(k)?.produced ?? 0) === 0);
-        for (const key of open) closeSubagent(key, false);
+        /*
+         * 많으면 한 줄로 갈무리한다.
+         *
+         * 비동기 에이전트는 완료 이벤트가 없어 전부 여기서 닫힌다. 스물 몇 개가 열려
+         * 있으면 닫는 줄만 스물 몇 줄이 한꺼번에 쏟아져, 정작 마지막에 읽어야 할
+         * 요약을 밀어낸다(실측). 몇 개까지는 하나씩 적고, 그보다 많으면 세어서 적는다.
+         */
+        const ROSTER_MAX = 6;
+        if (open.length > ROSTER_MAX) {
+          for (const key of open) {
+            const who = subagents.get(key);
+            if (who) recordAgentEnd(turn, key, who.tools);
+            flushText(key);
+            subagents.delete(key);
+          }
+          showRunning();
+          const worked = open.length - silent.length;
+          emit(
+            `  ${ui.dim("⎿")} ${ui.dim(`서브에이전트 ${open.length}건 — 출력 받음 ${worked}`)}` +
+              (silent.length ? ui.yellow(` · 출력 없음 ${silent.length}`) : "") +
+              ui.dim(` · 자세히는 /log`),
+          );
+        } else {
+          for (const key of open) closeSubagent(key, false);
+        }
         if (silent.length) {
           emit(
             ui.yellow(`  서브에이전트 ${silent.length}건이 아무 출력 없이 턴이 끝났다.`) +

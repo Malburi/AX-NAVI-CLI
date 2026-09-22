@@ -91,8 +91,31 @@ export function headline(tool, input, opts = {}) {
     value = Object.values(args).find((v) => typeof v === "string" && v) ?? "";
   }
 
-  const text = shorten(String(value), opts.root).replace(/\s+/g, " ").trim();
+  let text = shorten(String(value), opts.root).replace(/\s+/g, " ").trim();
+  if (name === "Bash") text = stripCd(text, opts.root);
   return text ? `${name}(${text})` : name;
+}
+
+/**
+ * `cd "<프로젝트 루트>" && ` 접두사를 걷어 낸다.
+ *
+ * 모델은 명령마다 작업 폴더를 앞에 붙인다. 그런데 그 폴더는 이미 우리가 아는 값이고,
+ * 절대경로 하나가 40자를 먹는다 — 실측으로 한 줄 120칸 중 40칸이 그것이었고, 정작
+ * 무엇을 했는지는 다음 줄로 밀려났다. 루트로 가는 cd 일 때만 걷어 낸다. 다른 곳으로
+ * 가는 cd 는 **정보**라서 그대로 둔다.
+ *
+ * @param {string} text
+ * @param {string} [root]
+ * @returns {string}
+ */
+function stripCd(text, root) {
+  const m = /^cd\s+(?:"([^"]+)"|'([^']+)'|(\S+))\s*&&\s*/.exec(text);
+  if (!m) return text;
+  const where = m[1] ?? m[2] ?? m[3] ?? "";
+  if (!root) return text;
+  const BACKSLASH = String.fromCharCode(92);
+  const norm = (/** @type {string} */ s) => s.split(BACKSLASH).join("/").replace(/\/$/, "");
+  return norm(where) === norm(root) ? text.slice(m[0].length) : text;
 }
 
 /*
@@ -195,25 +218,23 @@ export function renderCall({ tool, input, result, isError, pending, root, depth 
   const head = headline(tool, input, root === undefined ? {} : { root });
   // 도구 이름만 진하게. 인자는 흐리게 두어야 이름이 눈에 먼저 들어온다.
   /*
-   * 긴 명령은 잘라 버리지 않고 한 줄 더 이어 보인다.
+   * 호출은 **한 줄로 끝낸다.**
    *
-   * 한 줄에서 자르면 `cd "..." && python -c "` 에서 끝나 정작 무었 했는지가 안 보인다
-   * (실측). 두 줄까지만 쓴다 — 더 늘리면 본문보다 명령이 화면을 차지한다.
+   * 예전에는 두 줄까지 썼다. 한 줄에서 자르면 `cd "<절대경로>" && python -c "` 에서
+   * 끝나 정작 무엇을 했는지가 안 보였기 때문이다. 지금은 headline 이 그 cd 접두사를
+   * 걷어 내므로 첫 줄에 실제 명령이 온다 — 두 번째 줄을 쓸 이유가 사라졌다.
+   *
+   * 한 줄로 고정하는 값이 크다. 도구 호출 하나가 화면에서 차지하는 높이가 일정해지고,
+   * 서브에이전트 스물 몇이 동시에 말할 때 `│` 세로줄이 흐트러지지 않는다(실측으로
+   * 그 화면이 "엉망"이라는 말을 들었다). 전문은 기록에 남고 /log 로 펼쳐 볼 수 있다.
    */
   const open = head.indexOf("(");
   const name = open === -1 ? head : head.slice(0, open);
   const args = open === -1 ? "" : head.slice(open);
-  const first = cap - visibleLength(pad) - 2 - visibleLength(name);
-  const wrapped = args ? wrapToWidth(args, Math.max(10, first)) : [""];
+  const room = cap - visibleLength(pad) - 2 - visibleLength(name);
+  const shown = visibleLength(args) > room ? `${clipToWidth(args, Math.max(4, room - 2))}…)` : args;
 
-  const lines = [`${pad}${bullet} ${ui.bold(name)}${ui.dim(wrapped[0] ?? "")}`];
-  if (wrapped.length > 1) {
-    // 두 번째 줄까지. 그래도 남으면 줄임표로 끝낸다.
-    const rest = wrapped.slice(1).join("");
-    const room = cap - visibleLength(pad) - 4;
-    const tail = visibleLength(rest) > room ? `${clipToWidth(rest, room - 2)}…` : rest;
-    lines.push(`${pad}    ${ui.dim(tail)}`);
-  }
+  const lines = [`${pad}${bullet} ${ui.bold(name)}${ui.dim(shown)}`];
 
   if (pending) {
     lines.push(clipToWidth(`${pad}${ui.dim("  ⎿  (결과를 받지 못했다)")}`, cap));
