@@ -191,3 +191,31 @@ test("스킵할 때 무엇을 재사용하는지 밝히라고 지시한다", () 
   // 미확인 값이면 스킵하지 말고 다시 물어야 한다 — 이게 없으면 위 사고가 반복된다.
   assert.match(src, /unconfirmed.*기록돼 있으면 건너뛰지 말고/);
 });
+
+/* ---------- 백그라운드 서브에이전트 ---------- */
+
+/*
+ * 실측. 페어 하네스 초기화에서 서브에이전트 넷을 띄우고 27분 34초 · $14.31 을 쓴 뒤
+ * 모델이 "백그라운드에서 돌고 있다 — 완료되면 이어서 진행하겠다"며 턴을 끝냈다.
+ * 이 실행 경로에는 나중에 깨어날 방법이 없어서 파이프라인이 그 자리에서 죽었고,
+ * 사용자는 확인할 수단도 없었다.
+ *
+ * 화면은 더 나빴다 — 우리가 턴 끝에 열린 블록을 닫으면서 "끝남"이라고 찍었다.
+ * 모델은 돌고 있다고 하는데 화면은 끝났다고 한 것이다.
+ */
+test("결과를 못 받은 서브에이전트를 '끝남'으로 찍지 않는다", () => {
+  const src = readFileSync(join(REPO, "packages", "cli", "src", "execute.mjs"), "utf8");
+  // 닫기 함수가 실제 종료 여부를 인자로 받아야 한다.
+  assert.match(src, /closeSubagent = \(key, finished\)/, "종료 여부를 구분하지 않는다");
+  assert.match(src, /closeSubagent\(key, true\)/, "동기 종료 경로가 finished 를 안 넘긴다");
+  assert.match(src, /closeSubagent\(key, false\)/, "턴 끝 경로가 finished 를 안 넘긴다");
+  assert.match(src, /결과를 못 받고 턴이 끝났다/, "못 받았다는 사실을 화면에 안 적는다");
+});
+
+test("결과를 받기 전에 턴을 끝내지 말라고 지시한다", () => {
+  const src = readFileSync(join(REPO, "packages", "cli", "src", "commands.mjs"), "utf8");
+  assert.match(src, /띄운 서브에이전트의 결과를 받기 전에 턴을 끝내지 마라/);
+  assert.match(src, /TaskOutput/, "결과를 받을 수단을 안 알려 준다");
+  // 정말 못 기다릴 때의 출구도 있어야 한다. 없으면 모델이 거짓 완료를 낸다.
+  assert.match(src, /체크포인트 파일에 적고/);
+});

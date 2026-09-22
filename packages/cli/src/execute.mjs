@@ -207,7 +207,18 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 아직 열려 있는 서브에이전트 블록을 닫는다.
    * @param {string} key
    */
-  const closeSubagent = (key) => {
+  /**
+   * 서브에이전트 블록을 닫는다.
+   *
+   * `finished` 를 구분하는 이유 — 턴이 끝날 때 아직 열려 있는 블록도 닫아야 화면이
+   * 정리되는데, 예전에는 그때도 "끝남"이라고 찍었다. 그건 거짓말이었다. 실측으로
+   * 화면에는 `B-A · analyzer 끝남` 이 찍혔는데 바로 아래 모델이 "백그라운드에서
+   * 돌고 있다"고 말했다. 사용자는 끝난 줄 알고 결과를 찾는다.
+   *
+   * @param {string} key
+   * @param {boolean} finished  실제로 결과를 받고 끝났는가
+   */
+  const closeSubagent = (key, finished) => {
     const done = subagents.get(key);
     if (!done) return;
     // 서브에이전트가 마지막에 한 말을 먼저 비운다. 닫는 줄 뒤에 나오면 블록 밖으로 샌다.
@@ -215,7 +226,13 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     subagents.delete(key);
     showRunning();
     recordAgentEnd(turn, key, done.tools);
-    emit(`  ${ui.dim("⎿")} ${ui.dim(`${done.label} 끝남 · 도구 ${done.tools}회 · ${elapsed(Date.now() - done.startedAt)}`)}`, key);
+    const took = elapsed(Date.now() - done.startedAt);
+    emit(
+      finished
+        ? `  ${ui.dim("⎿")} ${ui.dim(`${done.label} 끝남 · 도구 ${done.tools}회 · ${took}`)}`
+        : `  ${ui.dim("⎿")} ${ui.yellow(`${done.label} — 결과를 못 받고 턴이 끝났다`)} ${ui.dim(`· 도구 ${done.tools}회 · ${took}`)}`,
+      key,
+    );
   };
   const NEWLINE = String.fromCharCode(10);
 
@@ -391,7 +408,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
             continue;
           }
           // 동기로 끝난 경우 — 무엇을 얼마나 했는지 한 줄로 닫는다.
-          closeSubagent(key);
+          closeSubagent(key, true);
           if (event.isError) toolErrors += 1;
           continue;
         }
@@ -454,8 +471,21 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         emit(ui.red(`  오류: ${event.reason}`));
         failed = true;
       } else if (event.type === "done") {
-        // 백그라운드 서브에이전트는 자기 종료 이벤트가 없다. 턴이 끝날 때 여기서 닫는다.
-        for (const key of [...subagents.keys()]) closeSubagent(key);
+        /*
+         * 아직 열려 있는 서브에이전트.
+         *
+         * 백그라운드로 뜬 것은 자기 종료 이벤트가 없어서 여기서 닫아야 화면이 정리된다.
+         * 다만 **끝났다고 말하지 않는다.** 결과를 못 받은 채 턴이 끝난 것이고,
+         * 그러면 사용자는 그것을 이어서 확인할 방법이 필요하다.
+         */
+        const stranded = [...subagents.keys()];
+        for (const key of stranded) closeSubagent(key, false);
+        if (stranded.length) {
+          emit(
+            ui.yellow(`  서브에이전트 ${stranded.length}건이 결과를 내기 전에 턴이 끝났다.`) +
+              ui.dim(` 이어서 물어보면 그 결과를 받아 계속한다 — /log 로 지금까지 낸 말을 볼 수 있다.`),
+          );
+        }
         // 상한 도달·거절 같은 비정상 종료를 성공으로 보고하지 않는다.
         if (event.reason && !["end_turn", "stop_sequence"].includes(event.reason)) {
           emit(ui.yellow(`  종료 사유: ${event.reason}`));
