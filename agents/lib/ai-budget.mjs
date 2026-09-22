@@ -138,12 +138,23 @@ export function claimBudget({ root, session, role, kind = "initial", reason = ""
   if (!new Set(["initial", "retry"]).has(kind)) throw new Error("kind는 initial 또는 retry여야 합니다.");
   const value = readBudget(root);
   if (session && value.session !== session) throw new Error(`AI 예산 session 불일치: expected ${value.session}, got ${session}`);
-  /* 시간·토큰 한도를 먼저 본다 — 횟수가 남아 있어도 이쪽이 소진되면 진행하지 않는다. */
+  /*
+   * 토큰 한도를 본다 — 횟수가 남아 있어도 이쪽이 소진되면 진행하지 않는다.
+   *
+   * 시간 한도는 **하드 스톱에서 뺐다.** 벽시계로 재고 있었기 때문이다.
+   *
+   * 실측 사고: 페어 하네스 초기화가 analyzer 까지 끝낸 뒤 writer 앞에서 멈췄다.
+   *   시간 예산 초과: 199.1분 / 54분
+   * 그런데 그 199분의 대부분은 **대화가 끊겼다 재개되기까지의 공백**이었다. 세션이
+   * 아무것도 안 하고 있어도 예산이 줄어든다. 즉 이 한도는 소비를 막지 못하면서,
+   * 다 끝낸 작업을 못 쓰게 만든다 — 빠르게 많이 쓰는 실행은 통과하고, 쉬었다 돌아온
+   * 실행은 거부한다. 재개를 전제로 하는 CLI 실행 경로에서는 규칙이 거꾸로 선다.
+   *
+   * 소비의 상한은 토큰이 재는 것이 맞다. 그쪽은 그대로 둔다.
+   * 경과 시간은 버리지 않고 status·claim 응답에 계속 실어 보낸다 — 보고는 하되
+   * 진행을 막지는 않는다.
+   */
   const limits = value.limits || {};
-  if (limits.minutes > 0 && value.started_at) {
-    const elapsed = (now - value.started_at) / 60000;
-    if (elapsed >= limits.minutes) throw new Error(`시간 예산 초과: ${elapsed.toFixed(1)}분 / ${limits.minutes}분`);
-  }
   if (limits.tokens > 0 && (value.used.tokens || 0) >= limits.tokens) {
     throw new Error(`토큰 예산 초과: ${value.used.tokens}/${limits.tokens}`);
   }

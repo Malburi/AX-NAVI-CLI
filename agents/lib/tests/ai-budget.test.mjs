@@ -87,19 +87,49 @@ export async function test(register, assert) {
     });
   });
 
-  register("시간 예산이 소진되면 호출 횟수가 남아도 거부한다", () => {
+  /*
+   * 예전에는 시간 한도가 하드 스톱이었다. 벽시계로 재는 값이라 뺐다.
+   *
+   * 실측 사고: 페어 초기화가 analyzer 를 다 끝내고 writer 앞에서 거부됐다
+   * ("시간 예산 초과: 199.1분 / 54분"). 그 199분의 대부분은 대화가 끊겼다 재개되기까지의
+   * 공백이었다. 세션이 아무것도 안 하는 동안 예산이 줄어든 것이다 — 소비를 막지 못하면서
+   * 다 끝낸 작업을 못 쓰게 만든다. 재개를 전제로 하는 실행 경로에서는 규칙이 거꾸로 선다.
+   */
+  register("시간이 지나도 claim을 막지 않는다 — 벽시계는 소비의 척도가 아니다", () => {
     withTempRoot((root) => {
       const t0 = 1_000_000;
       initBudget({ root, session: "s1", initial: 3, retries: 2, minutes: 30, now: t0 });
       assert.equal(claimBudget({ root, session: "s1", role: "analyzer", now: t0 }).allowed, true);
+      // 한도(30분)를 훌쩍 넘긴 시각. 예전에는 여기서 거부됐다.
+      const late = claimBudget({ root, session: "s1", role: "writer", now: t0 + 199 * 60_000 });
+      assert.equal(late.allowed, true, "경과 시간으로 진행을 막으면 안 된다");
+    });
+  });
+
+  register("토큰 한도는 그대로 막는다 — 소비의 상한은 이쪽이 잰다", () => {
+    withTempRoot((root) => {
+      initBudget({ root, session: "s1", initial: 3, retries: 2, tokens: 1000 });
+      claimBudget({ root, session: "s1", role: "analyzer" });
+      recordSpend({ root, role: "analyzer", spentTokens: 1200 });
       let threw = false;
       try {
-        claimBudget({ root, session: "s1", role: "writer", now: t0 + 31 * 60_000 });
+        claimBudget({ root, session: "s1", role: "writer" });
       } catch (e) {
         threw = true;
-        assert.ok(/시간 예산 초과/.test(e.message), `시간 예산 메시지: ${e.message}`);
+        assert.ok(/토큰 예산 초과/.test(e.message), `토큰 예산 메시지: ${e.message}`);
       }
-      assert.ok(threw, "시간 한도를 넘겼으면 횟수가 남아도 거부돼야 함");
+      assert.ok(threw, "토큰 한도를 넘겼으면 거부돼야 한다");
+    });
+  });
+
+  register("경과 시간은 계속 보고한다 — 막지 않는 것과 안 알리는 것은 다르다", () => {
+    withTempRoot((root) => {
+      const t0 = 1_000_000;
+      initBudget({ root, session: "s1", initial: 3, retries: 2, minutes: 30, now: t0 });
+      const claim = claimBudget({ root, session: "s1", role: "analyzer", now: t0 + 40 * 60_000 });
+      // 남은 시간은 0으로 바닥나지만 진행은 허용된다. 정보는 잃지 않는다.
+      assert.equal(claim.allowed, true);
+      assert.equal(typeof claim.remaining.minutes, "number", "경과·잔여 시간 보고가 사라졌다");
     });
   });
 
