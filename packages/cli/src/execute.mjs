@@ -188,7 +188,15 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   /** 결과를 기다리는 호출들. @type {Map<string, { tool: string, input: unknown, parentId?: string }>} */
   const pending = new Map();
 
-  /** 지금 도는 서브에이전트들. @type {Map<string, { label: string, startedAt: number, tools: number, async?: boolean }>} */
+  /**
+   * 지금 도는 서브에이전트들.
+   *
+   * produced/lastAt 을 함께 든다 — **끝났는지는 알 수 없지만 무엇을 냈는지는 안다.**
+   * 비동기로 뜬 에이전트는 완료를 알리는 이벤트가 없다. 우리가 받는 것은 그 에이전트에
+   * 귀속된 글과 도구 호출뿐이다. 그래서 끝났다/못 끝났다를 단정하지 않고 관측한 것만 적는다.
+   *
+   * @type {Map<string, { label: string, startedAt: number, tools: number, produced: number, lastAt: number, async?: boolean }>}
+   */
   const subagents = new Map();
 
   /**
@@ -227,12 +235,28 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     showRunning();
     recordAgentEnd(turn, key, done.tools);
     const took = elapsed(Date.now() - done.startedAt);
-    emit(
-      finished
-        ? `  ${ui.dim("⎿")} ${ui.dim(`${done.label} 끝남 · 도구 ${done.tools}회 · ${took}`)}`
-        : `  ${ui.dim("⎿")} ${ui.yellow(`${done.label} — 결과를 못 받고 턴이 끝났다`)} ${ui.dim(`· 도구 ${done.tools}회 · ${took}`)}`,
-      key,
-    );
+    /*
+     * 세 가지를 구분한다.
+     *
+     *   finished       결과를 담은 도구 응답을 받았다 — 확실히 끝났다.
+     *   produced > 0   글이나 도구 호출을 냈다. 끝났는지는 모르지만 일은 했다.
+     *   produced = 0   한 마디도 못 받았다. 이건 문제다.
+     *
+     * 가운데를 "끝남"이라 부르면 거짓이고, "결과를 못 받았다"고 불러도 거짓이다.
+     * 실측으로 둘 다 겪었다 — 21건이 정상 완료됐는데 전부 "못 받았다"로 찍혔다.
+     * 그래서 단정하지 않고 관측한 것만 적는다.
+     */
+    if (finished) {
+      emit(`  ${ui.dim("⎿")} ${ui.dim(`${done.label} 끝남 · 도구 ${done.tools}회 · ${took}`)}`, key);
+    } else if (done.produced > 0) {
+      const idle = elapsed(Date.now() - done.lastAt);
+      emit(`  ${ui.dim("⎿")} ${ui.dim(`${done.label} · 도구 ${done.tools}회 · 마지막 출력 ${idle} 전`)}`, key);
+    } else {
+      emit(
+        `  ${ui.dim("⎿")} ${ui.yellow(`${done.label} — 출력 없이 턴이 끝났다`)} ${ui.dim(`· ${took}`)}`,
+        key,
+      );
+    }
   };
   const NEWLINE = String.fromCharCode(10);
 
@@ -293,7 +317,14 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    */
   const writeText = (line, parentId) => {
     // 서브에이전트가 한 말은 들여서 흐리게 — 부모가 한 말과 섞이면 누가 한 말인지 모른다.
-    if (parentId) return emit(`${ui.dim("│")} ${ui.dim(line)}`, parentId);
+    if (parentId) {
+      const who = subagents.get(parentId);
+      if (who) {
+        who.produced += 1;
+        who.lastAt = Date.now();
+      }
+      return emit(`${ui.dim("│")} ${ui.dim(line)}`, parentId);
+    }
     /*
      * 본문은 마크다운으로 온다. 그대로 흘리면 `**강조**` 가 기호째 보인다(실측).
      * 두 칸 들여쓰는 것은 도구 기록(● 줄)과 말을 가르기 위해서다.
@@ -365,7 +396,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
          */
         if (SUBAGENT_TOOLS.has(tool)) {
           const label = describeTask(event.input);
-          subagents.set(id, { label, startedAt: Date.now(), tools: 0 });
+          subagents.set(id, { label, startedAt: Date.now(), tools: 0, produced: 0, lastAt: Date.now() });
           activity.set({ tool: "" });
           showRunning();
           recordAgentStart(turn, id, label);
@@ -374,7 +405,11 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         }
 
         const parent = event.parentId ? subagents.get(event.parentId) : undefined;
-        if (parent) parent.tools += 1;
+        if (parent) {
+          parent.tools += 1;
+          parent.produced += 1;
+          parent.lastAt = Date.now();
+        }
         activity.set({ tool });
         showRunning();
         /*
@@ -478,11 +513,19 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
          * 다만 **끝났다고 말하지 않는다.** 결과를 못 받은 채 턴이 끝난 것이고,
          * 그러면 사용자는 그것을 이어서 확인할 방법이 필요하다.
          */
-        const stranded = [...subagents.keys()];
-        for (const key of stranded) closeSubagent(key, false);
-        if (stranded.length) {
+        const open = [...subagents.keys()];
+        /*
+         * 경고는 **한 마디도 못 받은 것**에만 낸다.
+         *
+         * 예전에는 열려 있던 것 전부를 세서 알렸다. 비동기 에이전트는 완료 이벤트가
+         * 없어 언제나 열린 채로 끝나므로, 정상 완료한 21건이 전부 경고로 찍혔다(실측).
+         * 경고가 늘 뜨면 경고가 아니다.
+         */
+        const silent = open.filter((k) => (subagents.get(k)?.produced ?? 0) === 0);
+        for (const key of open) closeSubagent(key, false);
+        if (silent.length) {
           emit(
-            ui.yellow(`  서브에이전트 ${stranded.length}건이 결과를 내기 전에 턴이 끝났다.`) +
+            ui.yellow(`  서브에이전트 ${silent.length}건이 아무 출력 없이 턴이 끝났다.`) +
               ui.dim(` 이어서 물어보면 그 결과를 받아 계속한다 — /log 로 지금까지 낸 말을 볼 수 있다.`),
           );
         }

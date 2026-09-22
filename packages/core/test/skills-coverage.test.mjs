@@ -203,13 +203,20 @@ test("스킵할 때 무엇을 재사용하는지 밝히라고 지시한다", () 
  * 화면은 더 나빴다 — 우리가 턴 끝에 열린 블록을 닫으면서 "끝남"이라고 찍었다.
  * 모델은 돌고 있다고 하는데 화면은 끝났다고 한 것이다.
  */
-test("결과를 못 받은 서브에이전트를 '끝남'으로 찍지 않는다", () => {
+test("서브에이전트 상태를 관측한 대로만 적는다", () => {
+  /*
+   * 두 번 틀렸다. 처음에는 열린 블록을 전부 "끝남"으로 닫았고(거짓 완료),
+   * 그다음에는 전부 "결과를 못 받았다"로 닫았다 — 정상 완료한 21건이 전부
+   * 경고로 찍혔다(실측). 비동기 에이전트에는 완료 이벤트가 없어 끝났는지는 알 수 없다.
+   * 알 수 있는 것은 무엇을 냈는가뿐이고, 그것만 적는다.
+   */
   const src = readFileSync(join(REPO, "packages", "cli", "src", "execute.mjs"), "utf8");
-  // 닫기 함수가 실제 종료 여부를 인자로 받아야 한다.
   assert.match(src, /closeSubagent = \(key, finished\)/, "종료 여부를 구분하지 않는다");
-  assert.match(src, /closeSubagent\(key, true\)/, "동기 종료 경로가 finished 를 안 넘긴다");
-  assert.match(src, /closeSubagent\(key, false\)/, "턴 끝 경로가 finished 를 안 넘긴다");
-  assert.match(src, /결과를 못 받고 턴이 끝났다/, "못 받았다는 사실을 화면에 안 적는다");
+  assert.match(src, /produced/, "무엇을 냈는지 세지 않는다");
+  assert.match(src, /마지막 출력/, "관측한 사실(마지막 출력 시각)을 안 적는다");
+  assert.match(src, /출력 없이 턴이 끝났다/, "정말 조용한 경우를 구분하지 않는다");
+  // 경고는 조용한 것에만. 늘 뜨는 경고는 경고가 아니다.
+  assert.match(src, /const silent = open\.filter/, "경고를 열린 것 전부에 내고 있다");
 });
 
 test("결과를 받기 전에 턴을 끝내지 말라고 지시한다", () => {
