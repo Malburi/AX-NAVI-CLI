@@ -167,3 +167,27 @@ test("위임 프로세스에 CLAUDE_PLUGIN_ROOT 를 채워 준다 — 두 번째
   const src = readFileSync(join(REPO, "packages", "provider-claude-cli", "src", "index.mjs"), "utf8");
   assert.match(src, /CLAUDE_PLUGIN_ROOT: this\.options\.pluginDir/);
 });
+
+/* ---------- 무응답과 스킵 ---------- */
+
+/*
+ * 실측 사고. 2026-09-15 실행에서 구성 질문에 답이 없었고, 스킬이 기본값을 적용한 뒤
+ * 그것을 "사용자 확인 내용"으로 파일에 적었다. 일주일 뒤 실행은 그 파일이 있다는
+ * 이유로 Phase -1 을 건너뛰었다 — 사용자는 단일/멀티레포를 한 번도 고른 적이 없는데
+ * 그 선택에 묶였다. 한 번의 무응답이 되돌릴 수 없는 결정이 되면 안 된다.
+ */
+test("무응답을 '사용자 확인'으로 기록하지 말라고 알린다", () => {
+  const src = readFileSync(join(REPO, "packages", "cli", "src", "mcp", "server.mjs"), "utf8");
+  const at = src.indexOf("사용자가 응답하지 않았다");
+  assert.ok(at > 0, "무응답 안내 자체가 없다");
+  const block = src.slice(at, at + 400);
+  assert.match(block, /확인했다.*기록하지 마라|기록하지 마라/, "무응답이 확인으로 굳는 것을 막지 않는다");
+  assert.match(block, /다시 물어야/, "다음 실행에서 다시 묻게 하지 않는다");
+});
+
+test("스킵할 때 무엇을 재사용하는지 밝히라고 지시한다", () => {
+  const src = readFileSync(join(REPO, "packages", "cli", "src", "commands.mjs"), "utf8");
+  assert.match(src, /스킵 조건에 걸려 이전 결정을 재사용할 때는 화면에 밝혀라/);
+  // 미확인 값이면 스킵하지 말고 다시 물어야 한다 — 이게 없으면 위 사고가 반복된다.
+  assert.match(src, /unconfirmed.*기록돼 있으면 건너뛰지 말고/);
+});

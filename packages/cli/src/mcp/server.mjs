@@ -151,7 +151,28 @@ async function callTool(name, args) {
   if (name === "AskUserQuestion") {
     const answers = await askUser(args.question ?? "", args.options ?? [], args.multiSelect === true, args.header ?? "");
     if (!answers.length) {
-      return { text: "(사용자가 응답하지 않았다. 임의로 진행하지 말고 무엇을 가정했는지 밝혀라.)" };
+      /*
+       * 무응답을 "확인된 결정"으로 굳히지 못하게 한다.
+       *
+       * 예전 문구는 "무엇을 가정했는지 밝혀라"까지만 말했다. 모델은 실제로 밝혔지만,
+       * 그 가정을 파일에 **사용자 확인 내용**으로 적었고 그 파일이 다음 실행의 스킵
+       * 조건이 됐다. 실측으로 이런 기록이 남았다.
+       *
+       *   ## 사용자 확인 내용
+       *   - 초기화 구성: 단일 (AskUserQuestion 무응답 → 기본값 적용)
+       *   - source: reused
+       *
+       * 그래서 일주일 뒤 실행은 "이미 확인됨"으로 보고 다시 묻지 않았다. 사용자는
+       * 단일/멀티레포를 한 번도 고른 적이 없는데 그 선택이 영구화된 것이다.
+       * 한 번의 무응답이 되돌릴 수 없는 결정이 되면 안 된다.
+       */
+      return {
+        text: [
+          "(사용자가 응답하지 않았다. 임의로 진행하지 말고 무엇을 가정했는지 밝혀라.",
+          "이 값을 '사용자가 확인했다'로 기록하지 마라 — 파일에 남길 때는 미확인임을",
+          "함께 적고(예: unconfirmed: true), 다음 실행에서 이 항목은 다시 물어야 한다.)",
+        ].join(" "),
+      };
     }
     return { text: answers.join(", ") };
   }
