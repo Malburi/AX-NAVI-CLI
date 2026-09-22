@@ -145,6 +145,29 @@ export async function cmdDoctor(root) {
  */
 const probePython = pythonInfo;
 
+
+/**
+ * 스킬 본문의 플러그인 루트 참조를 실제 경로로 바꾼다.
+ *
+ * 프롬프트 shim(applyPromptShim)은 agents/*.md 에만 걸린다. 스킬 본문은 "무수정"으로
+ * 실려 왔는데, 정작 지시문은 모델에게 **"스크립트 경로는 이미 절대경로로 치환돼 있다"**
+ * 고 말하고 있었다. 거짓말이었고, 24종 중 10종의 본문에 $CLAUDE_PLUGIN_ROOT 가 남아 있었다.
+ *
+ * 이 환경변수는 CLI 에 설정돼 있지 않으므로 빈 문자열로 펼쳐진다. 그러면
+ *   node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" …
+ * 가 node "/agents/lib/build-index.mjs" 가 되어 실패한다. 실측으로 scaffold-feature 가
+ * "이 런타임에서 인덱싱 스크립트 경로를 확보하지 못해 갱신 못함" 이라고 보고했다.
+ *
+ * @param {string} body
+ * @returns {string}
+ */
+export function resolveSkillPaths(body) {
+  return body.replace(
+    /\$env:CLAUDE_PLUGIN_ROOT|\$\{env:CLAUDE_PLUGIN_ROOT\}|\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT/g,
+    REPO_ROOT,
+  );
+}
+
 /* ---------- index ---------- */
 
 /**
@@ -380,7 +403,7 @@ export async function runSkill(root, name, prompt, providerName, ctx = {}) {
     `- 이 런타임에 없는 기능(서브에이전트 호출 등)은 네가 직접 수행하고, 그 사실만 짧게 밝혀라.`,
     ``,
     `<스킬 절차: ${skill.name}>`,
-    skill.body,
+    resolveSkillPaths(skill.body),
     `</스킬 절차>`,
   ].join("\n");
 
@@ -464,7 +487,7 @@ async function runOrchestratorSkill(root, skill, prompt, providerName, ctx = {})
     ``,
     `## 절차: ${skill.name}`,
     ``,
-    skill.body,
+    resolveSkillPaths(skill.body),
   ].join("\n");
 
   /*
@@ -608,7 +631,7 @@ async function runProcedureSkill(root, skill, prompt, providerName, ctx = {}) {
     ``,
     `## 절차: ${skill.name}`,
     ``,
-    skill.body,
+    resolveSkillPaths(skill.body),
   ].join(NEWLINE);
 
   return executeAgent({

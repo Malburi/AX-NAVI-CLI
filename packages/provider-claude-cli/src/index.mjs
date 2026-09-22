@@ -450,7 +450,20 @@ export class ClaudeCliProvider {
       cwd: this.options.cwd ?? process.cwd(),
       stdio: ["pipe", "pipe", "pipe"],
       // MCP 서버는 claude 의 자식으로 뜨므로 환경변수가 거기까지 상속된다.
-      env: { ...process.env, ...this.options.env },
+      /*
+       * CLAUDE_PLUGIN_ROOT 를 채워 둔다 — 두 번째 방어선이다.
+       *
+       * 스킬·에이전트 본문의 참조는 우리가 미리 절대경로로 바꿔 넣는다. 그래도 놓친
+       * 표기나 모델이 스스로 적어 넣는 경우가 남는다. 그때 이 변수가 비어 있으면
+       * node "/agents/lib/build-index.mjs" 처럼 루트에서 찾다가 실패한다(실측:
+       * scaffold-feature 가 "인덱싱 스크립트 경로를 확보하지 못해 갱신 못함"이라 보고).
+       * 값은 우리 설치 경로다 — 스크립트가 실제로 거기 있다.
+       */
+      env: {
+        ...process.env,
+        ...(this.options.pluginDir ? { CLAUDE_PLUGIN_ROOT: this.options.pluginDir } : {}),
+        ...this.options.env,
+      },
     });
     child.stdin.end(payload, "utf8");
 

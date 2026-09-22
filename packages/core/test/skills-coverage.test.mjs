@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { loadAllAgents, loadAllSkills, resolveSkill } from "../src/index.mjs";
 
+const NL = String.fromCharCode(10);
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const SKILLS = join(REPO, "skills");
 const AGENTS = join(REPO, "agents");
@@ -122,4 +123,47 @@ test("특수 취급 스킬은 안내를 갖고 있다 — 조용히 실패하지
       `${name} 에 대한 안내가 commands.mjs 에 없다 — 부르면 엉뚱한 절차가 돈다`,
     );
   }
+});
+
+/* ---------- 스크립트 경로 ---------- */
+
+/*
+ * 지시문은 모델에게 "스크립트 경로는 이미 절대경로로 치환돼 있다" 고 말한다.
+ * 그런데 프롬프트 shim 은 agents/*.md 에만 걸렸고 스킬 본문은 "무수정"으로 실렸다.
+ * 말과 실제가 달랐고, 그 결과 scaffold-feature 가 이렇게 보고했다(실측).
+ *
+ *   이 런타임에서 인덱싱 스크립트 경로를 확보하지 못해 갱신 못함
+ *
+ * CLI 에는 CLAUDE_PLUGIN_ROOT 가 없으므로 빈 문자열로 펼쳐지고,
+ * node "/agents/lib/build-index.mjs" 가 되어 실패한다.
+ */
+test("스킬 본문의 플러그인 루트 참조가 실제 경로로 바뀐다", async () => {
+  const { resolveSkillPaths } = await import("../../cli/src/commands.mjs");
+  const body = [
+    'node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --check-stale',
+    "node $CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs symbol",
+    "${CLAUDE_PLUGIN_ROOT}/agents/lib/validate-harness.mjs",
+    "${env:CLAUDE_PLUGIN_ROOT}/agents/lib/ai-budget.mjs",
+  ].join(NL);
+  const out = resolveSkillPaths(body);
+  assert.ok(!out.includes("CLAUDE_PLUGIN_ROOT"), `치환되지 않은 참조가 남았다: ${out}`);
+  // 네 가지 표기 모두 같은 경로로 간다. 하나만 다루면 나머지가 조용히 샌다.
+  assert.equal(out.split(REPO).length - 1, 4, "네 표기 중 일부만 바뀌었다");
+});
+
+test("스킬 본문을 넣는 자리마다 치환을 거친다", () => {
+  /*
+   * 주입 지점이 셋이다 — 에이전트 경로·오케스트레이터·절차 실행기.
+   * 한 곳만 빼먹으면 그 경로의 스킬만 조용히 실패한다.
+   */
+  const src = readFileSync(join(REPO, "packages", "cli", "src", "commands.mjs"), "utf8");
+  const wrapped = (src.match(/resolveSkillPaths\(skill\.body\)/g) ?? []).length;
+  const raw = (src.match(/^\s+skill\.body,$/gm) ?? []).length;
+  assert.equal(wrapped, 3, `치환을 거치는 주입 지점이 ${wrapped}곳 — 3곳이어야 한다`);
+  assert.equal(raw, 0, "치환 없이 본문을 그대로 넣는 자리가 남았다");
+});
+
+test("위임 프로세스에 CLAUDE_PLUGIN_ROOT 를 채워 준다 — 두 번째 방어선", () => {
+  const src = readFileSync(join(REPO, "packages", "provider-claude-cli", "src", "index.mjs"), "utf8");
+  assert.match(src, /CLAUDE_PLUGIN_ROOT: this\.options\.pluginDir/);
 });
