@@ -347,6 +347,7 @@ export function createHostElicitor() {
         options,
         multiSelect: opts.multiSelect === true,
         ...(opts.header ? { header: opts.header } : {}),
+        ...(opts.preview?.length ? { preview: opts.preview } : {}),
         input: process.stdin,
         output: process.stdout,
         ui,

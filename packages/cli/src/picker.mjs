@@ -53,9 +53,11 @@ export function windowFor(total, selected, max = MAX_VISIBLE) {
  * @param {number} args.width
  * @param {{ dim: (s: string) => string, cyan: (s: string) => string, bold: (s: string) => string, yellow: (s: string) => string }} args.ui
  * @param {string} [args.header]  짧은 주제말
+ * @param {readonly import("./diff.mjs").PreviewLine[]} [args.preview]  질문 위에 보여 줄 미리보기 (승인 창의 diff)
+ * @param {number} [args.height]  터미널 줄 수. 미리보기가 화면을 넘지 않게 자르는 데 쓴다
  * @returns {string[]}
  */
-export function renderPicker({ question, options, cursor, checked, multiSelect, width, ui, header }) {
+export function renderPicker({ question, options, cursor, checked, multiSelect, width, ui, header, preview, height }) {
   const cap = Math.max(20, width - 1);
   const { lines, push } = lineSink(cap, ui);
 
@@ -85,6 +87,22 @@ export function renderPicker({ question, options, cursor, checked, multiSelect, 
    * 질문문에 줄바꿈이 들어 있거나 줄이 폭을 넘으면 실제로 찍히는 줄 수가 늘어난다.
    * 그걸 한 줄로 세면 지울 때 모자라 매번 몇 줄씩 남는다(실측).
    */
+  /*
+   * 미리보기는 질문 위에 둔다 — "무엇이 바뀌는지" 를 보고 나서 "할까요?" 를 읽는 순서다.
+   * 플러그인에서 Claude Code 가 그렇게 보여 줬다.
+   *
+   * 높이를 먼저 계산한다. 화면보다 긴 창은 위쪽이 스크롤로 밀려나고, 그 순간
+   * 다시 그릴 때 올라갈 줄 수가 틀려 화면이 쌓인다(실측으로 겪은 고장이다).
+   */
+  if (preview?.length) {
+    const questionRows = question.split("\n").reduce((n, part) => n + wrapToWidth(part, cap - 2).length, 0);
+    const shownOptions = Math.min(options.length, MAX_VISIBLE);
+    const fixed = lines.length + questionRows + shownOptions + 6; // 빈 줄·안내 줄·여유
+    const budget = Math.max(4, Math.min(PREVIEW_MAX, (height ?? 40) - fixed));
+    lines.push(...renderPreview(preview, cap, ui, budget));
+    lines.push("");
+  }
+
   // 도구 기록(● 줄)과 같은 표시를 쓴다 — 화면에서 기호가 한 종류일수록 읽힌다.
   push(question, ui.bold, ui.yellow("●"));
   lines.push("");
@@ -112,6 +130,45 @@ export function renderPicker({ question, options, cursor, checked, multiSelect, 
     " ",
   );
   return lines;
+}
+
+/** 미리보기에 쓸 줄 수 상한. 터미널이 커도 이보다 길면 읽지 않고 누른다. */
+const PREVIEW_MAX = 30;
+
+/**
+ * 승인 창의 diff 를 그린다.
+ *
+ * **접지 않고 자른다.** 한 줄이 두 줄로 접히면 줄 번호 칸이 어긋나 diff 로 안 읽히고,
+ * 무엇보다 찍힌 줄 수가 틀려 다시 그릴 때 잔상이 남는다. 폭을 넘는 줄은 끝을 `…` 로 자른다.
+ *
+ * @param {readonly import("./diff.mjs").PreviewLine[]} preview
+ * @param {number} cap      한 줄 최대 칸 수
+ * @param {{ dim: (s: string) => string, red?: (s: string) => string, green?: (s: string) => string }} ui
+ * @param {number} maxRows  이 줄 수를 넘기지 않는다
+ * @returns {string[]}
+ */
+export function renderPreview(preview, cap, ui, maxRows) {
+  const red = ui.red ?? ((/** @type {string} */ s) => s);
+  const green = ui.green ?? ((/** @type {string} */ s) => s);
+  const digits = Math.max(1, ...preview.map((l) => String(l.no ?? "").length));
+  // 탭은 폭이 들쭉날쭉하고, 제어 문자는 화면을 망가뜨린다. 그리기 전에 치운다.
+  const clean = (/** @type {string} */ s) => s.replace(/\t/g, "  ").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+
+  /** @param {import("./diff.mjs").PreviewLine} line */
+  const draw = (line) => {
+    if (line.kind === "note") return ui.dim(`  ${clipToWidth(clean(line.text), cap - 2)}`);
+    if (line.kind === "gap") return ui.dim(`  ${" ".repeat(digits)} ⋯`);
+    const sign = line.kind === "add" ? "+" : line.kind === "del" ? "-" : " ";
+    const gutter = `  ${String(line.no ?? "").padStart(digits)} ${sign} `;
+    const body = clipToWidth(clean(line.text), Math.max(4, cap - visibleLength(gutter)));
+    const text = `${gutter}${body}`;
+    return line.kind === "add" ? green(text) : line.kind === "del" ? red(text) : ui.dim(text);
+  };
+
+  if (preview.length <= maxRows) return preview.map(draw);
+  const shown = preview.slice(0, Math.max(1, maxRows - 1)).map(draw);
+  shown.push(ui.dim(`  … ${preview.length - (maxRows - 1)}줄 더`));
+  return shown;
 }
 
 /**
@@ -193,9 +250,11 @@ function lineSink(cap, _ui) {
  * @param {NodeJS.WriteStream} args.output
  * @param {{ dim: (s: string) => string, cyan: (s: string) => string, bold: (s: string) => string, yellow: (s: string) => string }} args.ui
  * @param {() => void} [args.onInterrupt]  선택지 위에서 Ctrl+C 를 누른 경우
+ * @param {readonly import("./diff.mjs").PreviewLine[]} [args.preview]  질문 위에 보여 줄 미리보기.
+ *        고른 뒤에는 남기지 않는다 — 기록은 질문과 답 한 줄이면 된다
  * @returns {Promise<string[]>}
  */
-export function pick({ question, options, multiSelect = false, header, input, output, ui, onInterrupt }) {
+export function pick({ question, options, multiSelect = false, header, input, output, ui, onInterrupt, preview }) {
   return new Promise((resolve) => {
     let cursor = 0;
     /** @type {Set<number>} */
@@ -207,6 +266,7 @@ export function pick({ question, options, multiSelect = false, header, input, ou
         question, options, cursor, checked, multiSelect,
         width: output.columns ?? 80, ui,
         ...(header ? { header } : {}),
+        ...(preview?.length ? { preview, height: output.rows ?? 40 } : {}),
       });
       output.write(cursorUp(drawn) + CLEAR_DOWN + lines.join("\n") + "\n");
       drawn = lines.length;

@@ -15,6 +15,11 @@
  * 그래서 이 모듈은 "쓰기·실행" 만 다룬다고 봐도 된다.
  */
 
+import { readFileSync } from "node:fs";
+import { diffPreview } from "./diff.mjs";
+
+/** @typedef {import("./diff.mjs").PreviewLine} PreviewLine */
+
 /** 파일을 바꾸는 도구. 한 묶음으로 "이번 세션 허용" 을 건다 — Claude Code 도 그렇다. */
 const EDIT_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
@@ -76,6 +81,115 @@ export function describeToolUse(tool, input) {
 }
 
 /**
+ * @param {string} path
+ * @returns {string | null}
+ */
+function readTextOrNull(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** @param {string} text */
+const normalize = (text) => text.replace(/\r\n?/g, "\n");
+
+/**
+ * 승인 전에 보여 줄 미리보기 — 무엇이 바뀌는지.
+ *
+ * 경로만 보고 "예" 를 누르게 하면 승인이 형식이 된다. 플러그인에서는 Claude Code 가
+ * 바뀌는 줄을 빨강·초록으로 보여 줬다. 같은 재료를 만든다. 그리는 것은 선택 창의 일이다.
+ *
+ * @param {string} tool
+ * @param {Record<string, unknown>} input
+ * @param {(path: string) => string | null} [readText]  파일 읽기 (시험에서 바꿔 끼운다)
+ * @returns {PreviewLine[]}
+ */
+export function previewToolUse(tool, input, readText = readTextOrNull) {
+  const str = (/** @type {unknown} */ v) => (typeof v === "string" ? v : "");
+  const path = str(input["file_path"]) || str(input["notebook_path"]);
+  const raw = path ? readText(path) : null;
+  const current = raw === null ? null : normalize(raw);
+
+  /**
+   * 바꿀 조각이 파일의 몇 번째 줄에서 시작하는지. 못 찾으면 번호 없이 보여 준다 —
+   * 틀린 번호는 번호가 없는 것보다 나쁘다.
+   * @param {string} fragment
+   * @returns {number | null}
+   */
+  const lineOf = (fragment) => {
+    if (current === null || !fragment) return null;
+    const at = current.indexOf(normalize(fragment));
+    if (at === -1) return null;
+    return current.slice(0, at).split("\n").length;
+  };
+  /** @param {PreviewLine[]} lines */
+  const unnumbered = (lines) => lines.map(({ no: _no, ...rest }) => rest);
+  /** @param {number} added @param {number} removed */
+  const tally = (added, removed) =>
+    [added ? `+${added}` : "", removed ? `−${removed}` : ""].filter(Boolean).join(" ");
+
+  if (tool === "Edit") {
+    const oldText = str(input["old_string"]);
+    const start = lineOf(oldText);
+    const { lines, added, removed } = diffPreview(oldText, str(input["new_string"]), start ?? 1);
+    /** @type {PreviewLine[]} */
+    const notes = [{ kind: "note", text: tally(added, removed) || "바뀌는 줄 없음" }];
+    if (input["replace_all"] === true && current !== null && oldText) {
+      const count = current.split(normalize(oldText)).length - 1;
+      if (count > 1) notes.push({ kind: "note", text: `같은 내용 ${count}곳을 모두 바꿉니다` });
+    }
+    if (current !== null && oldText && start === null) {
+      notes.push({ kind: "note", text: "파일에서 바꿀 부분을 찾지 못했습니다 — 실행하면 실패합니다" });
+    }
+    return [...notes, ...(start === null ? unnumbered(lines) : lines)];
+  }
+
+  if (tool === "MultiEdit") {
+    const edits = Array.isArray(input["edits"]) ? input["edits"] : [];
+    /** @type {PreviewLine[]} */
+    const out = [{ kind: "note", text: `편집 ${edits.length}건` }];
+    edits.forEach((edit, i) => {
+      const e = edit && typeof edit === "object" ? /** @type {Record<string, unknown>} */ (edit) : {};
+      const oldText = str(e["old_string"]);
+      const start = lineOf(oldText);
+      const { lines } = diffPreview(oldText, str(e["new_string"]), start ?? 1);
+      if (i > 0) out.push({ kind: "gap", text: "⋯" });
+      out.push(...(start === null ? unnumbered(lines) : lines));
+    });
+    return out;
+  }
+
+  if (tool === "Write") {
+    const content = str(input["content"]);
+    if (current === null) {
+      const { lines, added } = diffPreview("", content);
+      return [{ kind: "note", text: `새 파일 · ${added}줄` }, ...lines];
+    }
+    if (current === normalize(content)) return [{ kind: "note", text: "지금 파일과 내용이 같습니다" }];
+    const { lines, added, removed } = diffPreview(current, content);
+    return [{ kind: "note", text: `덮어쓰기 · ${tally(added, removed)}` }, ...lines];
+  }
+
+  if (tool === "NotebookEdit") {
+    const { lines } = diffPreview("", str(input["new_source"]));
+    return [{ kind: "note", text: `셀 ${str(input["edit_mode"]) || "replace"}` }, ...unnumbered(lines)];
+  }
+
+  /*
+   * Bash — 한 줄 요약에 다 안 들어가는 명령은 전체를 보여 준다.
+   * 여러 줄 스크립트의 셋째 줄에 무엇이 있는지 모르고 허용하게 하면 안 된다.
+   */
+  if (tool === "Bash") {
+    const command = str(input["command"]);
+    if (command.length <= MAX_DETAIL && !/[\r\n]/.test(command)) return [];
+    return normalize(command).split("\n").map((text) => ({ kind: /** @type {const} */ ("ctx"), text }));
+  }
+  return [];
+}
+
+/**
  * @typedef {object} Approver
  * @property {(tool: string, input: Record<string, unknown>) => Promise<Decision>} decide
  * @property {() => string[]} remembered   이번 세션에 "묻지 않음" 으로 둔 것들
@@ -83,14 +197,15 @@ export function describeToolUse(tool, input) {
 
 /**
  * @param {object} args
- * @param {(question: string, options: string[], opts: { header?: string }) => Promise<string[]>} args.ask
+ * @param {(question: string, options: string[], opts: { header?: string, preview?: PreviewLine[] }) => Promise<string[]>} args.ask
  *        실제로 사람에게 묻는 함수. 답이 없으면 빈 배열
  * @param {(entry: { tool: string, input: Record<string, unknown>, allowed: boolean, how: string }) => void} [args.onDecision]
  *        허용·거부를 기록에 남긴다
  * @param {Set<string>} [args.always]  "이번 세션 동안 묻지 않음" 기억. 턴을 넘어 살아야 해서 호출부가 쥔다
+ * @param {(path: string) => string | null} [args.readText]  미리보기용 파일 읽기
  * @returns {Approver}
  */
-export function createApprover({ ask, onDecision, always = new Set() }) {
+export function createApprover({ ask, onDecision, always = new Set(), readText = readTextOrNull }) {
   return {
     remembered: () => [...always],
     async decide(tool, input) {
@@ -109,7 +224,11 @@ export function createApprover({ ask, onDecision, always = new Set() }) {
       /** @type {string[]} */
       let answers = [];
       try {
-        answers = await ask(`${what}\n실행할까요?`, [YES, ALWAYS, NO], { header: "권한" });
+        const preview = previewToolUse(tool, safeInput, readText);
+        answers = await ask(`${what}\n실행할까요?`, [YES, ALWAYS, NO], {
+          header: "권한",
+          ...(preview.length ? { preview } : {}),
+        });
       } catch {
         answers = [];
       }

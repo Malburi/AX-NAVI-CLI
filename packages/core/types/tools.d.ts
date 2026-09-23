@@ -45,8 +45,20 @@ export interface Elicitor {
   ask(
     question: string,
     options: readonly string[],
-    opts?: { multiSelect?: boolean; header?: string },
+    opts?: { multiSelect?: boolean; header?: string; preview?: readonly PreviewLine[] },
   ): Promise<string[]>;
+}
+
+/**
+ * 질문 위에 보여 줄 미리보기 한 줄 — 승인 창의 diff.
+ * 대화형 터미널만 그린다. 줄 입력 경로는 무시한다.
+ */
+export interface PreviewLine {
+  /** add 넣은 줄 · del 지운 줄 · ctx 문맥 · gap 생략 표시 · note 설명 */
+  readonly kind: "add" | "del" | "ctx" | "gap" | "note";
+  readonly text: string;
+  /** 그 줄의 번호. del 은 원래 파일 기준, 나머지는 바뀐 파일 기준 */
+  readonly no?: number;
 }
 
 /** 진행 상태 보고. Claude Code의 TaskCreate/TaskUpdate 자리를 대신한다. */
