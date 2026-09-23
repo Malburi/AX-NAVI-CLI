@@ -507,6 +507,25 @@ Messages API 를 직접 부르며, 역할별 도구 제한과 감사 기록이 �
 
 `axnavi index build` 는 AI 를 쓰지 않으므로 인증 없이 돌아갑니다.
 
+### 쓸 모델 정하기
+
+axnavi 는 모델을 `haiku` · `sonnet` · `opus` 세 등급으로 부르고, 각 등급이 실제로 어떤 모델이
+될지는 조직이 정합니다. 사내 게이트웨이처럼 허용 모델이 정해진 환경에서는
+`~/.claude/settings.json`(관리자는 `managed-settings.json`)의 `env` 에 지정합니다.
+
+```json
+{
+  "env": {
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5-20251001"
+  }
+}
+```
+
+구독 경로와 API 키 경로가 같은 설정을 따릅니다. 허용되지 않은 모델을 만나면 axnavi 가
+그 환경에서 쓸 수 있는 모델로 위 설정을 채워 보여 줍니다.
+
 ---
 
 ## 에이전트 · 스킬 목록

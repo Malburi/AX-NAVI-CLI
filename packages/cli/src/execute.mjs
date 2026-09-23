@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { closeTurn, openTurn, recordAgentEnd, recordAgentStart, recordLine } from "./record.mjs";
 import { unwrittenClaims } from "./claims.mjs";
 import { createApprover } from "./approval.mjs";
+import { modelUnavailableHint } from "./models.mjs";
 
 /*
  * "이번 세션 동안 묻지 않음" 기억. 턴마다 executeAgent 가 새로 불리므로 여기 둔다 —
@@ -642,6 +643,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
       } else if (event.type === "error") {
         flushText();
         emit(ui.red(`  오류: ${event.reason}`));
+        // 모델을 못 쓰는 환경이면 무엇을 설정하면 되는지까지 알려 준다. 오류만 보면 막힌다.
+        for (const line of modelUnavailableHint(event.reason ?? "") ?? []) emit(ui.dim(line));
         failed = true;
       } else if (event.type === "done") {
         /*

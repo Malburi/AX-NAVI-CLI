@@ -62,16 +62,36 @@ export async function loadSdk() {
 /**
  * 등급 → 실제 모델 id. Core에는 이 문자열이 없다.
  *
- * standard가 Sonnet 5인 것은 임의 선택이 아니다 — 이 저장소는 2026-09-08에
- * 초기화·수정 경로를 비용 때문에 Sonnet 5로 고정했고(docs/changelog.md),
- * agents/*.md의 frontmatter가 그 결정을 담고 있다.
+ * 조직이 정한 모델이 먼저다. 구독 경로의 claude 가 별칭을 풀 때 쓰는 환경변수
+ * (ANTHROPIC_DEFAULT_*_MODEL)를 여기서도 그대로 따른다 — 두 경로가 같은 등급에서
+ * 다른 모델을 쓰면 안 된다. 게이트웨이가 허용하는 모델이 조직마다 달라서, 이 값을
+ * 박아 두기만 하면 그 조직에서는 400 으로 막힌다(docs/role-map.md).
+ * 지정이 없을 때만 아래 기본값을 쓴다.
  * @type {Record<import("@ax-navi/core").ModelTier, string>}
  */
-const MODEL_BY_TIER = {
+const DEFAULT_MODEL_BY_TIER = {
   fast: "claude-haiku-4-5",
   standard: "claude-sonnet-5",
   deep: "claude-opus-5",
 };
+
+/** @type {Record<import("@ax-navi/core").ModelTier, string>} */
+const ENV_BY_TIER = {
+  fast: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  standard: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  deep: "ANTHROPIC_DEFAULT_OPUS_MODEL",
+};
+
+/**
+ * 등급에 쓸 모델. 조직 지정(환경변수)이 있으면 그것, 없으면 기본값.
+ * @param {import("@ax-navi/core").ModelTier} tier
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {string}
+ */
+export function modelForTier(tier, env = process.env) {
+  const chosen = env[ENV_BY_TIER[tier]]?.trim();
+  return chosen || DEFAULT_MODEL_BY_TIER[tier];
+}
 
 /* 스트리밍이므로 넉넉히 잡는다 — 잘린 출력을 재시도하는 편이 더 비싸다. */
 const DEFAULT_MAX_TOKENS = 32_000;
@@ -193,7 +213,7 @@ class AnthropicSession {
 
     const stream = this.client.messages.stream(
       {
-        model: MODEL_BY_TIER[this.spec.tier],
+        model: modelForTier(this.spec.tier),
         max_tokens: this.spec.maxOutputTokens ?? DEFAULT_MAX_TOKENS,
         /*
          * 시스템 프롬프트는 에이전트마다 고정이고 길다 — analyzer.md는 690줄이다.
