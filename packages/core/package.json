@@ -1,6 +1,6 @@
 {
   "name": "@ax-navi/core",
-  "version": "0.1.0-alpha.20",
+  "version": "0.1.0-alpha.21",
   "private": true,
   "type": "module",
   "description": "AX-NAVI Core — Orchestrator, Tool Gateway, Agent/Skill 로더. LLM Provider 구현을 import하지 않는다.",
