@@ -150,7 +150,7 @@ claude
 
 ```
 기본적으로 Full Tier로 초기화합니다.
-- 비용: analyzer(claude-sonnet-5) 1회 + writer(claude-sonnet-5) 1회
+- 비용: analyzer(sonnet) 1회 + writer(sonnet) 1회
 
 더 빠르고 저렴한 Standard로 낮출까요? (기본값: Full 유지)
 ```

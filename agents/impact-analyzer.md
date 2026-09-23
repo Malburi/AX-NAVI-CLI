@@ -1,7 +1,7 @@
 ---
 name: impact-analyzer
 description: 변경 대상(파일/함수/클래스/SQL/엔드포인트/DB 컬럼)의 직간접 영향을 분석한다. 호출 그래프·데이터 흐름·트랜잭션 경계·외부 통신·테스트 영향까지 추적해 위험도 점수와 함께 리포트한다. analyze-impact·safe-modify 오케스트레이터에서 호출. 인덱스는 query-index.mjs 질의로 우선 활용하고, 부족하면 grep으로 보완.
-model: claude-sonnet-5
+model: sonnet
 tools: Read, Grep, Glob, Bash, Write
 ---
 

@@ -84,7 +84,7 @@ test("shim은 호스트 전용 기능을 지우지 않고 안내로 무력화한
 test("analyzer.md는 690줄 규모인데 결합 지점만 바뀐다", async () => {
   const agent = await loadAgent(join(AGENTS, "analyzer.md"), ENV);
   assert.equal(agent.name, "analyzer");
-  assert.equal(agent.tier, "standard", "frontmatter의 claude-sonnet-5가 standard로 정규화돼야 한다");
+  assert.equal(agent.tier, "standard", "frontmatter의 sonnet 이 standard로 정규화돼야 한다");
   assert.ok(agent.systemPrompt.includes("Phase A"), "본문 핵심 내용이 보존돼야 한다");
   assert.ok(!agent.systemPrompt.includes("$env:CLAUDE_PLUGIN_ROOT"), "경로가 치환돼야 한다");
 });

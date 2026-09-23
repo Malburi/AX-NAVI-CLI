@@ -1,6 +1,6 @@
 ---
 name: harness-init
-model: claude-sonnet-5
+model: sonnet
 description: 프로젝트를 심층 분석해 맞춤형 하네스(CLAUDE.md, 로컬 스킬 3종, 도메인 에이전트, 패턴, 인덱스)를 자동 생성하는 오케스트레이터. "하네스 초기화", "하네스 만들어줘", "하네스 다시 초기화", "harness 다시 만들어줘", "프로젝트 분석해서 설정해줘", "이 프로젝트 Claude 설정해줘", "create harness", "initialize harness", "re-initialize harness", "generate project harness", "하네스 업데이트", "하네스 보완", "스킬만 다시 생성", "에이전트만 다시 생성", "validator만 다시 실행", "패턴 추출해줘", "pattern extract" 요청 시 사용. `.claude/skills/trace.md`가 없으면 자동 트리거.
 ---
 
@@ -12,7 +12,7 @@ description: 프로젝트를 심층 분석해 맞춤형 하네스(CLAUDE.md, 로
 
 **실행 모드:** 에이전트 팀 (TaskCreate 의존성 + `_workspace/` 파일 기반 산출물 전달)
 
-**모델 고정:** 메인 스킬과 모든 팀원·폴백·재시도는 `claude-sonnet-5`를 사용한다. `sonnet` 별칭이나 Opus 자동 승격을 사용하지 않는다. Standard/Full은 분석 범위만 다르며 Full의 전체 Phase B와 품질 게이트는 유지한다. 모델 미지원·권한 거부·다른 모델로의 대체가 확인되면 진행을 멈추고 사용자에게 알린다. 호스트의 실제 모델 선택을 확인할 수 없으면 Sonnet 5 실행을 검증했다고 보고하지 않는다. 사용자·조직의 전역 모델 설정은 수정하지 않는다.
+**모델 고정:** 메인 스킬과 모든 팀원·폴백·재시도는 `sonnet` 별칭을 사용한다. Opus로 자동 승격하지 않는다. 실제 모델은 조직이 정한다 — 게이트웨이·클라우드 제공자 환경에서는 `ANTHROPIC_DEFAULT_SONNET_MODEL`로 지정한 모델이, 지정이 없으면 호스트의 기본 Sonnet이 쓰인다. 정식 ID를 박아 두면 그 ID를 허용하지 않는 조직에서 초기화 자체가 막히고 환경변수로도 바꿀 수 없다. Standard/Full은 분석 범위만 다르며 Full의 전체 Phase B와 품질 게이트는 유지한다. 모델 미지원·권한 거부가 확인되면 진행을 멈추고 사용자에게 알린다. 사용자·조직의 전역 모델 설정은 수정하지 않는다.
 
 **팀 구성 (확장):**
 - 필수 파이프라인: analyzer → writer → pattern-extractor + 프로필 검증 → validator
@@ -162,8 +162,8 @@ override가 있으면 그 값을 그대로 확정하고 2-0.7의 질문을 건�
 
 | Tier | 실행 구성 | 스킵 항목 |
 |------|---------|---------|
-| **Standard** | analyzer(init, 스택 해당 Phase B만) → writer → pattern(병렬) → validator. 모두 Sonnet 5 | — |
-| **Full** | 전체 파이프라인·전체 분석 범위 유지. 모두 Sonnet 5 | — |
+| **Standard** | analyzer(init, 스택 해당 Phase B만) → writer → pattern(병렬) → validator. 모두 sonnet | — |
+| **Full** | 전체 파이프라인·전체 분석 범위 유지. 모두 sonnet | — |
 
 wiki·QA는 Tier와 무관하게 두 Tier 모두 자동 실행에서 스킵되며, Phase 3.6 선택 작업 메뉴에서 사용자가 고를 때만 Phase 3.7에서 실행된다(위 표에는 포함하지 않음).
 
@@ -242,7 +242,7 @@ QA(`T-Q`)와 wiki(`T-WIKI`)는 Tier와 무관하게 이 초기 작업 그래프�
 
 보완·재검증 작업 제목은 원래 단계 ID를 보존한다.
 
-- `T-A-PATCH · analyzer · 인덱스 무결성 지적 항목 보강` (Phase 4 게이트, targeted/claude-sonnet-5)
+- `T-A-PATCH · analyzer · 인덱스 무결성 지적 항목 보강` (Phase 4 게이트, targeted/sonnet)
 - `T-A-RETRY · analyzer · 누락된 분석 근거 보완` (점수 기반 재실행)
 - `T-W-RETRY · writer · 누락된 하네스 파일·패턴 보완`
 - `T-V-RECHECK · MJS validator · 보완된 초기화 결과 재검증`
@@ -289,7 +289,7 @@ Agent(
   plugin_root: [$env:CLAUDE_PLUGIN_ROOT 값]. ai_budget_session: [ai_budget_session].
   lane: [T-I 또는 B-I/C1-I 등].
   반환은 지침의 'block: index 반환 형식' 그대로만.>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
@@ -344,9 +344,9 @@ node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/ai-budget.mjs" record --root "[절대�
 Tier별 mode/model 결정:
 | Tier / 상황 | mode | model |
 |------|------|-------|
-| Standard | `init` (A + 스택 해당 Phase B만) | claude-sonnet-5 |
-| Full | `init` (A + B 전체) | claude-sonnet-5 |
-| 업데이트·인덱스 리프레시 (Step 3 표) | `incremental` (변경 파일만 재분석 + stale 엣지 무효화) | claude-sonnet-5 (Tier 무관) |
+| Standard | `init` (A + 스택 해당 Phase B만) | sonnet |
+| Full | `init` (A + B 전체) | sonnet |
+| 업데이트·인덱스 리프레시 (Step 3 표) | `incremental` (변경 파일만 재분석 + stale 엣지 무효화) | sonnet (Tier 무관) |
 
 AI 예산이 초기화됐으면(Step F) claim 먼저:
 ```powershell
@@ -364,7 +364,7 @@ Agent(
   _analysis_input.json을 읽고 _unresolved.jsonl을 계약대로 처리해 _ai_patch.json만 출력한다
   (analyzer.md Step 8 '기계 인덱스가 있을 때' 분기). _meta.json이 없으면 기존대로 직접 작성.
   결과: _workspace/01_analyzer_report.md + (기계 인덱스 없을 때만) _workspace/index/*.json>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
@@ -400,7 +400,7 @@ Phase 4에서 패치 또는 인덱스를 변경한 경우에도 이 명령으로
 
 `_workspace/01_analyzer_report.md` 존재 확인 후.
 
-model: claude-sonnet-5
+model: sonnet
 
 AI 예산이 초기화됐으면 claim 먼저: `node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/ai-budget.mjs" claim --root "[절대경로]" --session "[ai_budget_session]" --role writer --kind initial` (exit 1이면 중단).
 
@@ -409,7 +409,7 @@ Agent(
   subagent_type="ax-navi:writer",
   description="T-W · writer · 하네스 파일과 프로젝트 가이드 생성",
   prompt="<프로젝트 루트: [절대경로]. tier: [Standard/Full]. 입력: _workspace/01_analyzer_report.md + _workspace/index/*.json (필요 시). 출력: 하네스 파일들(trace/scaffolder/find-logic, cross-repo-* 있는 경우) + _workspace/claude_md_fields.json + _workspace/writer_decisions.json>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
@@ -429,7 +429,7 @@ Agent(
   block: assemble. root: [절대경로]. tier: [Standard/Full].
   plugin_root: [$env:CLAUDE_PLUGIN_ROOT 값]. lane: [T-W 또는 B-W/C1-W 등].
   반환은 지침의 'block: assemble 반환 형식' 그대로만.>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
@@ -446,7 +446,7 @@ Agent(
   subagent_type="ax-navi:pattern-extractor",
   description="T-P · pattern-extractor · 레이어별 컨벤션 패턴 추출",
   prompt="<프로젝트 루트: [절대경로]. 입력: .claude/patterns/*.md 스켈레톤 + _workspace/01_analyzer_report.md + _workspace/index/*.json. 출력: 패턴 파일 본문 + .claude/patterns/pattern_profile.json + _workspace/05_patterns_extracted.md>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
@@ -464,7 +464,7 @@ Agent(
   block: verify. root: [절대경로]. tier: [Standard/Full].
   plugin_root: [$env:CLAUDE_PLUGIN_ROOT 값]. lane: [T-V 또는 B-V/C1-V 등].
   반환은 지침의 'block: verify 반환 형식' 그대로만.>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
@@ -487,7 +487,7 @@ Agent(
   subagent_type="ax-navi:validator",
   description="T-V · MJS validator · 하네스 구조와 근거 검증",
   prompt="<프로젝트 루트: [절대경로]. tier: [Standard/Full]. 입력: _workspace/01_analyzer_report.md, _workspace/02_writer_files.md, _workspace/validator_mechanical.json(있으면), _workspace/validator_schema.json(있으면), _workspace/pattern_profile_validation.json(있으면), (있으면) _workspace/index/. 출력: _workspace/03_validator_report.md>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
@@ -506,7 +506,7 @@ Agent(
         _workspace/pattern_profile_validation.json,
         생성된 harness 파일들 (CLAUDE.md, .claude/skills/, .claude/agents/, .claude/patterns/).
   출력: _workspace/06_eval_report.md>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
@@ -653,7 +653,7 @@ Agent(
   lane: [단일이면 T-WIKI, 분리 저장소면 레인별로 각각].
   narrative: [사용자가 'wiki 생성 + AI 해설'을 골랐으면 true, 아니면 생략].
   반환은 지침의 'block: wiki 반환 형식' 그대로만.>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
@@ -672,7 +672,7 @@ Agent(
   subagent_type="ax-navi:qa",
   description="T-Q · qa · 경계면 교차 비교 검증",
   prompt="<프로젝트 루트: [절대경로]. plugin_root: [$env:CLAUDE_PLUGIN_ROOT 값]. Boundary 6은 qa_boundary6.py를 직접 실행해 처리한다. 입력: _workspace/01~03 + _workspace/index/. 출력: _workspace/04_qa_report.md>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
@@ -706,12 +706,12 @@ harness-evaluator는 harness 파일이 인덱스를 참조하는지만 보고 �
 | 게이트 신호 | 원인 소유자 | 조치 | LLM 비용 |
 |---|---|---|---|
 | `index_integrity_fail` · `index_spotcheck_fail` + `_meta.generator == "deterministic-indexer"` | 인덱서 | 2-0.5의 `block: index`를 `mode: init`으로 1회 재실행 | 없음 |
-| 같은 신호 + 기계 인덱스 없음(analyzer가 직접 작성) | analyzer | 아래 **targeted 재실행** | `claude-sonnet-5` 1회 |
-| `warns`에 "analyzer.md Step 8 참고" (inherit·inject edge 0개) | analyzer | 아래 **targeted 재실행** — `_ai_patch.json`의 `add_edge`로 해소되는 신호다 | `claude-sonnet-5` 1회 |
-| `warns`에 "generated_at" | 그 파일을 쓴 쪽 | 기계 인덱스면 `block: index` 재실행, analyzer 산출물이면 targeted 재실행 | 없음 또는 `claude-sonnet-5` 1회 |
+| 같은 신호 + 기계 인덱스 없음(analyzer가 직접 작성) | analyzer | 아래 **targeted 재실행** | `sonnet` 1회 |
+| `warns`에 "analyzer.md Step 8 참고" (inherit·inject edge 0개) | analyzer | 아래 **targeted 재실행** — `_ai_patch.json`의 `add_edge`로 해소되는 신호다 | `sonnet` 1회 |
+| `warns`에 "generated_at" | 그 파일을 쓴 쪽 | 기계 인덱스면 `block: index` 재실행, analyzer 산출물이면 targeted 재실행 | 없음 또는 `sonnet` 1회 |
 | `schema.failures > 0` + `plugin_contract_failures == 0`, 대상이 인덱서 소유 파일(`data_flow`·`client_index` 포함 — 둘 다 구조 필드만 필수라 스키마 실패는 항상 구조 쪽 결함이다) | 인덱서 | `block: index` 재실행 | 없음 |
-| 같은 조건, 대상이 `owasp_top10`(analyzer 전량 작성) | analyzer | targeted 재실행 | `claude-sonnet-5` 1회 |
-| 같은 조건, 대상이 `api_contract` | api-bridge | `api-bridge` extract 재실행(자체 스키마 검증 포함 — `agents/api-bridge.md` Step 4 규칙 3) | `claude-sonnet-5` 1회 |
+| 같은 조건, 대상이 `owasp_top10`(analyzer 전량 작성) | analyzer | targeted 재실행 | `sonnet` 1회 |
+| 같은 조건, 대상이 `api_contract` | api-bridge | `api-bridge` extract 재실행(자체 스키마 검증 포함 — `agents/api-bridge.md` Step 4 규칙 3) | `sonnet` 1회 |
 | `plugin_contract_failures > 0` | 플러그인 | **AI로 재시도하지 않는다.** Phase 3 보고에 "플러그인 인덱스 계약 결함 — build-index.mjs/docs/index-schema 확인 필요"로 명시 | 없음 |
 
 `analyzer`가 인덱서 소유 파일(`_meta.json`의 `indexes` 목록)을 고칠 수 없다는 것이 라우팅의 근거다 — `agents/analyzer.md` Step 8 "기계 인덱스가 있을 때" 계약상 그 파일들은 한 줄도 건드리지 못하고 `_ai_patch.json`만 낼 수 있다.
@@ -728,15 +728,15 @@ Agent(
   고칠 항목(이것만 본다): [해당 warn·FAIL 메시지 원문].
   Phase A/B 재분석 금지, _workspace/01_analyzer_report.md 재작성 금지.
   기계 인덱스가 있으면 _workspace/index/_ai_patch.json만, 없으면 지목된 인덱스 파일만 고친다.>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
-`mode: targeted`의 계약은 `agents/analyzer.md` "실행 모드" 표에 있다. 최초 분석과 보정 모두 Sonnet 5를 쓰되, 이 패스에서는 지목된 관계만 확인해 패치 오퍼레이션으로 옮긴다.
+`mode: targeted`의 계약은 `agents/analyzer.md` "실행 모드" 표에 있다. 최초 분석과 보정 모두 `sonnet`을 쓰되, 이 패스에서는 지목된 관계만 확인해 패치 오퍼레이션으로 옮긴다.
 
 기계 인덱스가 있으면 targeted 재실행 뒤 2-1.5의 `--apply-ai-patch`를 다시 실행해야 패치가 반영된다. 빠뜨리면 `_ai_patch.json`만 남고 인덱스는 그대로라 게이트가 그대로 재현된다.
 
-harness-evaluator가 이미 `analyzer` fix_target을 반환했으면 이 게이트의 항목을 그 행에 병합한다(같은 회차에 analyzer를 두 번 부르지 않는다). 점수별 보정 범위는 아래 규칙을 따르며 모델은 항상 Sonnet 5다.
+harness-evaluator가 이미 `analyzer` fix_target을 반환했으면 이 게이트의 항목을 그 행에 병합한다(같은 회차에 analyzer를 두 번 부르지 않는다). 점수별 보정 범위는 아래 규칙을 따르며 모델은 항상 `sonnet`이다.
 
 ### 게이트 해소 확인
 
@@ -771,11 +771,11 @@ for each fix_target in eval_report.fix_targets (우선순위 순):
     범위: [fix_target.scope].
     프로젝트 루트: [절대경로].
     기존 산출물: _workspace/01_analyzer_report.md, _workspace/02_writer_files.md>",
-    model="claude-sonnet-5"
+    model="sonnet"
   )
 ```
 
-재실행 모델은 전부 claude-sonnet-5다(상단 "모델 고정" 규칙). 점수가 낮아도 Opus로 자동 승격하지 않고, 기존 보정 범위·재시도 한도·FAIL 처리를 유지한다.
+재실행 모델은 전부 `sonnet`이다(상단 "모델 고정" 규칙). 점수가 낮아도 Opus로 자동 승격하지 않고, 기존 보정 범위·재시도 한도·FAIL 처리를 유지한다.
 
 PARTIAL 구간은 fix_target의 `instruction`+`scope`로 범위를 좁혀 재분석 비용을 줄인다. 모델 고정을 이유로 보정 범위를 확대하거나 재시도 횟수를 늘리지 않는다.
 
@@ -790,7 +790,7 @@ Agent(
   prompt="<평가 회차: 2.
   프로젝트 루트: [절대경로]. tier: [Standard/Full].
   출력: _workspace/06_eval_report.md (덮어쓰기)>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 

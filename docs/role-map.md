@@ -8,11 +8,13 @@
 
 ## 초기화·수정 모델 정책
 
-`harness-init`과 `/modify` → `safe-modify` → `analyze-impact` 경로는 메인 스킬·위임 호출·재시도를 `claude-sonnet-5`로 고정한다. Standard/Full은 분석 범위만 다르며 Full 분석과 변경 안전성 게이트는 유지한다. `analyzer`·`impact-analyzer`·`writer` 기본 모델과 writer가 새로 만드는 프로젝트 에이전트도 Sonnet 5다. 독립적인 마이그레이션·레거시 해석 등 다른 경로의 기존 모델 정책은 이번 변경 범위가 아니다.
+`harness-init`과 `/modify` → `safe-modify` → `analyze-impact` 경로는 메인 스킬·위임 호출·재시도를 **`sonnet` 별칭 하나로 통일**한다. Opus로 자동 승격하지 않는다. Standard/Full은 분석 범위만 다르며 Full 분석과 변경 안전성 게이트는 유지한다. `analyzer`·`impact-analyzer`·`writer` 기본 모델과 writer가 새로 만드는 프로젝트 에이전트도 `sonnet`이다. 독립적인 마이그레이션·레거시 해석 등 다른 경로의 기존 모델 정책은 이번 변경 범위가 아니다.
 
-공식 모델 ID는 `claude-sonnet-5`이며 별칭 `sonnet`에 맡기지 않는다. [Sonnet 5 모델 문서](https://platform.claude.com/docs/en/models/sonnet-5/whats-new-sonnet-5), [Claude Code 모델 선택 우선순위](https://code.claude.com/docs/en/sub-agents#choose-a-model)를 참조한다. 호스트 버전·조직 allowlist·클라우드 제공자 설정에 따라 실제 선택이 달라질 수 있으므로 실행 모델을 확인할 수 없으면 고정 실행을 검증했다고 보고하지 않는다. 미지원이나 다른 모델 대체가 확인되면 알리고 중단하며 Opus로 자동 폴백하지 않는다. 전역 설정과 기존 프로젝트에 배포된 에이전트 사본은 자동 수정하지 않는다.
+**실제 모델은 조직이 정한다.** 에이전트·스킬에는 정식 모델 ID(`claude-sonnet-5` 등)를 적지 않고 별칭만 쓴다. 게이트웨이·클라우드 제공자 환경은 허용하는 모델이 조직마다 다른데, 정식 ID를 박아 두면 그 ID를 허용하지 않는 곳에서 초기화 자체가 막힌다. 서브에이전트 frontmatter의 정식 ID는 `ANTHROPIC_DEFAULT_SONNET_MODEL`·`CLAUDE_CODE_SUBAGENT_MODEL`로도 덮이지 않는다(Claude Code 2.1.280 실측). 별칭이면 조직이 `ANTHROPIC_DEFAULT_SONNET_MODEL`(관리자 `managed-settings.json`의 `env` 또는 사용자 설정)로 명시적으로 정하고, 지정이 없으면 호스트의 기본 Sonnet이 쓰인다. [Claude Code 모델 선택 우선순위](https://code.claude.com/docs/en/sub-agents#choose-a-model)를 참조한다. `role-contract.test.mjs`가 정식 ID가 다시 들어오지 않게 고정한다.
 
-스킬 frontmatter의 메인 모델 지정은 해당 턴에 적용된다. 다음 사용자 메시지에서는 세션 모델이 복원될 수 있다. 여러 턴의 메인 작업까지 계속 Sonnet 5를 쓰려면 사용자가 세션에서 `/model claude-sonnet-5`를 선택한다. 플러그인이 지정한 Agent 호출 모델과 전역/세션 모델은 구분한다.
+모델 미지원·권한 거부가 확인되면 알리고 중단하며 Opus로 자동 폴백하지 않는다. 전역 설정과 기존 프로젝트에 배포된 에이전트 사본은 자동 수정하지 않는다 — 예전 하네스가 대상 프로젝트에 남긴 `model: claude-sonnet-5`는 재초기화 때 `sonnet`으로 바뀐다.
+
+스킬 frontmatter의 메인 모델 지정은 해당 턴에 적용된다. 다음 사용자 메시지에서는 세션 모델이 복원될 수 있다. 여러 턴의 메인 작업까지 계속 같은 모델을 쓰려면 사용자가 세션에서 `/model sonnet`을 선택한다. 플러그인이 지정한 Agent 호출 모델과 전역/세션 모델은 구분한다.
 
 ## 사용자 요청별 스킬
 

@@ -45,11 +45,28 @@ export async function test(register, assert) {
     assert.equal(new Set(skillNames).size, skills.length);
     assert.ok(agentNames.every(Boolean), "에이전트 name 누락");
     assert.ok(skillNames.every(Boolean), "스킬 name 누락");
-    assert.ok(agents.every(({ text }) => ["sonnet", "opus", "claude-sonnet-5"].includes(field(text, "model"))), "에이전트 model 누락·오류");
+    assert.ok(agents.every(({ text }) => ["sonnet", "opus"].includes(field(text, "model"))), "에이전트 model 누락·오류");
   });
 
-  register("초기화와 modify의 메인·위임·재시도 모델은 Sonnet 5로 고정된다", () => {
-    const pinned = "claude-sonnet-5";
+  /*
+   * 모델은 별칭으로만 적는다. 정식 ID(claude-sonnet-5 등)를 박아 두면 그 ID 를 허용하지 않는
+   * 게이트웨이 조직에서 초기화가 막히고, ANTHROPIC_DEFAULT_SONNET_MODEL 로도 바꿀 수 없다
+   * (서브에이전트 frontmatter 의 정식 ID 는 별칭 환경변수가 덮지 못한다 — 실측).
+   */
+  register("에이전트·스킬은 모델을 별칭으로만 적는다 — 조직이 실제 모델을 정할 수 있게", () => {
+    const pinnedId = /claude-(?:haiku|sonnet|opus|fable)-\d/;
+    const offenders = [];
+    for (const name of readdirSync(join(root, "agents")).filter((n) => n.endsWith(".md"))) {
+      if (pinnedId.test(read(join(root, "agents", name)))) offenders.push(`agents/${name}`);
+    }
+    for (const dir of readdirSync(join(root, "skills"), { withFileTypes: true }).filter((e) => e.isDirectory())) {
+      if (pinnedId.test(read(join(root, "skills", dir.name, "SKILL.md")))) offenders.push(`skills/${dir.name}`);
+    }
+    assert.equal(offenders.join(", "), "", `정식 모델 ID 가 박혀 있다: ${offenders.join(", ")}`);
+  });
+
+  register("초기화와 modify의 메인·위임·재시도 모델은 sonnet 하나로 통일된다", () => {
+    const pinned = "sonnet";
     for (const name of ["harness-init", "safe-modify", "analyze-impact", "modify"]) {
       const text = read(join(root, "skills", name, "SKILL.md"));
       assert.equal(field(text, "model"), pinned, `${name} 스킬 모델`);
@@ -62,7 +79,7 @@ export async function test(register, assert) {
     }
     assert.ok(read(join(root, "skills", "modify", "SKILL.md")).includes('Skill(skill="ax-navi:safe-modify"'), "modify 위임 유지");
     const init = read(join(root, "skills", "harness-init", "SKILL.md"));
-    assert.ok(/\| Full \| `init` \(A \+ B 전체\) \| claude-sonnet-5 \|/.test(init), "Full 분석 범위 유지");
+    assert.ok(/\| Full \| `init` \(A \+ B 전체\) \| sonnet \|/.test(init), "Full 분석 범위 유지");
     const writer = read(join(root, "agents", "writer.md"));
     assert.ok([...writer.matchAll(/^model: (.+)$/gm)].every(m => m[1].trim() === pinned), "생성 에이전트 모델 고정");
   });

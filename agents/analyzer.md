@@ -1,7 +1,7 @@
 ---
 name: analyzer
 description: 코드베이스 심층 분석 에이전트. 기술 스택·아키텍처 레이어·요청 흐름은 물론, 수정/개발/마이그레이션 작업에 필요한 의존성 그래프·데이터 흐름·트랜잭션 경계·외부 통신·비동기/스케줄·설정 분기·데드 코드까지 추출한다. harness-init·analyze-impact·plan-migration·scaffold-feature 등 다수 오케스트레이터의 진입점에서 호출된다. 산출물은 `_workspace/01_analyzer_report.md` + `_workspace/index/*.json`.
-model: claude-sonnet-5
+model: sonnet
 ---
 
 # Analyzer Agent
@@ -28,7 +28,7 @@ Phase A(구조·스택 탐지)에 더해 **수정/개발/마이그레이션에 �
 | `init` (기본) | Phase A + Phase B (tier에 따라 선택적). 최초 전체 분석. | Standard / Full |
 | `incremental` | 기존 `_workspace/index/*.json`을 로드해 git diff 또는 mtime 기반으로 변경 파일만 재분석. **엣지 무효화 규칙**: 변경·삭제된 파일을 `from` 또는 `to` 노드의 파일로 갖는 call_graph 엣지는 재분석 전에 전부 제거한 뒤 재수집한다 — 변경 안 된 호출자 파일에서 rename된 심볼을 가리키는 stale 엣지가 살아남는 것을 방지. 완료 후 `_meta.git_commit`을 현재 HEAD로 갱신. | 모든 Tier |
 | `feature-scoped` | 사용자가 지정한 키워드/경로 범위만 분석 (특정 기능 분석 시 사용) | 모든 Tier |
-| `targeted` | 오케스트레이터가 **지목한 항목만** 고치는 좁은 보정 패스. 아래 계약 참조. | 모든 Tier (claude-sonnet-5) |
+| `targeted` | 오케스트레이터가 **지목한 항목만** 고치는 좁은 보정 패스. 아래 계약 참조. | 모든 Tier (sonnet) |
 
 ### `targeted` 모드 계약
 
@@ -678,11 +678,11 @@ Write 도구로 다음 형식의 리포트를 작성한다. 반환 메시지는 
 
 | 호출 컨텍스트 | Tier/모드 | 필수 Phase | 선택 Phase |
 |--------------|---------|----------|----------|
-| `harness-init` Standard | init/claude-sonnet-5 | A, B(조건부), C | D (DB 접속 가능 시) |
-| `harness-init` Full | init/claude-sonnet-5 | A, B, C | D (DB 접속 가능 시) |
+| `harness-init` Standard | init/sonnet | A, B(조건부), C | D (DB 접속 가능 시) |
+| `harness-init` Full | init/sonnet | A, B, C | D (DB 접속 가능 시) |
 | `pair-init` / `api-bridge extract` | init/sonnet | A + B Step 15.5 | — |
-| `analyze-impact` | incremental/claude-sonnet-5 | A 캐시 활용 + B Step 8/9/10 | — |
-| `safe-modify` | incremental/claude-sonnet-5 | A 캐시 활용 + B Step 8/10/11 | — |
+| `analyze-impact` | incremental/sonnet | A 캐시 활용 + B Step 8/9/10 | — |
+| `safe-modify` | incremental/sonnet | A 캐시 활용 + B Step 8/10/11 | — |
 | `scaffold-feature` | incremental/sonnet | A 캐시 활용 + B Step 8 | — |
 | `plan-migration` | init/opus | A, B 전체, D | — |
 | `review-sql` | incremental/sonnet | A + B Step 9/10, D | — |

@@ -7,7 +7,7 @@
 | Tier | 규모 감각 | 실행 에이전트 | 스킵 항목 |
 |------|---------|------------|---------|
 | **Standard** (중규모) | ~중형 서비스 상당 | analyzer(init/sonnet, 스택 해당 Phase B만) → writer(sonnet) → ito-guide → pattern-extractor + 프로필 검증 → validator → harness-eval | QA(온디맨드) |
-| **Full** (대규모, 기본값) | 레거시/마이그레이션 대상 | 전체 파이프라인, analyzer **`claude-sonnet-5`** (writer 포함 나머지도 sonnet) | QA(온디맨드) |
+| **Full** (대규모, 기본값) | 레거시/마이그레이션 대상 | 전체 파이프라인, analyzer **`sonnet`** (writer 포함 나머지도 sonnet) | QA(온디맨드) |
 
 ---
 
@@ -15,11 +15,11 @@
 
 ### 초기화 비용 (1회성)
 
-아래 수치는 analyzer가 Opus로 실행되던 이전 설정에서 측정한 값이며, `claude-sonnet-5` 고정 이후 재측정 예정이다.
+아래 수치는 analyzer가 Opus로 실행되던 이전 설정에서 측정한 값이며, `sonnet` 고정 이후 재측정 예정이다.
 
 | 항목 | Standard (중규모) | Full (대규모) |
 |------|----------------|------------|
-| analyzer | ~40K–80K | ~100K–200K (claude-sonnet-5) |
+| analyzer | ~40K–80K | ~100K–200K (sonnet) |
 | writer | ~25K–45K | ~40K–80K (sonnet) |
 | pattern-extractor | ~10K–20K | ~20K–35K |
 | ito-guide | 0 (기계 조립) | 0 (기계 조립) |
@@ -93,7 +93,7 @@
 ### 대규모 프로젝트 (Full)
 
 - **미사용 대비 이점**: 트랜잭션 경계·외부 통신·데드 코드까지 체계적 파악 → 마이그레이션/레거시 리팩터링 시 위험도 감소 효과가 압도적
-- **주의**: 초기화 비용이 최대 ~590K 토큰(Phase 4 포함)에 달할 수 있음 (Opus 설정 당시 측정값, `claude-sonnet-5` 고정 이후 재측정 예정)
+- **주의**: 초기화 비용이 최대 ~590K 토큰(Phase 4 포함)에 달할 수 있음 (Opus 설정 당시 측정값, `sonnet` 고정 이후 재측정 예정)
 - **권장**: 레거시 전환·마이그레이션·대형 SI 프로젝트에서 ROI 가장 높음
 
 ---

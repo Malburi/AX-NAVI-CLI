@@ -1,6 +1,6 @@
 ---
 name: safe-modify
-model: claude-sonnet-5
+model: sonnet
 description: "코드 변경을 사전 영향 분석 → 적용 → 사후 안전성 평가 순으로 안전하게 수행. \"안전하게 수정\", \"회귀 위험 없이 변경\", \"safe modify\", \"이 변경 안전한가?\", \"변경 전 체크\", \"이 패치 적용해도 돼?\", \"운영 패치 검토\", \"긴급 핫픽스\", \"이 수정 GO/NO-GO?\", \"변경 리뷰\" 요청 시 트리거. 범용 수정 요청(\"수정해줘\", \"고쳐줘\", \"개선해줘\", \"버그 잡아줘\", \"이거 바꿔줘\")도 기본적으로 이 스킬을 탄다 — 게이트 없이 바로 하려면 vibe 스킬(\"알아서 해줘\"). 축약 호출: \"안전수정 [내용]\"."
 ---
 
@@ -9,7 +9,7 @@ description: "코드 변경을 사전 영향 분석 → 적용 → 사후 안전
 변경을 적용하기 *전·중·후* 모두에 안전 게이트를 둔다.  
 ITO/SI에서 "수정 → 곧장 commit → 운영 사고"의 사이클을 끊는 것이 목적.
 
-**모델 고정:** 이 스킬과 영향 분석·패턴 검증·안전성 평가·선택적 테스트 생성/문서 동기화의 모든 Agent 호출 및 재시도는 `claude-sonnet-5`를 사용한다. `sonnet` 별칭이나 Opus 자동 승격을 사용하지 않는다. 미지원·권한 거부·다른 모델 대체가 확인되면 중단하고 알린다. 모델 선택을 확인할 수 없으면 실제 Sonnet 5 실행을 검증했다고 보고하지 않는다. 기존 영향 분석 범위·사용자 확인·HOLD/STOP·실행 검증은 그대로 유지한다. 전역 모델 설정은 변경하지 않는다.
+**모델 고정:** 이 스킬과 영향 분석·패턴 검증·안전성 평가·선택적 테스트 생성/문서 동기화의 모든 Agent 호출 및 재시도는 `sonnet` 별칭을 사용한다. Opus로 자동 승격하지 않는다. 실제 모델은 조직이 `ANTHROPIC_DEFAULT_SONNET_MODEL`로 정한다(지정이 없으면 호스트의 기본 Sonnet). 미지원·권한 거부가 확인되면 중단하고 알린다. 기존 영향 분석 범위·사용자 확인·HOLD/STOP·실행 검증은 그대로 유지한다. 전역 모델 설정은 변경하지 않는다.
 
 ---
 
@@ -152,7 +152,7 @@ Agent(
   subagent_type="ax-navi:pattern-conformance",
   description="변경 코드 패턴 적합성 검증",
   prompt="<변경 파일: [목록]. 선택 결과: _workspace/reports/pattern_selection.json. 출력: _workspace/reports/pattern_conformance_<slug>.md>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
@@ -183,7 +183,7 @@ Agent(
   subagent_type="ax-navi:change-safety",
   description="변경 안전성 평가",
   prompt="<변경 파일: [목록]. mode: [감지된 모드]. impact 리포트: _workspace/reports/impact_<slug>.md. 패턴 적합성: _workspace/reports/pattern_conformance_<slug>.md. 검증 결과: verify-target run의 commands(cmd·exit·fail_lines)와 overall. 출력: _workspace/reports/safety_<slug>.md>",
-  model="claude-sonnet-5"
+  model="sonnet"
 )
 ```
 
