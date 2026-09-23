@@ -78,6 +78,8 @@ const DELEGATION_TOOLS = ["Task", "Agent", "TaskOutput", "TaskStop"];
 
 /** AX-NAVI MCP 서버가 노출하는 도구. claude 쪽에서는 이 이름으로 보인다. */
 const MCP_TOOLS = ["mcp__axnavi__AskUserQuestion", "mcp__axnavi__QueryIndex", "mcp__axnavi__Skill"];
+/** 권한 판단을 넘겨받는 도구. 모델이 부르는 도구가 아니라서 MCP_TOOLS 에 넣지 않는다. */
+export const APPROVE_TOOL = "mcp__axnavi__Approve";
 
 /**
  * 역할이 허용한 도구를 claude 쪽 `--disallowedTools` 목록으로 번역한다.
@@ -175,6 +177,14 @@ export function buildDelegatedArgs(spec, options, muteSettings) {
    */
   if (options.mcpConfigPath) {
     args.push("--allowedTools", ...MCP_TOOLS);
+    /*
+     * 승인이 필요한 도구는 사람에게 묻는다 — 플러그인에서 Claude Code 가 하던 일이다.
+     * 이게 없으면 -p 모드에서 "승인 대기 = 거부" 가 되어, 기본 설정 PC 에서는
+     * Write 가 막히고 파일이 안 생긴다(실측). 권한 모드는 넘기지 않는다 —
+     * 사용자·조직 설정(managed-settings 포함)이 정한 모드를 그대로 따르고,
+     * 그 모드가 "물어야 한다" 고 할 때만 여기로 온다.
+     */
+    args.push("--permission-prompt-tool", APPROVE_TOOL);
   }
   return args;
 }

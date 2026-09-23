@@ -30,13 +30,15 @@ const SERVER_PATH = fileURLToPath(new URL("./server.mjs", import.meta.url));
  * @param {import("@ax-navi/core").Elicitor} args.elicitor
  * @param {(name: string, request: string) => string} [args.onSkill]  스킬 실행 요청
  * @param {(question: string) => void} [args.onAsk]
+ * @param {(tool: string, input: Record<string, unknown>) => Promise<unknown>} [args.onApprove]  도구 사용 승인
  * @returns {Promise<McpBridge>}
  */
-export async function startMcpBridge({ paths, elicitor, onAsk, onSkill }) {
+export async function startMcpBridge({ paths, elicitor, onAsk, onSkill, onApprove }) {
   const host = await startElicitHost({
     elicitor,
     ...(onAsk ? { onNotice: onAsk } : {}),
     ...(onSkill ? { onSkill } : {}),
+    ...(onApprove ? { onApprove } : {}),
   });
 
   const dir = await mkdtemp(join(tmpdir(), "axnavi-mcp-"));

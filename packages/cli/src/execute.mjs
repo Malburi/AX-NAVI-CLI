@@ -22,6 +22,13 @@ import { applyMode } from "./mode.mjs";
 import { join } from "node:path";
 import { closeTurn, openTurn, recordAgentEnd, recordAgentStart, recordLine } from "./record.mjs";
 import { unwrittenClaims } from "./claims.mjs";
+import { createApprover } from "./approval.mjs";
+
+/*
+ * "이번 세션 동안 묻지 않음" 기억. 턴마다 executeAgent 가 새로 불리므로 여기 둔다 —
+ * 턴 안에 두면 매 질문마다 같은 허용을 다시 물어 플러그인과 달라진다.
+ */
+const sessionApprovals = new Set();
 import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, rememberFolded, sessionMode, sessionModel, setPanelModeSink, debug, ui } from "./runtime.mjs";
 
 /**
@@ -94,7 +101,32 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 위임 실행이 사용자에게 되묻고 우리 인덱스를 쓸 수 있게 MCP 브리지를 띄운다.
    * 이게 없으면 "물을 수단이 없다"고 가정하고 기본값으로 넘어간다(실측).
    */
-  const bridge = await startMcpBridge({ paths, elicitor, ...(onSkillRequest ? { onSkill: onSkillRequest } : {}) });
+  /*
+   * 도구 사용 승인. 누가 무엇을 허용·거부했는지는 감사 기록에 남긴다 —
+   * 조직에 배포하는 도구에서 "누가 이 파일을 쓰게 했나" 는 나중에 반드시 묻는 질문이다.
+   */
+  const approvalAudit = createAuditSink(paths);
+  const approver = createApprover({
+    ask: (question, options, opts) => elicitor.ask(question, options, opts),
+    always: sessionApprovals,
+    onDecision: ({ tool, input, allowed, how }) => {
+      approvalAudit.record({
+        at: new Date().toISOString(),
+        role: agentName ?? preset?.name ?? "?",
+        tool,
+        input,
+        outcome: allowed ? "ok" : "denied",
+        reason: `승인: ${how}`,
+        durationMs: 0,
+      });
+    },
+  });
+  const bridge = await startMcpBridge({
+    paths,
+    elicitor,
+    onApprove: (tool, input) => approver.decide(tool, input),
+    ...(onSkillRequest ? { onSkill: onSkillRequest } : {}),
+  });
   try {
     return await runWithBridge();
   } finally {
@@ -104,6 +136,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
      * (예: 없는 에이전트 파일) 오류만 찍고 CLI가 영영 안 끝났다(실측).
      */
     await bridge.dispose();
+    await approvalAudit.flush();
   }
 
   async function runWithBridge() {

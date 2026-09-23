@@ -105,6 +105,23 @@ const TOOLS = [
     },
   },
   {
+    /*
+     * 권한 확인 통로. claude 가 `--permission-prompt-tool` 로 부른다 — 모델이 부를 도구가 아니다.
+     * 목록에 있어야 claude 가 찾을 수 있어서 올려 둔다.
+     */
+    name: "Approve",
+    description: "권한 확인용 내부 도구다. 직접 부르지 마라.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tool_name: { type: "string" },
+        input: { type: "object" },
+        tool_use_id: { type: "string" },
+      },
+      additionalProperties: true,
+    },
+  },
+  {
     name: "Skill",
     description:
       "AX-NAVI 의 전용 워크플로를 실행한다. 사용자가 그 일을 부탁하면 명령을 " +
@@ -155,6 +172,25 @@ const TOOLS = [
  * @returns {Promise<{ text: string, isError?: boolean }>}
  */
 async function callTool(name, args) {
+  if (name === "Approve") {
+    /*
+     * 판단은 터미널을 쥔 CLI 가 한다. 여기서는 나르기만 한다.
+     * 통로가 없거나 답이 깨졌으면 거부 — 묻지도 못했는데 허용하면 안 된다.
+     */
+    const [raw] = await request({ kind: "approve", tool: args.tool_name ?? "", input: args.input ?? {} });
+    /** @type {{ behavior?: string, message?: string, updatedInput?: unknown }} */
+    let decision = {};
+    try {
+      decision = JSON.parse(raw ?? "");
+    } catch {
+      decision = {};
+    }
+    if (decision.behavior !== "allow" && decision.behavior !== "deny") {
+      decision = { behavior: "deny", message: "승인 통로에 닿지 못해 거부됐습니다. 우회하지 말고, 하지 못한 일을 결과에 적으세요." };
+    }
+    return { text: JSON.stringify(decision) };
+  }
+
   if (name === "AskUserQuestion") {
     const answers = await askUser(args.question ?? "", args.options ?? [], args.multiSelect === true, args.header ?? "");
     if (!answers.length) {

@@ -41,9 +41,10 @@ function makeAddress() {
  * @param {Elicitor} args.elicitor              실제로 사람에게 묻는 구현 (터미널)
  * @param {(text: string) => void} [args.onNotice]  사용자에게 보여 줄 안내
  * @param {(name: string, request: string) => string} [args.onSkill]  스킬 실행 요청을 받아 답을 돌려준다
+ * @param {(tool: string, input: Record<string, unknown>) => Promise<unknown>} [args.onApprove]  도구 사용 승인
  * @returns {Promise<ElicitHost>}
  */
-export async function startElicitHost({ elicitor, onNotice, onSkill }) {
+export async function startElicitHost({ elicitor, onNotice, onSkill, onApprove }) {
   const address = makeAddress();
   const state = { asked: 0 };
 
@@ -57,7 +58,7 @@ export async function startElicitHost({ elicitor, onNotice, onSkill }) {
         buffer = buffer.slice(nl + 1);
         if (!line.trim()) continue;
 
-        /** @type {{ id: string, kind?: string, question: string, options?: string[], multiSelect?: boolean, header?: string, name?: string, request?: string }} */
+        /** @type {{ id: string, kind?: string, question: string, options?: string[], multiSelect?: boolean, header?: string, name?: string, request?: string, tool?: string, input?: Record<string, unknown> }} */
         let req;
         try {
           req = JSON.parse(line);
@@ -74,6 +75,22 @@ export async function startElicitHost({ elicitor, onNotice, onSkill }) {
           const answer = onSkill?.(req.name ?? "", req.request ?? "")
             ?? "스킬을 실행할 수 없는 경로다.";
           socket.write(`${JSON.stringify({ id: req.id, answers: [answer] })}${NEWLINE}`);
+          continue;
+        }
+
+        /*
+         * 도구 사용 승인. 판단기가 없으면 거부한다 — 서버 쪽도 답이 없으면 거부하지만,
+         * 여기서 분명히 돌려주는 편이 기다리는 시간이 없다.
+         */
+        if (req.kind === "approve") {
+          /** @type {unknown} */
+          let decision = { behavior: "deny", message: "이 실행에는 승인 창이 없습니다." };
+          try {
+            if (onApprove) decision = await onApprove(req.tool ?? "", req.input ?? {});
+          } catch (error) {
+            decision = { behavior: "deny", message: error instanceof Error ? error.message : String(error) };
+          }
+          socket.write(`${JSON.stringify({ id: req.id, answers: [JSON.stringify(decision)] })}${NEWLINE}`);
           continue;
         }
 
