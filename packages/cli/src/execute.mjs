@@ -21,6 +21,7 @@ import { clipToWidth, visibleLength } from "./width.mjs";
 import { applyMode } from "./mode.mjs";
 import { join } from "node:path";
 import { closeTurn, openTurn, recordAgentEnd, recordAgentStart, recordLine } from "./record.mjs";
+import { unwrittenClaims } from "./claims.mjs";
 import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, rememberFolded, sessionMode, sessionModel, setPanelModeSink, debug, ui } from "./runtime.mjs";
 
 /**
@@ -153,7 +154,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 취소 손잡이를 전역에 등록한다 — REPL 이 Ctrl+C / ESC 로 여기를 끊을 수 있어야 한다.
    *
    * process.on("SIGINT") 만으로는 REPL 안에서 아무 일도 일어나지 않는다. readline 이
-   * TTY 에서  을 가로채 자기 close() 로 처리하고 프로세스 시그널을 올리지 않기
+   * TTY 에서 Ctrl+C 을 가로채 자기 close() 로 처리하고 프로세스 시그널을 올리지 않기
    * 때문이다(실측: 중단해도 턴이 끝까지 돌았다). 단발 실행에는 여전히 필요하므로 둘 다 건다.
    */
   const controller = beginTurn();
@@ -685,6 +686,21 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     process.off("SIGINT", onSigint);
     setPanelModeSink(null);
     endTurn(controller);
+    /*
+     * 답이 약속한 산출물이 실제로 쓰였는지 본다.
+     *
+     * 실측: 서브에이전트가 "전체 상세: <server>/_workspace/reports/found_video-subtitle.md"
+     * 라고 끝냈는데 그 파일을 쓰지 않았다. 앞선 실행이 남긴 같은 이름의 파일을 읽고
+     * "확인했다"로 갈음한 것이다. 사용자는 새 리포트인 줄 알고 옛 내용을 본다.
+     */
+    const claimRoots = discovery.roots.map((r) => r.paths.root).concat(paths.root);
+    const promised = unwrittenClaims(answer, claimRoots, startedAt);
+    if (promised.length) {
+      emit(
+        ui.yellow(`  약속한 산출물 ${promised.length}건이 이번 실행에서 쓰이지 않았습니다.`) +
+          ui.dim(` ${promised.join(", ")}`),
+      );
+    }
     onAnswer?.(answer);
     await audit.flush();
   }
