@@ -5,6 +5,7 @@
 import {
   buildProjectContext,
   createDefaultRegistry,
+  discoverRoots,
   indexAgeNote,
   loadAgent,
   resolveProjectPaths,
@@ -48,6 +49,16 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * API 키를 못 받는 환경에서도 에이전트 경로를 쓸 수 있다.
    */
   const paths = resolveProjectPaths(root);
+
+  /*
+   * 인덱스를 가진 저장소를 찾는다.
+   *
+   * 선 자리에 인덱스가 있으면 아무것도 하지 않는다 — 단일 저장소 동작은 그대로다.
+   * 부모 폴더에서 띄웠을 때만 한 단계 아래를 훑는다. 실측으로 그 경우 인덱스를
+   * 통째로 잃고 grep 으로 내려앉았다.
+   */
+  const discovery = discoverRoots(root);
+  const multiRoot = discovery.roots.length > 1;
 
   /*
    * 상태 표시를 먼저 만든다 — 질문이 뜰 때 이 줄을 걷어야 하기 때문이다.
@@ -116,6 +127,22 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   let agent = preset
     ?? (await loadAgent(join(AGENTS_DIR, `${agentName}.md`), { pluginRoot: REPO_ROOT, projectRoot: paths.root }));
 
+  /*
+   * 저장소가 여럿이면 위임을 연다.
+   *
+   * loadAgent 는 allowDelegation 을 채우지 않는다 — frontmatter 에도 없다. 그래서
+   * 저장소 전체에서 이 플래그를 켜는 곳이 오케스트레이터 한 곳뿐이었고, /find 같은
+   * 단일 에이전트 스킬은 서브에이전트를 못 띄웠다. 같은 질문을 플러그인에 던지면
+   * 호스트가 저장소별로 하나씩 띄워 병렬로 훑는다.
+   *
+   * 다만 **여럿일 때만** 연다. 단일 저장소에서 위임을 열면 얻는 것 없이 시간과 비용만
+   * 몇 배가 된다(실측: 단일 3분 43초 · $0.59 대 병렬 17분 11초).
+   *
+   * frontmatter 를 고치지 않는 이유는 그것이 플러그인과 공유하는 자산이고, 위임 여부가
+   * **실행 환경의 성질**이지 역할의 성질이 아니기 때문이다.
+   */
+  if (multiRoot && !agent.allowDelegation) agent = { ...agent, allowDelegation: true };
+
   // 경로 치환 같은 내부 적응 기록은 사용자가 볼 것이 아니다.
   for (const warning of agent.warnings ?? []) debug(ui.dim(`  ! ${warning}\n`));
 
@@ -159,6 +186,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     const projectContext = buildProjectContext({
       paths,
       includeClaudeMd: !provider.capabilities.ownsAgentLoop,
+      roots: discovery.roots,
     });
     const ageNote = indexAgeNote(paths);
     agent = {

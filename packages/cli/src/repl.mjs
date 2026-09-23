@@ -26,6 +26,7 @@ import { attachAutocomplete } from "./autocomplete.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { cmdIndex, runSkill } from "./commands.mjs";
+import { discoverRoots } from "../../core/src/index.mjs";
 import { allTasks, runningCount, startTask, stopAllTasks, stopTask } from "./tasks.mjs";
 import { openViewer } from "./viewer.mjs";
 import { elapsed } from "./activity.mjs";
@@ -732,7 +733,22 @@ function statusLines(paths, state, picked) {
       row("Index", st.stale ? `${ui.yellow("갱신 필요")}  ${ui.dim(st.reason)}` : `${ui.green("Ready")}  ${ui.dim(st.reason)}`),
     );
   } else {
-    lines.push(row("Index", `${ui.yellow("없음")}  ${ui.dim("— /index build 로 만드세요 (LLM·API 키 불필요)")}`));
+    /*
+     * 선 자리에 인덱스가 없다고 바로 "없음"이라 하지 않는다.
+     *
+     * 실측: 부모 폴더에서 띄웠더니 "없음"이 떴는데 정작 인덱스는 하위 두 저장소에
+     * 멀쩡히 있었다. 사용자는 그걸 모른 채 grep 으로 내려앉은 답을 받았다.
+     */
+    const found = discoverRoots(paths.root).roots;
+    if (found.length) {
+      lines.push(row("Index", `${ui.green("Ready")}  ${ui.dim(`저장소 ${found.length}개`)}`));
+      for (const r of found) {
+        const tag = r.hasPair ? ui.dim("  ← 페어") : "";
+        lines.push(row("", `${ui.cyan(r.name)}  ${ui.dim(`${r.files.toLocaleString()} files · tier ${r.tier}`)}${tag}`));
+      }
+    } else {
+      lines.push(row("Index", `${ui.yellow("없음")}  ${ui.dim("— /index build 로 만드세요 (LLM·API 키 불필요)")}`));
+    }
   }
 
   /*

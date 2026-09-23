@@ -62,6 +62,12 @@ const SENTENCE = /[가-힣](다|라|요|까|죠|네)[.!?]?$/;
 const STR = /(['"`])((?:\\.|(?!\1)[^\\])*)\1/g;
 const MODEL_ONLY = new Set(["시작한다."]);
 
+/*
+ * 프롬프트 문자열을 짓는 함수들. 이름만으로는 배열 리터럴 규칙에 안 걸린다.
+ * 여기 적힌 함수의 본문은 통째로 건너뛴다 — 읽는 쪽이 에이전트다.
+ */
+const PROMPT_FNS = new Set(["delegationLines", "toolBriefing"]);
+
 /** @returns {Array<{ file: string, line: number, text: string }>} */
 function scan() {
   /** @type {Array<{ file: string, line: number, text: string }>} */
@@ -75,6 +81,7 @@ function scan() {
     let inBlock = false;
     let inPrompt = false;
     let inSystem = false;
+    let inPromptFn = false;
     lines.forEach((raw, i) => {
       const t = raw.trim();
       if (inBlock) {
@@ -86,6 +93,18 @@ function scan() {
         return;
       }
       if (t.startsWith("//") || t.startsWith("*")) return;
+      // 프롬프트를 짓는 함수는 본문 전체를 건너뛴다. 닫는 중괄호가 열의 첫 글자다.
+      if (inPromptFn) {
+        if (/^}$/.test(raw)) inPromptFn = false;
+        return;
+      }
+      {
+        const fn = /^(?:export\s+)?function\s+(\w+)\s*\(/.exec(t);
+        if (fn && PROMPT_FNS.has(String(fn[1]))) {
+          inPromptFn = true;
+          return;
+        }
+      }
       // throw 메시지는 개발자용 불변식이다. 사용자에게 보이라고 쓴 문장이 아니다.
       if (t.includes("throw new Error(")) return;
       if (/const (instruction|PROMPT|VIBE_POLICY|PLAN_POLICY|payload|briefing) = \[/.test(t)) inPrompt = true;

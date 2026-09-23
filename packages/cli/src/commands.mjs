@@ -16,6 +16,7 @@ import {
   resolveIndexDir,
 } from "../../indexer/index.mjs";
 import {
+  discoverRoots,
   inspectProject,
   loadAllAgents,
   loadAllSkills,
@@ -118,7 +119,13 @@ export async function cmdDoctor(root) {
     // reason 문자열을 그대로 보여준다. exit code로 뭉개면 "왜"가 사라진다.
     rows.push([st.stale ? "warn" : true, "인덱스", `${st.stale ? "갱신 필요" : "최신"} — ${st.reason}`]);
   } else {
-    rows.push(["warn", "인덱스", `없음 — axnavi index build (${paths.indexDir})`]);
+    // 하위 저장소에 있을 수 있다. "없음"이라 말하기 전에 찾아본다.
+    const found = discoverRoots(paths.root).roots;
+    if (found.length) {
+      rows.push([true, "인덱스", `저장소 ${found.length}개 — ${found.map((r) => `${r.name}(${r.files}파일·${r.tier})`).join(", ")}`]);
+    } else {
+      rows.push(["warn", "인덱스", `없음 — axnavi index build (${paths.indexDir})`]);
+    }
   }
 
   rows.push([true, "인덱서", `v${INDEXER_VERSION}`]);
@@ -387,6 +394,8 @@ export async function runSkill(root, name, prompt, providerName, ctx = {}) {
    *
    * 그래서 사용자 요청을 맨 앞에 두고, 스킬 본문은 "산출물 규약 참고"로 격하한다.
    */
+  // 저장소가 여럿이면 지시문이 달라진다 — executeAgent 가 위임도 그때만 연다.
+  const { roots } = discoverRoots(root);
   const instruction = [
     `# 요청`,
     prompt,
@@ -400,7 +409,23 @@ export async function runSkill(root, name, prompt, providerName, ctx = {}) {
     ``,
     `- 절차 자체를 설명하지 마라. 요청을 수행하라.`,
     `- 절차 중 네 역할에 해당하는 부분만 하고, 산출물 경로·형식 규약은 지켜라.`,
-    `- 이 런타임에 없는 기능(서브에이전트 호출 등)은 네가 직접 수행하고, 그 사실만 짧게 밝혀라.`,
+    ...delegationLines(roots, agentName),
+    ``,
+    /*
+     * "없음의 확인"을 요구한다.
+     *
+     * 같은 질문을 플러그인에 던진 답과 비교해 보니 값진 부분이 찾은 목록이 아니라
+     * **확인했는데 없더라**였다 — "DB 컬럼 없음, SQL 0건, 업로드 화면 없음",
+     * "study_screen.js 실물이 두 저장소 어디에도 없음". 찾은 것만 적으면 읽는 사람은
+     * 나머지를 직접 다시 뒤져야 한다.
+     */
+    `## 보고 형식`,
+    ``,
+    `찾은 것만 적지 마라. 셋을 나눠서 보고하라.`,
+    `1. **찾은 것** — 파일 경로와 줄 번호를 함께.`,
+    `2. **확인했는데 없는 것** — 무엇을 어떻게 확인했는지 함께(어떤 인덱스를 질의했고 무엇을 grep 했는지).`,
+    `3. **확인하지 못한 것** — 왜 못 했는지(소스 미확보·분석 범위 밖·인덱스 없음).`,
+    `오탐을 걸러냈으면 무엇을 왜 걸렀는지 한 줄로 남겨라.`,
     ``,
     `<스킬 절차: ${skill.name}>`,
     resolveSkillPaths(skill.body),
@@ -669,4 +694,30 @@ async function runProcedureSkill(root, skill, prompt, providerName, ctx = {}) {
     title: `/${skill.name} ${prompt}`.trim(),
     ...(providerName ? { providerName } : {}),
   });
+}
+
+/**
+ * 위임에 관해 실행자에게 할 말.
+ *
+ * 저장소가 하나면 "없다"고 말해야 한다 — 없는 도구를 부르려다 한 턴을 날린다.
+ * 여럿이면 반대로 **저장소마다 하나씩** 띄우라고 해야 한다. 실측으로 같은 질문에
+ * 플러그인은 백엔드·프론트엔드에 하나씩 붙여 병렬로 훑었고, 우리는 단일 에이전트로
+ * 한쪽만 보고 답했다.
+ *
+ * @param {ReadonlyArray<{ name: string, paths: { root: string } }>} roots
+ * @param {string} agentName
+ * @returns {string[]}
+ */
+function delegationLines(roots, agentName) {
+  if (roots.length <= 1) {
+    return ["- 이 런타임에 없는 기능(서브에이전트 호출 등)은 네가 직접 수행하고, 그 사실만 짧게 밝혀라."];
+  }
+  return [
+    `- **저장소가 ${roots.length}개다.** 한쪽만 보고 답하지 마라.`,
+    `  → \`Task\` 의 \`subagent_type\` 에 \`ax-navi:${agentName}\` 을 넣어 **저장소마다 하나씩** 띄운다.`,
+    `  → 각 서브에이전트의 프롬프트에 담당 루트를 절대경로로 못 박아라:`,
+    ...roots.map((r) => `     ${r.name} → --root "${r.paths.root}"`),
+    `  → 결과를 전부 받은 뒤 합쳐서 보고한다. 결과를 받기 전에 턴을 끝내지 마라.`,
+    `  → 산출물(리포트)은 **각 저장소의 \`_workspace/reports/\` 에 각각** 남긴다.`,
+  ];
 }

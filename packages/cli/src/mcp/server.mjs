@@ -16,7 +16,9 @@ import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
 
 const NEWLINE = String.fromCharCode(10);
+import { resolve } from "node:path";
 import { COMMANDS } from "../../../indexer/index.mjs";
+import { isWithin } from "../../../core/src/index.mjs";
 
 const ELICIT_ADDR = process.env["AXNAVI_ELICIT_ADDR"] ?? "";
 const PROJECT_ROOT = process.env["AXNAVI_PROJECT_ROOT"] ?? process.cwd();
@@ -128,6 +130,11 @@ const TOOLS = [
       required: ["command"],
       properties: {
         command: { type: "string" },
+        root: {
+          type: "string",
+          description:
+            "질의할 저장소의 절대경로. 저장소가 여럿인 프로젝트에서만 쓴다 — 생략하면 기본 저장소를 본다.",
+        },
         id: { type: "string" },
         name: { type: "string" },
         file: { type: "string" },
@@ -186,8 +193,24 @@ async function callTool(name, args) {
     const handler = /** @type {Record<string, (a: any) => unknown>} */ (COMMANDS)[args.command];
     if (!handler) return { text: `지원하지 않는 명령: ${args.command}`, isError: true };
     try {
+      /*
+       * 루트를 인자로 받는다.
+       *
+       * 예전에는 환경변수로 하나에 못 박혀 있어서, 저장소가 여럿인 프로젝트에서
+       * 한쪽만 질의할 수 있었다. 실측으로 백엔드·프론트엔드가 각자 인덱스를 가진
+       * 구조에서 이게 문제가 됐다.
+       *
+       * 받은 값은 **반드시 검사한다.** 그대로 쓰면 임의 경로의 JSON 을 읽는 통로가
+       * 열린다. 허용 루트 안일 때만 쓰고, 벗어나면 조용히 기본값으로 돌린다 —
+       * 여기서 던지면 정상적인 질의까지 막힌다.
+       */
+      const wanted = typeof args.root === "string" && args.root ? resolve(args.root) : null;
+      const useRoot = wanted && isWithin([PROJECT_ROOT], wanted) ? wanted : PROJECT_ROOT;
       /** @type {Record<string, unknown>} */
-      const query = { root: PROJECT_ROOT, ...(INDEX_DIR ? { indexDir: INDEX_DIR } : {}) };
+      const query = useRoot === PROJECT_ROOT
+        ? { root: PROJECT_ROOT, ...(INDEX_DIR ? { indexDir: INDEX_DIR } : {}) }
+        // 다른 저장소를 짚었으면 그쪽의 기본 인덱스 경로를 쓴다. 우리 INDEX_DIR 은 남의 것이다.
+        : { root: useRoot };
       for (const key of ["id", "name", "file", "table", "path", "depth", "limit", "q", "kind"]) {
         if (args[key] !== undefined) query[key] = args[key];
       }

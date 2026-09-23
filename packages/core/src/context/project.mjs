@@ -14,6 +14,8 @@ import { join } from "node:path";
 
 /** @typedef {import("../../types/paths.js").ProjectPaths} ProjectPaths */
 
+const NEWLINE = String.fromCharCode(10);
+
 /** CLAUDE.md 를 통째로 싣지 않는다. 앞부분이 대개 핵심이고 뒤는 변경 이력이다. */
 const CLAUDE_MD_LIMIT = 4000;
 
@@ -60,11 +62,34 @@ function indexFacts(indexDir) {
  * @param {object} args
  * @param {ProjectPaths} args.paths
  * @param {boolean} [args.includeClaudeMd]  위임 경로는 claude가 스스로 읽으므로 중복을 피한다
+ * @param {ReadonlyArray<{ paths: ProjectPaths, name: string, files: number, tier: string, hasPair: boolean, role?: string }>} [args.roots]
+ *   인덱스를 가진 저장소들. 둘 이상이면 루트별로 적는다
  * @returns {string}
  */
-export function buildProjectContext({ paths, includeClaudeMd = true }) {
+export function buildProjectContext({ paths, includeClaudeMd = true, roots = [] }) {
   /** @type {string[]} */
   const lines = ["<프로젝트>", `루트: ${paths.root}`];
+
+  /*
+   * 저장소가 여럿이면 **루트별로 적는다.**
+   *
+   * 에이전트는 QueryIndex 도구뿐 아니라 Bash 로 `query-index.mjs --root <여기>` 를
+   * 직접 돌린다(agents/feature-finder.md 의 Strategy 1). 그 루트는 바로 이 블록의
+   * "루트:" 줄에서 온다. 실측으로 부모 폴더를 적어 줬더니 에이전트가 그대로 넣어
+   * "인덱스가 없습니다"를 받고 grep 으로 내려앉았다 — 정작 인덱스는 하위 두 저장소에
+   * 멀쩡히 있었다. 이 줄이 틀리면 그 아래가 전부 틀린다.
+   */
+  if (roots.length > 1) {
+    lines.push(`저장소 ${roots.length}개 — 인덱스 질의는 **루트별로** 따로 해야 한다.`);
+    for (const r of roots) {
+      // 역할(backend/frontend)을 적어 준다 — 질문이 어느 쪽인지 가르는 데 이게 제일 쓸모 있다.
+      const mark = r.role ? ` (${r.role})` : r.hasPair ? " (페어)" : "";
+      lines.push(`- ${r.name}${mark} · 파일 ${r.files}개 · tier ${r.tier} · --root "${r.paths.root}"`);
+    }
+    lines.push("한 저장소만 보고 답하지 마라. 질문이 어느 쪽인지 모르면 양쪽 다 질의한다.");
+    lines.push("</프로젝트>");
+    return lines.join(NEWLINE);
+  }
 
   const facts = indexFacts(paths.indexDir);
   if (facts) {
