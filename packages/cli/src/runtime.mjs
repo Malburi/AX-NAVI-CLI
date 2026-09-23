@@ -16,7 +16,19 @@ import { DEFAULT_MODE } from "./mode.mjs";
 /** @typedef {import("@ax-navi/core").ProjectPaths} ProjectPaths */
 
 /** 이 저장소 루트. CLI가 설치된 위치에서 agents/·skills/를 찾는다 — 환경변수가 필요 없는 이유다. */
-export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+/*
+ * 끝의 경로 구분자를 뗀다.
+ *
+ * fileURLToPath 는 디렉터리 URL 을 항상 구분자로 끝나게 돌려준다. 그 값이 그대로
+ * CLAUDE_PLUGIN_ROOT 와 스킬 본문 치환에 실려 나가는데, 윈도우에서는 그게 역슬래시다.
+ * 그러면 에이전트가 쓴 bash 명령에서 따옴표가 깨진다(실측).
+ *
+ *   ls "D:AI새 폴더AX-NAVIagentslib\"
+ *   → ls: unknown option -- e     (\" 가 따옴표를 이스케이프했다)
+ *
+ * join() 으로 쓰는 자리는 구분자가 있든 없든 같으므로, 떼는 쪽이 안전하다.
+ */
+export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url)).replace(/[\\\\/]+$/, "");
 export const AGENTS_DIR = join(REPO_ROOT, "agents");
 export const SKILLS_DIR = join(REPO_ROOT, "skills");
 

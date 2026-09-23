@@ -270,3 +270,30 @@ test("QueryIndex 가 루트를 인자로 받되 허용 범위를 검사한다", 
   assert.match(src, /root: \{/, "도구 스키마에 root 가 없다 — 모델이 쓸 줄 모른다");
   assert.match(src, /isWithin\(\[PROJECT_ROOT\], wanted\)/, "받은 경로를 검사하지 않는다");
 });
+
+/* ---------- 경로 끝 구분자 ---------- */
+
+test("REPO_ROOT 는 구분자로 끝나지 않는다 — bash 따옴표가 깨진다", async () => {
+  /*
+   * 실측. CLAUDE_PLUGIN_ROOT 가 `D:\AI\새 폴더\AX-NAVI\` 로 끝나자 에이전트가 쓴
+   * 명령에서 마지막 역슬래시가 닫는 따옴표를 이스케이프했다.
+   *
+   *   ls "D:\AI\새 폴더\AX-NAVI\agents\lib\"
+   *   → ls: unknown option -- e
+   *
+   * 이 값은 CLAUDE_PLUGIN_ROOT 와 스킬 본문 치환 양쪽으로 나간다. join() 으로 쓰는
+   * 자리는 구분자가 있든 없든 같으므로 떼는 쪽이 안전하다.
+   */
+  const { REPO_ROOT, AGENTS_DIR, SKILLS_DIR } = await import("../../cli/src/runtime.mjs");
+  assert.ok(!/[\/]$/.test(REPO_ROOT), `끝에 구분자가 남았다: ${JSON.stringify(REPO_ROOT)}`);
+  // 떼고 나서도 하위 경로 조립이 멀쩡해야 한다.
+  assert.ok(AGENTS_DIR.endsWith("agents"), AGENTS_DIR);
+  assert.ok(SKILLS_DIR.endsWith("skills"), SKILLS_DIR);
+});
+
+test("스킬 본문에 치환된 경로도 구분자로 끝나지 않는다", async () => {
+  const { resolveSkillPaths } = await import("../../cli/src/commands.mjs");
+  const out = resolveSkillPaths('node "$CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs"');
+  assert.ok(!new RegExp("[\\\\/]{2,}").test(out.replace(/^node /, "")), `구분자가 겹쳤다: ${out}`);
+  assert.match(out, /agents\/lib\/build-index\.mjs/);
+});

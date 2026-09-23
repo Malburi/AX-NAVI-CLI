@@ -19,7 +19,8 @@ import { join } from "node:path";
 import { loadAllAgents, loadAllSkills, resolveSkill } from "../src/index.mjs";
 
 const NL = String.fromCharCode(10);
-const REPO = fileURLToPath(new URL("../../../", import.meta.url));
+// 끝의 구분자를 뗀다 — 소스의 REPO_ROOT 와 같은 모양이어야 치환 결과와 맞는다.
+const REPO = fileURLToPath(new URL("../../../", import.meta.url)).replace(new RegExp("[\\\\/]+$"), "");
 const SKILLS = join(REPO, "skills");
 const AGENTS = join(REPO, "agents");
 
