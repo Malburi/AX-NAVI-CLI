@@ -27,7 +27,7 @@ harness-init 파이프라인에서 **LLM 판단이 필요 없는 스크립트 �
 > **파이썬 인터프리터 규칙**: `.py` 스크립트를 부를 때 `python` 또는 `python3` **어느 쪽도 하드코딩하지 않는다.** 윈도우(공식 설치판·Store판)에는 `python`만 있고, 다수 리눅스 배포판·Homebrew에는 `python3`만 있다 — ITO 현장은 윈도우가 기본이고 CI는 리눅스라 양쪽을 다 밟는다. 먼저 `python3 --version`을 시도해 성공하면 `python3`, 실패하면 `python`을 쓴다(둘 다 실패하면 "파이썬 없음"을 WARN으로 보고하고 그 블록만 건너뛴다 — 조용히 넘어가지 않는다). 아래 예시는 `python`으로 적혀 있으나 실제 호출 시 이 규칙으로 결정한 이름을 쓴다.
 
 
-- **스크립트 경로**: 스크립트는 대상 프로젝트가 아니라 플러그인 설치 루트에 있다. PowerShell은 `$env:CLAUDE_PLUGIN_ROOT`, bash는 `$CLAUDE_PLUGIN_ROOT`로 참조한다. 비어 있으면 프롬프트로 받은 플러그인 루트 절대경로를 쓴다. cwd 기준 상대경로 `agents/lib/...`는 금지.
+- **스크립트 경로**: 스크립트는 대상 프로젝트가 아니라 플러그인 설치 루트 `${CLAUDE_PLUGIN_ROOT}`에 있다. 이 경로는 이 지침을 불러올 때 절대경로로 바뀐다. 블록 파일 명령의 `[plugin_root]` 자리에는 이 경로를 넣어 실행한다. 이 지침의 경로가 변수 이름 그대로 남아 있으면 프롬프트로 받은 `plugin_root`를 쓴다. 스크립트를 찾으려고 디스크를 검색하지 않는다. cwd 기준 상대경로 `agents/lib/...`는 금지.
 - **`--out`/`--summary` 인자는 생략한다.** 스크립트 기본값이 `--root` 기준 경로라, cwd ≠ root인 상황(파트너 레인 등)에서 상대경로를 넘기면 엉뚱한 프로젝트에 읽기/쓰기가 발생한다.
 - **에러 원칙**: 1회 재시도 후 재실패 시 WARN으로 남기고 다음 항목으로 진행한다. 단 프롬프트에 `hard_stop` 조건이 명시된 항목은 그 자리에서 중단하고 반환한다.
 - 스크립트 exit 1이 항상 실패는 아니다. `validate-harness.mjs`는 스키마 FAIL이 있으면 exit 1이지만 결과 파일은 정상적으로 쓴다 — 이 경우 실행 실패가 아니라 검증 결과로 취급한다.
@@ -45,7 +45,7 @@ harness-init 파이프라인에서 **LLM 판단이 필요 없는 스크립트 �
 | `verify` | `agents/lib/pipeline-runner/block-verify.md` | Phase 2-3 후단 / 2-4 전단 (2-3.5) |
 | `wiki` | `agents/lib/pipeline-runner/block-wiki.md` | Phase 3.7 (3.6 메뉴에서 선택된 경우만) |
 
-**경로 규칙은 스크립트와 같다.** 위 상대경로는 플러그인 설치 루트 기준이므로 절대경로로 바꿔 읽는다 — PowerShell은 `$env:CLAUDE_PLUGIN_ROOT/agents/lib/pipeline-runner/block-[블록명].md`, bash는 `$CLAUDE_PLUGIN_ROOT/agents/lib/pipeline-runner/block-[블록명].md`. 환경변수가 비어 있으면 프롬프트로 받은 `plugin_root`(예: `~/.claude/plugins/cache/ax-navi/...`)의 절대경로로 대체한다. cwd 기준 상대경로는 개발 저장소에서만 동작하므로 금지.
+**경로 규칙은 스크립트와 같다.** 위 상대경로는 플러그인 설치 루트 기준이므로 절대경로로 바꿔 읽는다 — `${CLAUDE_PLUGIN_ROOT}/agents/lib/pipeline-runner/block-[블록명].md`. 이 경로가 변수 이름 그대로 남아 있으면 프롬프트로 받은 `plugin_root`(예: `~/.claude/plugins/cache/ax-navi/...`)의 절대경로로 대체한다. cwd 기준 상대경로는 개발 저장소에서만 동작하므로 금지.
 
 읽은 파일의 Step 순서·폴백 사다리·재시도 규칙·반환 형식을 그대로 따른다. `block:` 값이 위 넷 중 어느 것도 아니면 스크립트를 실행하지 않고 `RESULT: FAIL`과 `WARN: 알 수 없는 block 값 [값]`만 반환한다.
 

@@ -87,4 +87,30 @@ export async function test(register, assert) {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  register("스킬·에이전트 본문은 호스트가 치환하는 ${CLAUDE_PLUGIN_ROOT} 표기만 쓴다", () => {
+    /*
+     * 실측. Claude Code 는 SKILL.md·agents/*.md 본문의 `${CLAUDE_PLUGIN_ROOT}` 만 절대경로로
+     * 바꾸고 `$CLAUDE_PLUGIN_ROOT`·`$env:CLAUDE_PLUGIN_ROOT` 는 그대로 둔다. 플러그인 모드
+     * Bash 에는 그 환경변수도 없다. 그래서 `"$env:CLAUDE_PLUGIN_ROOT/agents/lib/x"` 는 bash 에서
+     * `":CLAUDE_PLUGIN_ROOT/agents/lib/x"` 가 됐고, 서브에이전트가 `find /` 로 디스크를 뒤지다
+     * 다른 플러그인 캐시의 같은 이름 스크립트를 실행했다.
+     */
+    const offenders = [];
+    const bodies = [
+      ...readdirSync(join(ROOT, "skills")).map((d) => join(ROOT, "skills", d, "SKILL.md")),
+      ...readdirSync(join(ROOT, "agents")).filter((f) => f.endsWith(".md")).map((f) => join(ROOT, "agents", f)),
+    ];
+    for (const file of bodies) {
+      let text;
+      try { text = readFileSync(file, "utf8"); } catch { continue; }
+      if (/\$env:CLAUDE_PLUGIN_ROOT|\$\{env:CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT/.test(text)) offenders.push(file.slice(ROOT.length + 1));
+    }
+    /* 블록 파일은 Read 로 읽혀 치환이 없다. pipeline-runner 가 [plugin_root] 를 채운다. */
+    const blocks = join(ROOT, "agents", "lib", "pipeline-runner");
+    for (const f of readdirSync(blocks).filter((f) => f.endsWith(".md"))) {
+      if (/CLAUDE_PLUGIN_ROOT/.test(readFileSync(join(blocks, f), "utf8"))) offenders.push(`agents/lib/pipeline-runner/${f}`);
+    }
+    assert.equal(offenders.join(", "), "", "치환되지 않는 플러그인 루트 표기");
+  });
 }

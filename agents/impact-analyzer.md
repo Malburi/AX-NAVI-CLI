@@ -43,10 +43,10 @@ tools: Read, Grep, Glob, Bash, Write
 ### Step 0: 인덱스 가용성 확인
 
 ```
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" summary --root "[프로젝트 루트 절대 경로]"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/query-index.mjs" summary --root "[프로젝트 루트 절대 경로]"
 ```
 
-(스크립트는 플러그인 설치 루트에 있다 — PowerShell `$env:CLAUDE_PLUGIN_ROOT`, bash `$CLAUDE_PLUGIN_ROOT`. 비어 있으면 이 에이전트 파일이 위치한 플러그인 디렉터리 절대경로로 대체. cwd 상대경로 `agents/lib/...` 금지.)
+(스크립트 경로의 `${CLAUDE_PLUGIN_ROOT}`는 이 지침을 불러올 때 플러그인 설치 절대경로로 바뀐다. 적힌 경로를 그대로 실행하고, 스크립트를 찾으려고 디스크를 검색하지 않는다. cwd 상대경로 `agents/lib/...` 금지.)
 
 - 응답 `index_sizes`로 `call_graph`, `symbols`, `sql_usage`, `external_io`, `transactions` 존재 여부 확인
 - 인덱스 mtime이 코드보다 오래되었으면 → **stale 경고** 후 진행 (오케스트레이터에게 analyzer incremental 재실행 권고)

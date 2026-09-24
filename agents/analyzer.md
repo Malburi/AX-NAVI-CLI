@@ -554,7 +554,7 @@ api-bridge 에이전트 없이 analyzer가 직접 추출한다 (harness-init 파
 }
 ```
 
-- `generated_at`: **반드시 실제 명령 실행 결과를 쓴다 — 기억이나 추측으로 시각을 지어내지 말 것** (`git_commit`을 `git rev-parse HEAD`로 얻는 것과 동일한 원칙). `python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/now_kst.py"`(bash는 `$CLAUDE_PLUGIN_ROOT`)를 한 번 실행해 나온 KST(UTC+9) ISO-8601 값을 이번 분석 실행에서 생성하는 모든 인덱스 파일에 동일하게 사용한다(파일마다 다시 실행하지 않음). `00:00:00Z` 같은 임의 값은 실제 생성 시각이 아니라 신선도 판단에 쓸 수 없다.
+- `generated_at`: **반드시 실제 명령 실행 결과를 쓴다 — 기억이나 추측으로 시각을 지어내지 말 것** (`git_commit`을 `git rev-parse HEAD`로 얻는 것과 동일한 원칙). `python "${CLAUDE_PLUGIN_ROOT}/agents/lib/now_kst.py"`를 한 번 실행해 나온 KST(UTC+9) ISO-8601 값을 이번 분석 실행에서 생성하는 모든 인덱스 파일에 동일하게 사용한다(파일마다 다시 실행하지 않음). `00:00:00Z` 같은 임의 값은 실제 생성 시각이 아니라 신선도 판단에 쓸 수 없다.
 - `sampled`: Step 8의 샘플링 모드를 적용했으면 `true`.
 - `files_scanned`/`files_total`: 실제 분석한 소스 파일 수 / 대상 범위 전체 소스 파일 수. 커버리지 지표로 리포트에 기계 출력된다.
 
@@ -591,9 +591,9 @@ Section B/D의 기계 집계는 LLM이 읽어 복사하지 않는다. 아래 리
 독립 호출에서는 리포트 작성 후 같은 명령을 한 번 실행한다. 스크립트 실패 시 미조립임을 보고하고
 큰 JSON이나 집계표를 대신 작성하지 않는다.
 
-스크립트는 플러그인 설치 루트의 `agents/lib/analyzer_index_summary.py`다. PowerShell은
-`$env:CLAUDE_PLUGIN_ROOT`, bash는 `$CLAUDE_PLUGIN_ROOT`를 쓰고, 비어 있으면 이 에이전트가
-설치된 플러그인 절대경로로 대체한다. 대상 프로젝트 cwd의 상대경로로 실행하지 않는다.
+스크립트는 플러그인 설치 루트의 `agents/lib/analyzer_index_summary.py`다. 스크립트 경로의
+`${CLAUDE_PLUGIN_ROOT}`는 이 지침을 불러올 때 플러그인 설치 절대경로로 바뀐다. 적힌 경로를 그대로
+실행하고, 스크립트를 찾으려고 디스크를 검색하지 않는다. 대상 프로젝트 cwd의 상대경로로 실행하지 않는다.
 Python은 `python3 --version` 성공 시 `python3`, 아니면 `python`을 사용한다.
 
 업무 목적·사용자·핵심 규칙·분기·예외는 분석 중 확인한 근거로 아래 업무 섹션에 한 번만 쓴다.

@@ -102,7 +102,7 @@ wiki-hub-serve --root "[절대경로]" --port 8800
 허브에서 되돌린 것은 DB 안의 내용이다. harness 프로젝트 폴더에도 반영하려면 회수한다.
 
 ```powershell
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/wikihub_db/publish.py" --root "[절대경로]" `
+python "${CLAUDE_PLUGIN_ROOT}/agents/lib/wikihub_db/publish.py" --root "[절대경로]" `
   --system-key "[시스템키]" --component-key "[컴포넌트키]" --pull --wiki-dir "[절대경로]/_workspace/wiki"
 ```
 
@@ -118,7 +118,7 @@ python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/wikihub_db/publish.py" --root "[절�
 뒤지지 않고 담당자와 연락처를 바로 얻을 수 있다.
 
 ```powershell
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/wikihub_db/publish.py" --root "[절대경로]" --list-owners
+python "${CLAUDE_PLUGIN_ROOT}/agents/lib/wikihub_db/publish.py" --root "[절대경로]" --list-owners
 ```
 
 열람 권한은 **표와 기본 역할까지 준비돼 있고 강제만 꺼져 있다**(`access_control=off`).

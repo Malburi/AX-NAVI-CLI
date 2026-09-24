@@ -124,7 +124,7 @@ PowerShell: `Test-Path "[파트너 경로]"` 또는 bash: `[ -d "[파트너 경�
 Agent(
   subagent_type="general-purpose",
   description="파트너 하네스 자동 생성 ([파트너 경로])",
-  prompt="$CLAUDE_PLUGIN_ROOT/skills/harness-init/SKILL.md 파일을 읽고 그 지침을 그대로 따라 harness-init을 수행하라(환경변수가 비어 있으면 이 스킬이 위치한 플러그인 설치 루트의 절대경로로 대체. cwd 상대경로 금지).
+  prompt="${CLAUDE_PLUGIN_ROOT}/skills/harness-init/SKILL.md 파일을 읽고 그 지침을 그대로 따라 harness-init을 수행하라(환경변수가 비어 있으면 이 스킬이 위치한 플러그인 설치 루트의 절대경로로 대체. cwd 상대경로 금지).
   프로젝트 루트: [파트너 절대경로] (cwd 아님 — 이 경로 기준으로 모든 파일 읽기/쓰기 수행).
   init_layout: 'paired-roots' (멀티레포 확정 상태 — Phase -1 구성 확인 재질문 불필요, source: explicit-request로 기록).
   partner_info: { role: '[현재 프로젝트 역할과 반대]', path: '[현재 프로젝트 절대경로]', api_url: '[api_base_url]' }.
@@ -269,8 +269,8 @@ partner_api_contract: [절대경로 2]/_workspace/index/api_contract.json
 그래서 **짝 저장소 인덱스가 먼저 있어야** 한다. 파트너(클라이언트)들을 먼저, hub를 마지막에 `pipeline-runner`로 실행한다:
 
 ```bash
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[파트너 절대경로]"   # 파트너마다
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[hub 절대경로]"      # 마지막에
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/build-index.mjs" --root "[파트너 절대경로]"   # 파트너마다
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/build-index.mjs" --root "[hub 절대경로]"      # 마지막에
 ```
 
 실행 후 hub에서 `axnavi index coverage` 진단서(또는 `agents/lib/coverage-report.mjs`)로 "대상 미발견" 건수를 연결 전과

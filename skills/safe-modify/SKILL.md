@@ -59,20 +59,19 @@ mode는 change-safety에 전달되어 가중치 조정에 사용된다.
 인덱스 신선도부터 확인한다 — stale한 인덱스로 어댑터 판정·패턴 선택·영향 분석을 하면 근거 자체가
 틀릴 수 있다.
 
-`$env:CLAUDE_PLUGIN_ROOT`가 비어 있는 환경이 있다(플랫폼/호스트에 따라 자동 설정 안 될 수 있음).
-먼저 `echo $env:CLAUDE_PLUGIN_ROOT`(PowerShell) 또는 `echo $CLAUDE_PLUGIN_ROOT`(Bash)로 값이
-있는지 확인하고, 비어 있으면 이 스킬이 로드될 때 표시된 "Base directory for this skill" 경로에서
-`/skills/safe-modify`를 뗀 나머지를 플러그인 루트로 대신 쓴다. 아래 명령의 `$env:CLAUDE_PLUGIN_ROOT`는
-전부 그렇게 구한 실제 경로로 치환해 실행한다.
+아래 명령의 `${CLAUDE_PLUGIN_ROOT}`는 이 스킬을 불러올 때 플러그인 설치 절대경로로 바뀐다.
+적힌 경로를 그대로 실행하고, 스크립트를 찾으려고 디스크를 검색하지 않는다. 경로가 변수 이름 그대로
+남아 있으면 이 스킬이 로드될 때 표시된 "Base directory for this skill" 경로에서 `/skills/safe-modify`를
+뗀 나머지를 플러그인 루트로 대신 쓴다.
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[프로젝트 루트 절대 경로]" --check-stale
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/build-index.mjs" --root "[프로젝트 루트 절대 경로]" --check-stale
 ```
 
 - exit 0(`stale:false`): 그대로 진행.
 - exit 1(`stale:true`): 아래로 재인덱싱 후 진행. `reason`이 `인덱스 없음`이면 `--mode init`, 그 외(소스 변경·인덱서 버전 변경)면 `--mode incremental`.
   ```powershell
-  node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[프로젝트 루트 절대 경로]" --mode incremental
+  node "${CLAUDE_PLUGIN_ROOT}/agents/lib/build-index.mjs" --root "[프로젝트 루트 절대 경로]" --mode incremental
   ```
   재인덱싱이 실패하거나(예: 대형 모노레포에서 시간 초과) 사용자가 건너뛰기를 원하면, 이후 모든 인덱스 기반 판정(어댑터 커버리지·영향 분석·패턴 선택)에 `지식 모델 stale — 최신 코드와 다를 수 있음`을 명시하고 진행한다. 소스를 직접 여는 것으로 대체할 수 있으나 그 사실도 함께 보고한다.
 
@@ -83,7 +82,7 @@ node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[프로젝트 
 변경 대상마다 어댑터 커버리지 게이트를 먼저 실행한다.
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/check-adapter-coverage.mjs" --root "[프로젝트 루트 절대 경로]" --target "[변경 대상 상대 경로]"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/check-adapter-coverage.mjs" --root "[프로젝트 루트 절대 경로]" --target "[변경 대상 상대 경로]"
 ```
 
 - `FULL/GO`: 다음 단계 진행 가능.
@@ -94,8 +93,8 @@ node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/check-adapter-coverage.mjs" --root "[�
 변경 대상 경로가 정해지면 `.claude/patterns/pattern_profile.json`을 검증하고 해당 모듈·레이어의 기준 패턴을 선택한다.
 
 ```powershell
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/pattern_profile.py" validate --root "[프로젝트 루트 절대 경로]"
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/pattern_profile.py" select --root "[프로젝트 루트 절대 경로]" --target "[변경 대상 경로]" --module "[모듈명]" --limit 20
+python "${CLAUDE_PLUGIN_ROOT}/agents/lib/pattern_profile.py" validate --root "[프로젝트 루트 절대 경로]"
+python "${CLAUDE_PLUGIN_ROOT}/agents/lib/pattern_profile.py" select --root "[프로젝트 루트 절대 경로]" --target "[변경 대상 경로]" --module "[모듈명]" --limit 20
 ```
 
 프로필이 없으면 Markdown 패턴과 동일 모듈의 유사 코드로 폴백할 수 있지만, 리포트에 `구조화 패턴 미검증`을 표시한다. 신규 파일 생성이 포함된 변경은 폴백하지 않고 pattern-extractor를 먼저 실행한다. 기존 파일 수정이라도 `구조화 패턴 미검증` 상태에서는 자동 GO를 내지 않는다(Phase 4 참조) — 패턴 근거가 약한 채로 통과하지 않게 한다.
@@ -163,13 +162,13 @@ FAIL이면 수정 후 재검증하고, HOLD이면 사용자 결정 전 GO로 진
 먼저 결정론적 감지기로 프로젝트의 검증 명령 후보를 확보한다(부작용 없음).
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" detect --root "[프로젝트 루트 절대 경로]" --target "[변경 대상 상대 경로]"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" detect --root "[프로젝트 루트 절대 경로]" --target "[변경 대상 상대 경로]"
 ```
 
 `detected` 목록(lint/typecheck/test/build)을 사용자에게 보여주고, 변경 범위에 해당하는 가장 작은 명령을 골라 실제 실행한다.
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" run --root "[프로젝트 루트 절대 경로]" --cmd "[detected에서 고른 명령]"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝트 루트 절대 경로]" --cmd "[detected에서 고른 명령]"
 ```
 
 `run`은 성공 시 요약만, 실패 시 `fail_lines`(명령당 상한)만 돌려준다 — 코드 전체를 다시 LLM에 넣지 않는다. 반환된 `commands[].cmd`·`exit`·`fail_lines`와 `overall`을 그대로 change-safety 입력에 넘긴다. `detected`가 비어 있으면(`count: 0`) 자동 검증이 없다는 뜻이므로 수동 검증 시나리오를 확보하기 전 PASS로 간주하지 않는다. 실행할 수 없거나 assertion까지 도달하지 못한 검사도 PASS로 간주하지 않는다.
@@ -236,7 +235,7 @@ GO는 `어댑터 FULL + 패턴 CONFORM + 필수 검증 exit 0 + change-safety GO
 
 GO 후 변경된 코드가 다음 작업과 인수인계 위키에 반영되도록 기본 실행한다.
 
-1. `node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[프로젝트 루트]" --mode incremental`
+1. `node "${CLAUDE_PLUGIN_ROOT}/agents/lib/build-index.mjs" --root "[프로젝트 루트]" --mode incremental`
 2. API·SQL·호출 관계가 바뀌었으면 관련 인덱스가 실제 변경 파일을 포함하는지 `query-index.mjs`로 확인한다(예: `callees --id <변경한 메서드>`가 새 호출을 반영하는지).
 3. `generate-wiki`를 재실행한다 — 자동 후속 갱신 호출이므로 generate-wiki Phase 0의 덮어쓰기 Y/N 질문은 생략하고 바로 백업 후 재생성한다(generate-wiki SKILL.md의 "예외 — 자동 후속 갱신 호출" 참조).
 4. 생성된 wiki의 분석 커밋·시각과 현재 HEAD가 맞는지 보고한다.

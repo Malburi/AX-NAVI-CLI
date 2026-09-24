@@ -7,7 +7,7 @@ pattern-extractor 완료 후, validator Agent 호출 전에 실행한다. 세 �
 ## Step 1 — 구조화 패턴 프로필 검증
 
 ```powershell
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/pattern_profile.py" validate --root "[root]"
+python "[plugin_root]/agents/lib/pattern_profile.py" validate --root "[root]"
 ```
 
 결과는 `_workspace/pattern_profile_validation.json`에 남는다. **exit 1이면 나머지 Step을 실행하지 않고 즉시 반환한다** — 프로필이 깨진 상태에서 validator 입력을 만드는 건 낭비다. 누락된 실제 참조 파일·잘못된 scope·부재한 preferred 규칙을 반환에 구체적으로 적어 오케스트레이터가 pattern-extractor 보완 재호출을 지시할 수 있게 한다.
@@ -15,7 +15,7 @@ python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/pattern_profile.py" validate --root "
 ## Step 2 — validator 기계 체크
 
 ```powershell
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/validator_checks.py" --root "[root]"
+python "[plugin_root]/agents/lib/validator_checks.py" --root "[root]"
 ```
 
 validator 체크 1,2,3,4,6,7,8,9를 계산해 `_workspace/validator_mechanical.json`에 쓴다. 실패 시 WARN 후 계속 — validator가 해당 체크를 직접 수행하는 방식으로 폴백한다.
@@ -25,7 +25,7 @@ validator 체크 1,2,3,4,6,7,8,9를 계산해 `_workspace/validator_mechanical.j
 node ≥ 18일 때만. node가 없으면 스킵하고 WARN.
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/validate-harness.mjs" --root "[root]" --plugin-root "[plugin_root]" --tier "[tier]" --out "_workspace/validator_schema.json"
+node "[plugin_root]/agents/lib/validate-harness.mjs" --root "[root]" --plugin-root "[plugin_root]" --tier "[tier]" --out "_workspace/validator_schema.json"
 ```
 
 `_workspace/index/*.json`을 `docs/index-schema/*.json` 대조로 검증한다. `validator_checks.py`의 check7/7b(실제 소스 대조, 내용 정확성)와 겹치지 않는 별개 층(형태 검증)이라 병행한다.

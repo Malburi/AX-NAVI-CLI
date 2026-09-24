@@ -32,12 +32,13 @@ description: 변경 대상(파일/함수/클래스/SQL/엔드포인트/DB 컬럼
 
 ## Phase 1: 인덱스 준비
 
-먼저 신선도를 확인한다. `$env:CLAUDE_PLUGIN_ROOT`가 비어 있으면(일부 환경에서 자동 설정 안 됨),
-이 스킬 로드 시 표시된 "Base directory for this skill"에서 `/skills/analyze-impact`를 뗀 경로를
-대신 쓴다.
+먼저 신선도를 확인한다. 아래 명령의 `${CLAUDE_PLUGIN_ROOT}`는 이 스킬을 불러올 때 플러그인 설치
+절대경로로 바뀐다. 적힌 경로를 그대로 실행하고, 스크립트를 찾으려고 디스크를 검색하지 않는다.
+경로가 변수 이름 그대로 남아 있으면 이 스킬 로드 시 표시된 "Base directory for this skill"에서
+`/skills/analyze-impact`를 뗀 경로를 대신 쓴다.
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[프로젝트 루트 절대 경로]" --check-stale
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/build-index.mjs" --root "[프로젝트 루트 절대 경로]" --check-stale
 ```
 
 exit 1(`stale:true`)이면 재인덱싱 후 진행한다 — `reason`이 `인덱스 없음`이면 `--mode init`, 그 외(소스 변경·인덱서 버전 변경)면 `--mode incremental`. 변경 대상 범위가 좁고 전체 재인덱싱이 부담스러우면 `feature-scoped` 모드로 analyzer를 호출해 대상 주변만 빠르게 재인덱싱해도 된다. 재인덱싱이 불가능한 상황이면(대형 모노레포 시간 초과 등) 이후 리포트에 `지식 모델 stale` 경고를 명시하고 진행한다.

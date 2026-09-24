@@ -48,10 +48,10 @@ LLM 호출 없이, 다음 터미널 명령 한 번으로 wiki 페이지 + 인터
 이용한다.
 
 ```powershell
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/wiki_generator.py" --root "[절대경로]" --wiki-dir "[절대경로]/_workspace/wiki"
+python "${CLAUDE_PLUGIN_ROOT}/agents/lib/wiki_generator.py" --root "[절대경로]" --wiki-dir "[절대경로]/_workspace/wiki"
 ```
 
-(스크립트는 플러그인 설치 루트에 있다 — PowerShell `$env:CLAUDE_PLUGIN_ROOT`, bash `$CLAUDE_PLUGIN_ROOT`. 비어 있으면 이 SKILL.md가 위치한 플러그인 디렉터리 절대경로로 대체. cwd 상대경로 `agents/lib/...` 금지.)
+(스크립트 경로의 `${CLAUDE_PLUGIN_ROOT}`는 이 지침을 불러올 때 플러그인 설치 절대경로로 바뀐다. 적힌 경로를 그대로 실행하고, 스크립트를 찾으려고 디스크를 검색하지 않는다. cwd 상대경로 `agents/lib/...` 금지.)
 
 ### 선택 — AI 해설 페이지 (사용자가 "해설 포함"·"내러티브 포함"을 요청한 경우만)
 

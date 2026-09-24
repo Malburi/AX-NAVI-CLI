@@ -26,11 +26,13 @@ description: 특정 기능·API·화면의 처리 흐름을 진입점부터 DB�
 
 ## Phase 1: 인덱스 준비
 
-`$env:CLAUDE_PLUGIN_ROOT`가 비어 있으면(일부 환경에서 자동 설정 안 됨), 이 스킬 로드 시 표시된
-"Base directory for this skill"에서 `/skills/trace-logic`를 뗀 경로를 대신 쓴다.
+아래 명령의 `${CLAUDE_PLUGIN_ROOT}`는 이 스킬을 불러올 때 플러그인 설치 절대경로로 바뀐다.
+적힌 경로를 그대로 실행하고, 스크립트를 찾으려고 디스크를 검색하지 않는다. 경로가 변수 이름 그대로
+남아 있으면 이 스킬 로드 시 표시된 "Base directory for this skill"에서 `/skills/trace-logic`를 뗀
+경로를 대신 쓴다.
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[프로젝트 루트 절대 경로]" --check-stale
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/build-index.mjs" --root "[프로젝트 루트 절대 경로]" --check-stale
 ```
 
 - fresh(exit 0)면 → `query-index.mjs trace --id <진입점> --depth 3`으로 먼저 경로를 뽑고, 그 결과를 logic-tracer에 전달.

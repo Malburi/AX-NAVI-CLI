@@ -124,6 +124,9 @@ node <플러그인 루트>/agents/lib/query-index.mjs symbol --name <이 프로�
 node <플러그인 루트>/agents/lib/query-index.mjs callers --id <이 프로젝트 실제 메서드 ID> --root <프로젝트 루트>
 ```
 
+`<플러그인 루트>`는 `${CLAUDE_PLUGIN_ROOT}`다(이 지침을 불러올 때 플러그인 설치 절대경로로 바뀐다). 예시를
+직접 실행해 확인할 때도 이 경로를 쓰고, 스크립트를 찾으려고 디스크를 검색하지 않는다.
+
 예시의 대상(클래스명·메서드 ID·테이블명)은 플레이스홀더가 아니라 `_workspace/01_analyzer_report.md`나
 인덱스에서 실제로 뽑은 이 프로젝트의 심볼을 써서, 사용자가 그대로 복사해 돌려볼 수 있게 한다.
 symbols.json이 메서드 단위까지 못 채우는 스택(예: 일부 dotnet 어댑터)이면 `callers`/`trace`/`callees`

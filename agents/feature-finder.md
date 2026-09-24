@@ -28,10 +28,10 @@ logic-tracer가 "흐름 추적"이라면, feature-finder는 "위치 탐색" — 
 ### Strategy 1: 인덱스 탐색 (빠름)
 
 ```
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" <명령> --root "[프로젝트 루트 절대 경로]" [옵션]
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/query-index.mjs" <명령> --root "[프로젝트 루트 절대 경로]" [옵션]
 ```
 
-(스크립트는 플러그인 설치 루트에 있다 — PowerShell `$env:CLAUDE_PLUGIN_ROOT`, bash `$CLAUDE_PLUGIN_ROOT`. 비어 있으면 이 에이전트 파일이 위치한 플러그인 디렉터리 절대경로로 대체. cwd 상대경로 `agents/lib/...` 금지.)
+(스크립트 경로의 `${CLAUDE_PLUGIN_ROOT}`는 이 지침을 불러올 때 플러그인 설치 절대경로로 바뀐다. 적힌 경로를 그대로 실행하고, 스크립트를 찾으려고 디스크를 검색하지 않는다. cwd 상대경로 `agents/lib/...` 금지.)
 
 `summary`로 인덱스 존재를 확인한 뒤:
 - `symbol --name [키워드]` — 기능명 키워드로 클래스명·메서드명 부분 일치 검색

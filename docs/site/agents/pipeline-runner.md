@@ -20,7 +20,7 @@ frontmatter `model`은 `sonnet`, `tools`는 지정하지 않는다. 역할 표�
 1. 프롬프트로 `block`·`root`·`tier`·`plugin_root`·`mode`(init/incremental)·`ai_budget_session`·`lane`을 받는다.
 2. 디스패치 표에서 자기 블록의 파일 하나만 읽는다. 다른 블록 파일은 읽지 않는다. 블록별 절차를 이 에이전트 파일에 두지 않는 이유도 매 호출이 쓰지 않을 지침을 3배로 읽지 않게 하기 위함이다.
 3. 파이썬 인터프리터는 `python3 --version`이 성공하면 `python3`, 실패하면 `python`을 쓴다. 둘 다 없으면 "파이썬 없음"을 WARN으로 보고하고 그 블록만 건너뛴다.
-4. 스크립트는 `$env:CLAUDE_PLUGIN_ROOT`(bash는 `$CLAUDE_PLUGIN_ROOT`) 기준 절대경로로 부른다. `--out`/`--summary` 인자는 생략해 스크립트 기본값(`--root` 기준)을 쓴다. cwd가 root와 다를 때 상대경로를 넘기면 엉뚱한 프로젝트에 읽기·쓰기가 발생한다.
+4. 스크립트는 플러그인 설치 절대경로로 부른다. 에이전트 지침의 `${CLAUDE_PLUGIN_ROOT}`는 불러올 때 그 경로로 바뀌고, 블록 파일 명령의 `[plugin_root]` 자리에 그 경로를 넣는다. `--out`/`--summary` 인자는 생략해 스크립트 기본값(`--root` 기준)을 쓴다. cwd가 root와 다를 때 상대경로를 넘기면 엉뚱한 프로젝트에 읽기·쓰기가 발생한다.
 5. 블록 파일의 Step 순서·폴백 사다리·재시도 규칙을 그대로 따른다. 1회 재시도 후 재실패는 WARN으로 남기고 다음 항목으로 진행하며, `hard_stop` 조건이 명시된 항목은 그 자리에서 중단한다.
 6. exit 1을 무조건 실패로 보지 않는다. `validate-harness.mjs`는 스키마 FAIL이 있으면 exit 1이지만 결과 파일은 정상적으로 쓰므로 검증 결과로 취급한다.
 7. 산출물 존재를 확인하고 블록 파일의 "반환 형식"으로 압축해 반환한다.

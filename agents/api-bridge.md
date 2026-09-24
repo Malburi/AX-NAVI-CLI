@@ -125,7 +125,7 @@ wiki와 드리프트 검증이 원본을 찾지 못한다. `line`을 모르면 `
 **규칙 3 — 쓰고 나서 스스로 검증한다.**
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/validate-harness.mjs" --root "[백엔드 루트]" --plugin-root "$env:CLAUDE_PLUGIN_ROOT" --tier "Full" --out "_workspace/reports/api_contract_schema_check.json"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/validate-harness.mjs" --root "[백엔드 루트]" --plugin-root "${CLAUDE_PLUGIN_ROOT}" --tier "Full" --out "_workspace/reports/api_contract_schema_check.json"
 ```
 
 `--out`은 반드시 위 경로를 쓴다. 기본값(`_workspace/validator_schema.json`)은 harness-init 2-3.5의

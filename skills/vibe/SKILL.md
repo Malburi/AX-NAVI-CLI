@@ -14,8 +14,8 @@ analyze-impact / pattern-conformance / change-safety 에이전트 게이트를 *
 4. 변경 범위에 해당하는 가장 작은 테스트·빌드·린트 명령을 실제 실행한다. `verify-target.mjs detect`로 명령을 확보하고 그중 가장 작은 것을 `run`으로 돌린 뒤 `overall`과 `fail_lines`만 확인한다. 실패하거나 실행하지 못하면(감지 `count: 0` 포함) 성공으로 보고하지 않는다.
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" detect --root "[프로젝트 루트]" --target "[변경 대상]"
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" run --root "[프로젝트 루트]" --cmd "[고른 명령]"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" detect --root "[프로젝트 루트]" --target "[변경 대상]"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝트 루트]" --cmd "[고른 명령]"
 ```
 5. 소스·API·DB 구조가 바뀌면 결정론적 인덱스와 wiki를 갱신한다.
 6. 완료 후 변경 파일, 적용한 기준 프로필·파일, 검증 명령과 exit code를 간단히 보고한다.

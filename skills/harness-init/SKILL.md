@@ -125,7 +125,7 @@ ITO는 한 시스템에 여러 명이 붙는다. 이 단계가 없으면 **초�
 앞 표에서 "팀원이 공유 하네스를 pull한 상태"로 판정됐으면(또는 인덱스가 이미 있으면) **전체 초기화를 하지 않는다.** 대신:
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[절대경로]" --check-stale
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/build-index.mjs" --root "[절대경로]" --check-stale
 ```
 
 | exit | 의미 | 동작 |
@@ -269,7 +269,7 @@ QA(`T-Q`)와 wiki(`T-WIKI`)는 Tier와 무관하게 이 초기 작업 그래프�
 | `analyzer_index_summary.py --assemble-report` | 2-1.6 / Phase 4 갱신 후 | 최신 인덱스 요약을 리포트에 삽입하는 단발 호출. 패치 적용과 같은 도구 호출에서 순차 실행 가능 |
 | `ai-budget.mjs estimate / claim / record` | 견적 / 에이전트 호출 전후 / Phase 4 | 다음 호출 여부를 결정하고 실제 소비를 기록하는 제어 게이트 |
 
-> **스크립트 경로 규칙 (위 잔여 호출과 `pipeline-runner`에 넘기는 `plugin_root` 공통)**: 스크립트는 대상 프로젝트가 아니라 *플러그인 설치 루트*에 있다. PowerShell은 `$env:CLAUDE_PLUGIN_ROOT`, bash는 `$CLAUDE_PLUGIN_ROOT`로 참조한다. 환경변수가 비어 있으면 이 SKILL.md가 위치한 플러그인 디렉터리(예: `~/.claude/plugins/cache/ax-navi/...`)의 절대경로로 대체한다. cwd 기준 상대경로 `agents/lib/...`는 개발 저장소에서만 동작하므로 금지.
+> **스크립트 경로 규칙 (위 잔여 호출과 `pipeline-runner`에 넘기는 `plugin_root` 공통)**: 스크립트는 대상 프로젝트가 아니라 *플러그인 설치 루트*에 있다. 이 문서의 `${CLAUDE_PLUGIN_ROOT}`는 스킬을 불러올 때 그 절대경로로 바뀐다. 적힌 경로를 그대로 실행하고, 스크립트를 찾으려고 디스크를 검색하지 않는다. 경로가 변수 이름 그대로 남아 있으면 이 SKILL.md가 위치한 플러그인 디렉터리(예: `~/.claude/plugins/cache/ax-navi/...`)의 절대경로로 대체한다. cwd 기준 상대경로 `agents/lib/...`는 개발 저장소에서만 동작하므로 금지.
 > **파이썬 인터프리터 규칙**: `.py` 스크립트를 부를 때 `python` 또는 `python3` **어느 쪽도 하드코딩하지 않는다.** 윈도우(공식 설치판·Store판)에는 `python`만 있고, 다수 리눅스 배포판·Homebrew에는 `python3`만 있다 — ITO 현장은 윈도우가 기본이고 CI는 리눅스라 양쪽을 다 밟는다. 먼저 `python3 --version`을 시도해 성공하면 `python3`, 실패하면 `python`을 쓴다(둘 다 실패하면 "파이썬 없음"을 WARN으로 보고하고 그 블록만 건너뛴다 — 조용히 넘어가지 않는다). 아래 예시는 `python`으로 적혀 있으나 실제 호출 시 이 규칙으로 결정한 이름을 쓴다.
 
 ### 분리 저장소 레인 실행 (paired-roots/hub-roots만 해당)
@@ -288,7 +288,7 @@ Agent(
   description="T-I · pipeline-runner · 소스 구조와 호출 관계 인덱싱",
   prompt="<pipeline-runner 에이전트 지침의 block: index를 실행한다.
   block: index. root: [절대경로]. tier: [Standard/Full]. mode: [init/incremental].
-  plugin_root: [$env:CLAUDE_PLUGIN_ROOT 값]. ai_budget_session: [ai_budget_session].
+  plugin_root: [${CLAUDE_PLUGIN_ROOT} 값]. ai_budget_session: [ai_budget_session].
   lane: [T-I 또는 B-I/C1-I 등].
   반환은 지침의 'block: index 반환 형식' 그대로만.>",
   model="sonnet"
@@ -304,7 +304,7 @@ Agent(
 인덱싱이 끝났으므로 규모가 확정됐다. 견적을 뽑는다(스크립트 1회, 메인에서 직접 실행 — 결과로 다음 분기를 정하는 제어 게이트라 위임하지 않는다):
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/ai-budget.mjs" estimate --root "[절대경로]"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/ai-budget.mjs" estimate --root "[절대경로]"
 ```
 
 반환값(`files`·`tier`·`decidable_unresolved`·`estimated_tokens`·`estimated_minutes`)을 그대로 사용자에게 보인다.
@@ -334,7 +334,7 @@ Step 2.5에서 override 키워드로 Tier가 이미 확정됐으면 견적만 �
 토큰 한도가 실제로 의미 있으려면 `used.tokens`가 쌓여야 하는데, 이 하네스는 `Agent()`가 부분 실행 결과(텍스트)만 돌려줄 뿐 실사용 토큰 카운터를 주지 않고 hooks도 없어 진짜 계측은 불가능하다. 대신 **사전 배분 장부**로 근사한다 — 2-1/2-2/2-3에서 각 역할의 `claim --kind initial`이 성공한 직후, 그 역할의 대략적 몫을 기록한다:
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/ai-budget.mjs" record --root "[절대경로]" --role [역할] --spent-tokens [estimated_tokens × 비율]
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/ai-budget.mjs" record --root "[절대경로]" --role [역할] --spent-tokens [estimated_tokens × 비율]
 ```
 
 비율은 `docs/harness-description.md`의 역할별 비용 구간 중앙값에서 근사한 것이다: analyzer 60%, writer 25%, pattern-extractor 15%(validator·harness-evaluator는 `claim` 대상이 아니므로 기록하지 않는다). **정확한 실사용량이 아니라 "프로젝트가 견적보다 훨씬 크게 나온 경우"를 잡기 위한 근사치라는 걸 감안한다** — 한 역할 내부에서 폭주하는 경우까지는 못 잡는다. 값을 알 수 없는 호스트에서는 생략 — 한도는 시간 쪽으로만 걸린다.
@@ -352,7 +352,7 @@ Tier별 mode/model 결정:
 
 AI 예산이 초기화됐으면(Step F) claim 먼저:
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/ai-budget.mjs" claim --root "[절대경로]" --session "[ai_budget_session]" --role analyzer --kind initial
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/ai-budget.mjs" claim --root "[절대경로]" --session "[ai_budget_session]" --role analyzer --kind initial
 ```
 (exit 1이면 이 Agent 호출을 하지 않고 레인 중단 — Step F 참조)
 
@@ -372,14 +372,14 @@ Agent(
 
 플러그인 `agents/analyzer.md`의 지침 따름(네임스페이스 호출로 자동 로드). 완료 후 결과 파일 존재 확인.
 
-AI 예산이 초기화됐으면 완료 직후 이 역할의 사전 배분 몫을 기록한다(2-0.7 설명 참조, analyzer는 견적의 60%): `node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/ai-budget.mjs" record --root "[절대경로]" --role analyzer --spent-tokens [estimated_tokens*0.6]`.
+AI 예산이 초기화됐으면 완료 직후 이 역할의 사전 배분 몫을 기록한다(2-0.7 설명 참조, analyzer는 견적의 60%): `node "${CLAUDE_PLUGIN_ROOT}/agents/lib/ai-budget.mjs" record --root "[절대경로]" --role analyzer --spent-tokens [estimated_tokens*0.6]`.
 
 ### 2-1.5. AI 보강 patch 병합 (기계 인덱스가 있을 때만)
 
 `_workspace/index/_ai_patch.json`이 있으면 실행한다.
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[절대경로]" --apply-ai-patch "_workspace/index/_ai_patch.json"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/build-index.mjs" --root "[절대경로]" --apply-ai-patch "_workspace/index/_ai_patch.json"
 ```
 
 기존 노드 사이의 엣지만 추가되고, 없는 노드를 참조하는 operation은 사유와 함께 거부된다. 전부 거부되면 비정상 종료하므로 **WARN으로 보고하고 계속 진행**한다(인덱스 자체는 유효하고 보강만 안 된 상태다). 병합 결과는 `_meta.json`의 `ai_enrichment`에 남는다.
@@ -393,7 +393,7 @@ analyzer가 남긴 `[SECTION_B_INDEX_SUMMARY_INSERT]`를 최신 인덱스 요약
 출력 리포트를 메인에서 다시 읽거나 복사하지 않는다. 실패 시 미조립 WARN을 기록한다.
 
 ```powershell
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/analyzer_index_summary.py" --root "[절대경로]" --assemble-report
+python "${CLAUDE_PLUGIN_ROOT}/agents/lib/analyzer_index_summary.py" --root "[절대경로]" --assemble-report
 ```
 
 Phase 4에서 패치 또는 인덱스를 변경한 경우에도 이 명령으로 기계 요약을 갱신한다.
@@ -404,7 +404,7 @@ Phase 4에서 패치 또는 인덱스를 변경한 경우에도 이 명령으로
 
 model: sonnet
 
-AI 예산이 초기화됐으면 claim 먼저: `node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/ai-budget.mjs" claim --root "[절대경로]" --session "[ai_budget_session]" --role writer --kind initial` (exit 1이면 중단).
+AI 예산이 초기화됐으면 claim 먼저: `node "${CLAUDE_PLUGIN_ROOT}/agents/lib/ai-budget.mjs" claim --root "[절대경로]" --session "[ai_budget_session]" --role writer --kind initial` (exit 1이면 중단).
 
 ```
 Agent(
@@ -415,7 +415,7 @@ Agent(
 )
 ```
 
-AI 예산이 초기화됐으면 완료 직후 기록한다(writer는 견적의 25%): `node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/ai-budget.mjs" record --root "[절대경로]" --role writer --spent-tokens [estimated_tokens*0.25]`.
+AI 예산이 초기화됐으면 완료 직후 기록한다(writer는 견적의 25%): `node "${CLAUDE_PLUGIN_ROOT}/agents/lib/ai-budget.mjs" record --root "[절대경로]" --role writer --spent-tokens [estimated_tokens*0.25]`.
 
 > writer는 trace.md·scaffolder.md·find-logic.md만 markdown으로 직접 작성한다 (pair_config.md 있으면 cross-repo-scaffold.md·cross-repo-modify.md도). CLAUDE.md는 `_workspace/claude_md_fields.json`에 필드(프로젝트명·한줄설명·스택요약·요청흐름·파일위치표 행·빌드명령·주의사항)만, patterns 스켈레톤·02_writer_files.md는 `_workspace/writer_decisions.json`에 결정 값(조건부 스킬 적용 여부+사유, 패턴 파일명 목록, 탐지 스택, 적용 결정 사유)만 채워서 낸다. domain-expert.md(analyzer_report 그대로 주입)·patterns 스켈레톤·02_writer_files.md는 writer가 쓰지 않고 다음 단계(2-2.3)에서 조립한다. analyze-impact/safe-modify/scaffold-feature/vibe/plan-migration/review-sql은 플러그인 전역판을 그대로 쓰므로 writer도 skills_builder.py도 로컬 파일을 만들지 않는다 — writer는 plan-migration/review-sql의 *적용 여부*만 판단해 writer_decisions.json에 남긴다.
 
@@ -429,7 +429,7 @@ Agent(
   description="T-W-BUILD · pipeline-runner · 하네스 파일 조립",
   prompt="<pipeline-runner 에이전트 지침의 block: assemble을 실행한다.
   block: assemble. root: [절대경로]. tier: [Standard/Full].
-  plugin_root: [$env:CLAUDE_PLUGIN_ROOT 값]. lane: [T-W 또는 B-W/C1-W 등].
+  plugin_root: [${CLAUDE_PLUGIN_ROOT} 값]. lane: [T-W 또는 B-W/C1-W 등].
   반환은 지침의 'block: assemble 반환 형식' 그대로만.>",
   model="sonnet"
 )
@@ -441,7 +441,7 @@ Agent(
 
 2-2.3(assemble 블록)이 patterns/ 스켈레톤을 생성한 뒤에만 호출한다 — 스켈레톤은 writer(2-2)가 아니라 `skills_builder.py`(2-2.3)의 산출물이므로, T-P를 TaskCreate 의존성만으로 착수시키지 말고 2-2.3 반환을 받고 시작한다.
 
-AI 예산이 초기화됐으면 claim 먼저: `node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/ai-budget.mjs" claim --root "[절대경로]" --session "[ai_budget_session]" --role pattern-extractor --kind initial` (exit 1이면 중단).
+AI 예산이 초기화됐으면 claim 먼저: `node "${CLAUDE_PLUGIN_ROOT}/agents/lib/ai-budget.mjs" claim --root "[절대경로]" --session "[ai_budget_session]" --role pattern-extractor --kind initial` (exit 1이면 중단).
 
 ```
 Agent(
@@ -452,7 +452,7 @@ Agent(
 )
 ```
 
-AI 예산이 초기화됐으면 완료 직후 기록한다(pattern-extractor는 견적의 15%): `node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/ai-budget.mjs" record --root "[절대경로]" --role pattern-extractor --spent-tokens [estimated_tokens*0.15]`.
+AI 예산이 초기화됐으면 완료 직후 기록한다(pattern-extractor는 견적의 15%): `node "${CLAUDE_PLUGIN_ROOT}/agents/lib/ai-budget.mjs" record --root "[절대경로]" --role pattern-extractor --spent-tokens [estimated_tokens*0.15]`.
 
 ### 2-3.5. 패턴 프로필 + 기계 검증 (LLM 미사용) — `pipeline-runner`
 
@@ -464,7 +464,7 @@ Agent(
   description="T-V-CHECK · pipeline-runner · 패턴 프로필과 인덱스 기계 검증",
   prompt="<pipeline-runner 에이전트 지침의 block: verify를 실행한다.
   block: verify. root: [절대경로]. tier: [Standard/Full].
-  plugin_root: [$env:CLAUDE_PLUGIN_ROOT 값]. lane: [T-V 또는 B-V/C1-V 등].
+  plugin_root: [${CLAUDE_PLUGIN_ROOT} 값]. lane: [T-V 또는 B-V/C1-V 등].
   반환은 지침의 'block: verify 반환 형식' 그대로만.>",
   model="sonnet"
 )
@@ -652,7 +652,7 @@ Agent(
   subagent_type="ax-navi:pipeline-runner",
   description="T-WIKI · pipeline-runner · wiki 페이지 생성",
   prompt="<pipeline-runner 에이전트 지침의 block: wiki를 실행한다.
-  block: wiki. root: [절대경로]. plugin_root: [$env:CLAUDE_PLUGIN_ROOT 값].
+  block: wiki. root: [절대경로]. plugin_root: [${CLAUDE_PLUGIN_ROOT} 값].
   lane: [단일이면 T-WIKI, 분리 저장소면 레인별로 각각].
   narrative: [사용자가 'wiki 생성 + AI 해설'을 골랐으면 true, 아니면 생략].
   반환은 지침의 'block: wiki 반환 형식' 그대로만.>",
@@ -674,7 +674,7 @@ Boundary 6 기계 체크(`qa_boundary6.py`)는 오케스트레이터가 미리 �
 Agent(
   subagent_type="ax-navi:qa",
   description="T-Q · qa · 경계면 교차 비교 검증",
-  prompt="<프로젝트 루트: [절대경로]. plugin_root: [$env:CLAUDE_PLUGIN_ROOT 값]. Boundary 6은 qa_boundary6.py를 직접 실행해 처리한다. 입력: _workspace/01~03 + _workspace/index/. 출력: _workspace/04_qa_report.md>",
+  prompt="<프로젝트 루트: [절대경로]. plugin_root: [${CLAUDE_PLUGIN_ROOT} 값]. Boundary 6은 qa_boundary6.py를 직접 실행해 처리한다. 입력: _workspace/01~03 + _workspace/index/. 출력: _workspace/04_qa_report.md>",
   model="sonnet"
 )
 ```
@@ -759,7 +759,7 @@ harness-evaluator가 이미 `analyzer` fix_target을 반환했으면 이 게이�
 
 AI 예산이 초기화됐으면 각 fix_target마다 재실행 전 claim(exit 1이면 그 fix_target은 건너뛰고 Phase 3 보고에 "예산 소진으로 미실행" 명시, 다른 fix_target은 계속 진행). 게이트가 부르는 `T-A-PATCH`도 `--role analyzer --kind retry`로 같은 claim을 거친다 — LLM을 쓰지 않는 `block: index` 재실행은 claim 대상이 아니다:
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/ai-budget.mjs" claim --root "[절대경로]" --session "[ai_budget_session]" --role "[fix_target.agent]" --kind retry --reason "[fix_target.instruction, 100자로 트림]"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/ai-budget.mjs" claim --root "[절대경로]" --session "[ai_budget_session]" --role "[fix_target.agent]" --kind retry --reason "[fix_target.instruction, 100자로 트림]"
 ```
 
 ```

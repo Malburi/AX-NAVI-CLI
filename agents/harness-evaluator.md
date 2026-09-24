@@ -69,7 +69,7 @@ tools: Read, Grep, Glob, Bash, Write
 검증 방법:
 1. 각 skill `description`의 트리거 문구 수 확인 (한국어 ≥3개, 영어 ≥2개) — **writer 작성 스킬(trace/scaffolder/find-logic, cross-repo-*)만 대상.** 전역 워크플로우 스킬 6종·harness-init.md는 제외
 2. scaffolder.md(writer 작성)가 실제 레이어 경로를 참조하는가
-3. 전역 analyze-impact·safe-modify가 참조하는 인덱스와 어댑터 커버리지 게이트가 존재하는가 — 인덱스 원본은 Read로 열지 않고, `node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" summary --root "[프로젝트 루트 절대 경로]"` 한 번으로 `index_sizes` 키를 보고 판정한다(스크립트는 플러그인 설치 루트에 있다 — PowerShell `$env:CLAUDE_PLUGIN_ROOT`, bash `$CLAUDE_PLUGIN_ROOT`. 비어 있으면 이 에이전트 파일이 위치한 플러그인 디렉터리 절대경로로 대체. cwd 상대경로 `agents/lib/...` 금지). 개별 항목 확인이 필요하면 `symbol`/`callers`/`table` 같은 질의 명령으로 필요한 줄만 가져오고, 응답의 `total`·`truncated`를 함께 본다 — `truncated > 0`인 목록을 전체로 간주해 "없음"으로 감점하지 않는다
+3. 전역 analyze-impact·safe-modify가 참조하는 인덱스와 어댑터 커버리지 게이트가 존재하는가 — 인덱스 원본은 Read로 열지 않고, `node "${CLAUDE_PLUGIN_ROOT}/agents/lib/query-index.mjs" summary --root "[프로젝트 루트 절대 경로]"` 한 번으로 `index_sizes` 키를 보고 판정한다(스크립트 경로의 `${CLAUDE_PLUGIN_ROOT}`는 이 지침을 불러올 때 플러그인 설치 절대경로로 바뀐다. 적힌 경로를 그대로 실행하고, 스크립트를 찾으려고 디스크를 검색하지 않는다. cwd 상대경로 `agents/lib/...` 금지). 개별 항목 확인이 필요하면 `symbol`/`callers`/`table` 같은 질의 명령으로 필요한 줄만 가져오고, 응답의 `total`·`truncated`를 함께 본다 — `truncated > 0`인 목록을 전체로 간주해 "없음"으로 감점하지 않는다
 4. 도메인 키워드 수 (최소 10개 이상) — 이미 컨텍스트에 있는 `01_analyzer_report.md`에서 센다
 5. `_workspace/00_spec_report.md` 존재 시 → spec의 goal_hint에 맞는 스킬이 강조되었는가
 6. `_workspace/pattern_profile_validation.json`이 `valid: true`이며 preferred 프로필이 1개 이상인가

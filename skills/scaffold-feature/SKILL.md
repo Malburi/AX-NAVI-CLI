@@ -37,7 +37,7 @@ description: 추출된 프로젝트 컨벤션에 따라 신규 기능을 스캐�
 `.claude/patterns/pattern_profile.json`을 기계 검증한다.
 
 ```powershell
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/pattern_profile.py" validate --root "[프로젝트 루트 절대 경로]"
+python "${CLAUDE_PLUGIN_ROOT}/agents/lib/pattern_profile.py" validate --root "[프로젝트 루트 절대 경로]"
 ```
 
 - 검증 PASS → 모듈·레이어별 기준 코드 선택 가능.
@@ -78,7 +78,7 @@ python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/pattern_profile.py" validate --root "
 생성 예정 경로와 모듈이 정해지면 다음을 실행한다.
 
 ```powershell
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/pattern_profile.py" select --root "[프로젝트 루트 절대 경로]" --target "[생성 예정 상위 경로]" --module "[모듈명]" --limit 20
+python "${CLAUDE_PLUGIN_ROOT}/agents/lib/pattern_profile.py" select --root "[프로젝트 루트 절대 경로]" --target "[생성 예정 상위 경로]" --module "[모듈명]" --limit 20
 ```
 
 출력 `_workspace/reports/pattern_selection.json`에서 영향 레이어별 `preferred` 프로필과 실제 `reference_files`를 선택한다.
@@ -183,8 +183,8 @@ Agent(
 `verify-target.mjs detect`로 프로젝트 검증 명령을 확보한 뒤(분석 리포트의 빌드·실행 명령과 교차 확인), 생성 범위에 필요한 항목을 `run`으로 실제 실행하고 `cmd`·`exit`·`fail_lines`를 기록한다.
 
 ```powershell
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" detect --root "[프로젝트 루트]" --target "[생성 대상 경로]"
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" run --root "[프로젝트 루트]" --cmd "[고른 명령]"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" detect --root "[프로젝트 루트]" --target "[생성 대상 경로]"
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝트 루트]" --cmd "[고른 명령]"
 ```
 
 테스트 골격만 생성되고 assertion이 비어 있으면 통과 증거가 아니므로 HOLD로 표시한다. 감지 `count: 0`이면 자동 검증이 없다는 뜻이므로 수동 검증을 확보하기 전 GO로 보고하지 않는다.

@@ -19,10 +19,10 @@ writer가 생성한 하네스 파일들의 **주장(claim)**이 실제 프로젝
 인덱스 조회는 원본 JSON을 열지 말고 항상 이 명령으로 한다:
 
 ```
-node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" <명령> --root "[프로젝트 루트 절대 경로]" [옵션]
+node "${CLAUDE_PLUGIN_ROOT}/agents/lib/query-index.mjs" <명령> --root "[프로젝트 루트 절대 경로]" [옵션]
 ```
 
-(스크립트는 플러그인 설치 루트에 있다 — PowerShell `$env:CLAUDE_PLUGIN_ROOT`, bash `$CLAUDE_PLUGIN_ROOT`. 비어 있으면 이 에이전트 파일이 위치한 플러그인 디렉터리 절대경로로 대체. cwd 상대경로 `agents/lib/...` 금지.)
+(스크립트 경로의 `${CLAUDE_PLUGIN_ROOT}`는 이 지침을 불러올 때 플러그인 설치 절대경로로 바뀐다. 적힌 경로를 그대로 실행하고, 스크립트를 찾으려고 디스크를 검색하지 않는다. cwd 상대경로 `agents/lib/...` 금지.)
 
 인덱스 원본은 Read로 열지 않고 `summary`로 규모를 확인한 뒤 질의 명령(`symbol`/`callers`/`callees`/`trace`/`sql`/`table`/`endpoint`/`transaction`/`dead`)으로 필요한 줄만 가져온다. 응답에는 `total`·`truncated`가 함께 온다 — `truncated > 0`이면 잘린 목록이므로 완전한 집합으로 취급해 DEAD/ORPHAN을 단정하지 말고 `--limit`을 올리거나 질의를 좁힌다.
 
@@ -92,7 +92,7 @@ Struts forward의 JSP 경로 집합 F와 실제 JSP 파일 집합 J를 정규화
 파일 존재 확인뿐이라 LLM 판단이 필요 없다. **이 스크립트는 qa가 직접 실행한다** — 오케스트레이터는 스크립트 1회를 위해 메인 컨텍스트를 왕복하지 않고, qa가 그 결과의 유일한 소비자이기 때문이다(harness-init Phase 3.7 "QA 실행"). 이전 실행이 남긴 `_workspace/qa_boundary6.md`가 이미 있으면 그대로 리포트의 "## Boundary 6" 자리에 삽입한다 — 재검증·재실행 불필요. 없으면 실행한다:
 
 ```
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/qa_boundary6.py" --root "[프로젝트 루트 절대 경로]"
+python "${CLAUDE_PLUGIN_ROOT}/agents/lib/qa_boundary6.py" --root "[프로젝트 루트 절대 경로]"
 ```
 
 스크립트 실행까지 실패한 경우에만 기존 방식(아래)으로 직접 확인:

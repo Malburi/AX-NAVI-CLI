@@ -5,7 +5,7 @@
 writer 완료 후 실행한다. 전부 결정론적 파일 조립·복사이며 LLM 호출이 없다.
 
 ```powershell
-python "$env:CLAUDE_PLUGIN_ROOT/agents/lib/skills_builder.py" --root "[root]"
+python "[plugin_root]/agents/lib/skills_builder.py" --root "[root]"
 ```
 
 이 한 번의 실행이 다음을 전부 처리한다.
