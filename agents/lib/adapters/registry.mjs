@@ -17,6 +17,8 @@ export const ADAPTERS = [
   { id: "sql", label: "SQL/DDL", extensions: [".sql"], level: "FULL" },
   /* 정규식 기반이라 오버로드·동적 SQL(EXECUTE IMMEDIATE 변수)·중첩 로컬 프로시저는 근사다. 변경은 HOLD. */
   { id: "plsql", label: "Oracle PL/SQL", extensions: [".pks", ".pkb", ".pck", ".spc", ".bdy", ".prc", ".fnc", ".trg", ".pls"], level: "PARTIAL" },
+  /* C 함수·호출과 EXEC SQL 정적 SQL. 매크로·함수 포인터·전처리 분기는 해석하지 않는다. 변경은 HOLD. */
+  { id: "proc", label: "Oracle Pro*C", extensions: [".pc"], level: "PARTIAL" },
   { id: "legacy-web", label: "JSP/Struts/WebForms/markup", extensions: [".xml", ".jsp", ".jspx", ".tag", ".asp", ".aspx", ".ascx", ".ashx", ".asmx", ".xaml", ".cshtml", ".vbhtml", ".razor", ".html", ".htm"], level: "PARTIAL" },
 ];
 

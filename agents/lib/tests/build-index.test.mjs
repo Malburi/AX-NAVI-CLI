@@ -1414,6 +1414,86 @@ public class OrderDao {
     }
   });
 
+  register("Pro*C 배치의 C 함수·호출·EXEC SQL 정적 SQL과 PL/SQL 프로시저 호출을 인덱싱한다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-proc-"));
+    try {
+      write(root, "db/pkg_order.pkb", `CREATE OR REPLACE PACKAGE BODY pkg_order AS
+  PROCEDURE save_order(p_id IN NUMBER) IS
+  BEGIN
+    NULL;
+  END save_order;
+END pkg_order;
+/
+`);
+      write(root, "db/proc_audit.prc", "CREATE OR REPLACE PROCEDURE proc_audit IS\nBEGIN\n  NULL;\nEND;\n/\n");
+      write(root, "batch/order_close.pc", `#include <stdio.h>
+EXEC SQL INCLUDE SQLCA;
+
+EXEC SQL BEGIN DECLARE SECTION;
+  char v_status[10];
+  int v_cnt;
+EXEC SQL END DECLARE SECTION;
+
+static void err_exit(const char *msg)
+{
+  printf("%s\\n", msg);
+  EXEC SQL ROLLBACK WORK RELEASE;
+  exit(1);
+}
+
+int
+close_orders(int p_day)
+{
+  EXEC SQL SELECT COUNT(*) INTO :v_cnt FROM orders WHERE close_day = :p_day;
+  if (v_cnt > 0) {
+    EXEC SQL UPDATE orders SET status = 'CLOSED' WHERE close_day = :p_day;
+  }
+  EXEC SQL DECLARE c_hist CURSOR FOR SELECT h.id FROM order_hist h JOIN orders o ON h.order_id = o.id;
+  EXEC SQL EXECUTE
+    BEGIN pkg_order.save_order(:v_cnt); END;
+  END-EXEC;
+  EXEC SQL CALL proc_audit();
+  if (sqlca.sqlcode < 0) err_exit("close failed");
+  return v_cnt;
+}
+
+int main(int argc, char **argv)
+{
+  EXEC SQL CONNECT :uid;
+  close_orders(atoi(argv[1]));
+  EXEC SQL COMMIT WORK RELEASE;
+  return 0;
+}
+`);
+      write(root, "batch/other.pc", `static void err_exit(const char *msg) { exit(2); }
+int main(void) { err_exit("x"); return 0; }
+`);
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const graph = json(root, "call_graph.json");
+      const nodeIds = graph.nodes.map((item) => item.id);
+      for (const id of ["batch.order_close.close_orders", "batch.order_close.err_exit", "batch.order_close.main", "batch.other.err_exit", "batch.other.main"]) {
+        assert.ok(nodeIds.includes(id), `${id}: ${JSON.stringify(nodeIds)}`);
+      }
+      assert.ok(!nodeIds.some((id) => /\.(?:if|printf|NVL)$/.test(id)), "키워드·라이브러리 호출·SQL 함수는 함수가 아니다");
+      const hasEdge = (from, to) => graph.edges.some((item) => item.type === "call" && item.from === from && item.to === to);
+      assert.ok(hasEdge("batch.order_close.main", "batch.order_close.close_orders"), JSON.stringify(graph.edges));
+      assert.ok(hasEdge("batch.order_close.close_orders", "batch.order_close.err_exit"), "같은 파일의 static 함수로 해석한다");
+      assert.ok(hasEdge("batch.other.main", "batch.other.err_exit"));
+      assert.ok(!hasEdge("batch.order_close.close_orders", "batch.other.err_exit"), "다른 배치 파일의 동명 함수로 잇지 않는다");
+      assert.ok(hasEdge("batch.order_close.close_orders", "PKG_ORDER.SAVE_ORDER"), "EXEC SQL EXECUTE BEGIN ... END-EXEC");
+      assert.ok(hasEdge("batch.order_close.close_orders", "PROC_AUDIT"), "EXEC SQL CALL");
+
+      const { sqls, usages } = json(root, "sql_usage.json");
+      const tables = usages.filter((item) => item.method === "batch.order_close.close_orders")
+        .flatMap((item) => sqls.find((sql) => sql.id === item.sql_id)?.tables || []).map((name) => name.toLowerCase()).sort().join(",");
+      assert.equal(tables, "order_hist,orders,orders,orders", JSON.stringify(sqls));
+      const coverage = json(root, "_meta.json").adapter_coverage;
+      assert.equal(coverage.extensions.find((item) => item.extension === ".pc")?.level, "PARTIAL");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("필드·생성자로 주입된 클라이언트의 호출 줄을 외부 통신으로 잡고 선언 줄은 뺀다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-io-client-"));
     try {

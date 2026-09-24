@@ -859,6 +859,100 @@ function extractPlsqlSql(text, clean, rel, methods) {
   return { sqls, usages, relations };
 }
 
+/*
+ * Oracle Pro*C — C 배치 프로그램에 `EXEC SQL`을 섞은 형식. 제조·정산 야간 배치에 흔하다.
+ * 함수 id는 파일 경로를 접두사로 쓴다(`batch.order_close.main`) — `main`·`db_connect`·`err_exit`가
+ * 배치 파일마다 있어 이름만으로는 전부 충돌한다. EXEC SQL 블록은 함수·호출을 찾기 전에 지워
+ * `NVL(`·`TO_CHAR(`를 C 호출로 읽지 않는다.
+ */
+const PROC_EXTENSIONS = new Set(ADAPTERS.find((item) => item.id === "proc").extensions);
+const C_KEYWORDS = new Set(["if", "for", "while", "switch", "return", "sizeof", "else", "do", "case", "defined", "typedef"]);
+const C_FUNCTION_RE = /^[ \t]*(?:[A-Za-z_][\w \t*]*[\s*])?([A-Za-z_]\w*)[ \t]*\(([^;{}]*)\)\s*\{/gm;
+
+/* `EXEC SQL ... ;` 블록. `EXEC SQL EXECUTE ... END-EXEC;`는 안에 `;`가 있으므로 END-EXEC까지 본다. */
+function execSqlBlocks(clean) {
+  const blocks = [];
+  const re = /\bEXEC\s+SQL\b/gi;
+  let match;
+  while ((match = re.exec(clean))) {
+    const after = match.index + match[0].length;
+    const executeBlock = /^\s*(?:AT\s+:?[\w$]+\s+)?EXECUTE\b(?!\s+IMMEDIATE)/i.test(clean.slice(after, after + 80));
+    const endExec = executeBlock ? clean.slice(after).search(/\bEND-EXEC\b/i) : -1;
+    const stop = endExec >= 0 ? after + endExec : clean.indexOf(";", after);
+    const end = stop < 0 ? clean.length : clean.indexOf(";", stop) + 1 || clean.length;
+    blocks.push({ start: match.index, end, body: clean.slice(after, endExec >= 0 ? after + endExec : stop < 0 ? clean.length : stop).trim(), execute: executeBlock });
+    re.lastIndex = end;
+  }
+  return blocks;
+}
+
+function extractProcSymbols(text, clean, rel, workspace) {
+  const atLine = lineIndex(text);
+  const blocks = execSqlBlocks(clean);
+  let code = clean;
+  for (const block of blocks) code = code.slice(0, block.start) + code.slice(block.start, block.end).replace(/[^\n]/g, " ") + code.slice(block.end);
+  const pkg = rel.replace(/\.[^.]+$/, "").replaceAll("/", ".");
+  const methods = [];
+  let consumed = 0;
+  for (const match of code.matchAll(C_FUNCTION_RE)) {
+    if (match.index < consumed || C_KEYWORDS.has(match[1])) continue;
+    const open = code.indexOf("{", match.index + match[0].length - 1);
+    const end = matchingBrace(code, open);
+    consumed = end;
+    const start = match.index + match[0].search(/\S/);
+    methods.push({ id: symbolId(pkg, "", match[1]), name: match[1], owner: "", package: pkg, file: rel, line: atLine(start), start, end, visibility: /\bstatic\b/.test(match[0].slice(0, match[0].indexOf(match[1]))) ? "private" : "public", workspace: workspace.id });
+  }
+  const base = { file: rel, workspace: workspace.id, origin: "deterministic-indexer", confidence: "MEDIUM" };
+  const symbols = methods.map((method) => ({ id: method.id, type: "function", line: method.line, package: pkg, ...base }));
+  const nodes = methods.map((method) => ({ id: method.id, type: "method", line: method.line, visibility: method.visibility, ...base }));
+  const callSites = [];
+  for (const method of methods) {
+    const body = code.slice(method.start, method.end);
+    for (const match of body.matchAll(/\b([A-Za-z_]\w*)\s*\(/g)) {
+      if (C_KEYWORDS.has(match[1]) || (match[1] === method.name && match.index < 200)) continue;
+      /* `ctx->fn(`·`s.fn(`은 함수 포인터·구조체 멤버라 대상을 모른다. */
+      if (/(?:->|\.)\s*$/.test(body.slice(Math.max(0, match.index - 3), match.index))) continue;
+      callSites.push({ caller: method.id, name: match[1], qualifier: "", file: rel, line: atLine(method.start + match.index), workspace: workspace.id });
+    }
+  }
+  /* `EXEC SQL EXECUTE BEGIN pkg.proc(:a); END; END-EXEC;`·`EXEC SQL CALL pkg.proc(:a);` → PL/SQL 프로시저 호출 */
+  for (const block of blocks) {
+    const caller = enclosingMethod(methods, block.start);
+    if (!caller) continue;
+    const inner = block.body.replace(/^(?:AT\s+:?[\w$]+\s+)?(?:EXECUTE\b|CALL\b)/i, (keyword) => (/call/i.test(keyword) ? "{call " : ""));
+    if (!block.execute && !/^\{call /i.test(inner)) continue;
+    const target = inner.match(PROCEDURE_CALL_TEXT)?.[1];
+    if (target) callSites.push({ caller: caller.id, ...procedureTarget(target), file: rel, line: atLine(block.start), workspace: workspace.id });
+  }
+  return { symbols, nodes, methods, callSites, injects: [], fields: [], classes: [] };
+}
+
+/* EXEC SQL의 정적 SQL. 호스트 변수(`:v_id`)는 테이블 판정에 영향이 없고, `INTO :a, :b`는 떼고 센다. */
+function extractProcSql(text, clean, rel, methods) {
+  const atLine = lineIndex(text);
+  const sqls = [];
+  const usages = [];
+  const relations = [];
+  for (const block of execSqlBlocks(clean)) {
+    if (block.execute) continue;
+    const owner = enclosingMethod(methods, block.start);
+    if (!owner) continue;
+    let statement = block.body.replace(/^(?:AT\s+:?[\w$]+\s+)?(?:FOR\s+:?[\w$]+\s+)?/i, "").replace(/^DECLARE\s+[\w$]+\s+CURSOR\s+FOR\s+/i, "");
+    if (/^delete\s+(?!from\b)[\w.$"]+/i.test(statement)) statement = statement.replace(/^delete\s+/i, "DELETE FROM ");
+    const type = sqlStatementType(statement);
+    if (!type) continue;
+    const forTables = type === "select"
+      ? statement.replace(/\b(?:bulk\s+collect\s+)?into\b[\s\S]*?(?=\bfrom\b)/i, " ")
+      : statement.replace(/\breturning\b[\s\S]*$/i, " ");
+    const line = atLine(block.start);
+    const id = `${rel}:${line}:proc`;
+    sqls.push({ id, file: rel, line, type, tables: [...new Set(sqlTables(forTables))], text_preview: statement.replace(/\s+/g, " ").slice(0, 240), origin: "deterministic-indexer", confidence: "MEDIUM" });
+    relations.push(...extractSqlRelations(forTables, { sql_id: id, file: rel, line }));
+    usages.push({ sql_id: id, file: rel, line, method: owner.id, evidence: "Pro*C EXEC SQL", origin: "deterministic-indexer", confidence: "HIGH" });
+  }
+  return { sqls, usages, relations };
+}
+
 /* `{call PKG.PROC(?)}`·`{? = call F(?)}`·`BEGIN PKG.PROC(?); END;` — JDBC·MyBatis·ADO.NET이 프로시저를 부르는 모양. */
 const PROCEDURE_CALL_TEXT = new RegExp(String.raw`^\s*(?:\{\s*(?:\?\s*=\s*)?call\s+|begin\s+)((?:${PLSQL_IDENT}\s*\.\s*){0,2}${PLSQL_IDENT})\s*[(;}]`, "i");
 
@@ -877,6 +971,7 @@ function procedureTarget(raw) {
 function extractSymbols(text, clean, rel, workspace) {
   const ext = extname(rel).toLowerCase();
   if (isPlsqlSource(ext, clean)) return extractPlsqlSymbols(text, clean, rel, workspace);
+  if (PROC_EXTENSIONS.has(ext)) return extractProcSymbols(text, clean, rel, workspace);
   if (!STRUCTURED_SOURCE_EXTENSIONS.includes(ext)) {
     return extractLegacySymbols(text, clean, rel, workspace);
   }
@@ -1957,10 +2052,9 @@ function analyzeFile(file, root, config) {
   const nexacro = extractNexacro(text, file.rel, workspace);
   const api = extractApi(text, clean, file.rel, workspace, symbolFacts.methods, symbolFacts.classes);
   const sql = extractSql(text, clean, file.rel, symbolFacts.methods);
-  if (isPlsqlSource(ext, clean)) {
-    const plsql = extractPlsqlSql(text, clean, file.rel, symbolFacts.methods);
-    sql.sqls.push(...plsql.sqls); sql.usages.push(...plsql.usages); sql.relations.push(...plsql.relations);
-  }
+  const embedded = isPlsqlSource(ext, clean) ? extractPlsqlSql(text, clean, file.rel, symbolFacts.methods)
+    : PROC_EXTENSIONS.has(ext) ? extractProcSql(text, clean, file.rel, symbolFacts.methods) : null;
+  if (embedded) { sql.sqls.push(...embedded.sqls); sql.usages.push(...embedded.usages); sql.relations.push(...embedded.relations); }
   return {
     rel: file.rel,
     /* 소스 지문이 같은 파일을 다시 열지 않도록 여기서 읽은 바이트의 해시를 넘긴다(Windows에서 open이 파일당 ~0.5ms). */
@@ -2215,7 +2309,7 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
     pushTo(nodeByOwnerId, `${parts.slice(0, -1).join(".")}\u0000${simple}`, node);
   }
   const qualifierMemo = new Map();
-  const sameOwnerSafeExt = new Set([".java", ".kt", ".kts", ".cs", ".vue", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ...SQL_COMMENT_EXTENSIONS]);
+  const sameOwnerSafeExt = new Set([".java", ".kt", ".kts", ".cs", ".vue", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ...SQL_COMMENT_EXTENSIONS, ...PROC_EXTENSIONS]);
   /*
    * 이름이 겹치는 후보가 둘 이상일 때 스코프(같은 파일 → 같은 패키지 → 같은 워크스페이스)로 좁혀
    * 하나로 줄면 결정론적으로 확정하는 방안을 구현했다가 **되돌렸다**(2026-08-16).

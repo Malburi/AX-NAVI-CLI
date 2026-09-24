@@ -608,6 +608,7 @@ axnavi 는 모델을 `haiku` · `sonnet` · `opus` 세 등급으로 부르고, �
 | ASP.NET Core · WinForms · Nexacro | 전용 어댑터로 보강 |
 | WinForms Designer · DevExpress · XFDL · JSP/Struts XML | **PARTIAL** |
 | Oracle PL/SQL (패키지 · 프로시저 · 트리거) | **PARTIAL** — 심볼 · 호출 · 정적 SQL · Java `{call}` 연결 |
+| Oracle Pro*C 배치 (`.pc`) | **PARTIAL** — C 함수 · 호출 · EXEC SQL · PL/SQL 프로시저 연결 |
 
 인덱서는 파일마다 `FULL` / `PARTIAL` / `UNSUPPORTED` 를 기록합니다.
 PARTIAL 대상은 빌드 · UI · 통합 검증 전까지 자동 변경을 보류(`HOLD`)합니다.

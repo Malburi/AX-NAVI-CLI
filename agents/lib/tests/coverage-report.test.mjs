@@ -34,14 +34,14 @@ public class OrderDao {
 
       buildIndex({ root, mode: "init", tier: "Standard", config: null });
       const { summary, markdown } = buildCoverageReport(root);
-      assert.equal(summary.files.indexed, 3, JSON.stringify(summary.files));
+      assert.equal(summary.files.indexed, 4, JSON.stringify(summary.files));
       assert.equal(summary.files.full, 1, "Java만 FULL");
-      assert.equal(summary.files.partial, 2, "XML 매퍼·PL/SQL은 PARTIAL");
+      assert.equal(summary.files.partial, 3, "XML 매퍼·PL/SQL·Pro*C는 PARTIAL");
       assert.equal(summary.files.discovery_only, 1, ".pbl");
-      assert.equal(summary.unindexed_code_candidates.map((item) => item.extension).sort().join(","), ".ksh,.pc", "이미지는 코드 후보가 아니다");
+      assert.equal(summary.unindexed_code_candidates.map((item) => item.extension).sort().join(","), ".ksh", "이미지는 코드 후보가 아니다");
       assert.equal(summary.quality.sql_linked, 0.5, "두 SQL 중 하나만 코드에서 실행 위치가 있다");
-      assert.ok(markdown.includes("| 자동 변경 가능 (FULL → GO) | 1 | 33.3% |"), markdown);
-      assert.ok(markdown.includes("| .pc | 1 | legacy/batch.pc |"), markdown);
+      assert.ok(markdown.includes("| 자동 변경 가능 (FULL → GO) | 1 | 25% |"), markdown);
+      assert.ok(markdown.includes("| .ksh | 1 | legacy/run.ksh |"), markdown);
       assert.ok(!markdown.includes(".png"), "이미지는 진단서에 나오지 않는다");
     } finally {
       rmSync(root, { recursive: true, force: true });
