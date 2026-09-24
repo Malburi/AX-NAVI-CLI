@@ -52,7 +52,10 @@ export function buildCoverageReport(rootArg, indexDirArg) {
   const unresolvedItems = existsSync(unresolvedPath)
     ? readFileSync(unresolvedPath, "utf8").split("\n").filter((line) => line.trim()).map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean)
     : [];
-  const decidable = unresolvedItems.filter((item) => (item.candidates || []).length >= 2);
+  /* 판정 대상이 상한(2,000)을 넘으면 인덱서가 후보 목록을 빼고 `candidate_count`만 남긴다 — 목록 길이로 세면 0개로 오인한다. */
+  const widthOf = (item) => item.candidate_count ?? (item.candidates || []).length;
+  const decidable = unresolvedItems.filter((item) => widthOf(item) >= 2);
+  const notFound = unresolvedItems.filter((item) => widthOf(item) < 2).length;
   const decidableCalls = decidable.filter((item) => item.kind === "ambiguous_call").length;
   const groups = (() => { try { return JSON.parse(readFileSync(join(indexDir, "_unresolved_groups.json"), "utf8")).groups?.length ?? null; } catch { return null; } })();
   const unresolved = meta.unresolved_count || 0;
@@ -79,7 +82,7 @@ export function buildCoverageReport(rootArg, indexDirArg) {
       unresolved_calls: unresolved,
       ai_decidable: decidable.length,
       ai_groups: groups ?? decidable.length,
-      target_not_found: unresolved - decidable.length,
+      target_not_found: notFound,
       endpoints: readIndex(indexDir, "api_contract")?.endpoints?.length || 0,
       sql_statements: sqlUsage.sqls.length,
       tables: readIndex(indexDir, "schema")?.tables?.length || 0,

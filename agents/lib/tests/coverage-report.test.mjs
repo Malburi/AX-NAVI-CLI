@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildIndex } from "../build-index.mjs";
@@ -46,6 +46,12 @@ public class OrderDao {
       assert.equal(summary.unindexed_code_candidates.map((item) => item.extension).sort().join(","), ".ksh", "이미지는 코드 후보가 아니다");
       assert.equal(summary.quality.sql_linked, 0.5, "두 SQL 중 하나만 코드에서 실행 위치가 있다");
       assert.equal(summary.extracted.ai_decidable + summary.extracted.target_not_found, summary.extracted.unresolved_calls, "미해결은 AI 판정 대상과 대상 미발견으로 나뉜다");
+      /* 판정 대상이 상한을 넘으면 후보 목록 없이 candidate_count만 남는다 — 이것도 AI 판정 대상이다(실측 565건 오분류). */
+      const unresolvedPath = join(root, "_workspace", "index", "_unresolved.jsonl");
+      writeFileSync(unresolvedPath, `${existsSync(unresolvedPath) ? readFileSync(unresolvedPath, "utf8") : ""}${JSON.stringify({ kind: "ambiguous_call", expression: "x(...)", candidate_count: 3, candidates_omitted: true })}\n`);
+      const again = buildCoverageReport(root).summary.extracted;
+      assert.equal(again.ai_decidable, summary.extracted.ai_decidable + 1, "candidates_omitted 항목은 AI 판정 대상");
+      assert.equal(again.target_not_found, summary.extracted.target_not_found, "대상 미발견으로 세지 않는다");
       assert.ok(markdown.includes("| 자동 변경 가능 (FULL → GO) | 1 | 25% |"), markdown);
       assert.ok(markdown.includes("| .ksh | 1 | legacy/run.ksh |"), markdown);
       assert.ok(!markdown.includes(".png"), "이미지는 진단서에 나오지 않는다");
