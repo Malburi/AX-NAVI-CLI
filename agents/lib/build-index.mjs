@@ -1914,7 +1914,8 @@ function extractSpringBeans(text, rel) {
 }
 
 function analyzeFile(file, root, config) {
-  const decoded = decodeSource(readFileSync(file.full));
+  const buffer = readFileSync(file.full);
+  const decoded = decodeSource(buffer);
   const text = decoded.text;
   const ext = extname(file.rel).toLowerCase();
   const clean = stripComments(text, ext);
@@ -1929,6 +1930,8 @@ function analyzeFile(file, root, config) {
   }
   return {
     rel: file.rel,
+    /* 소스 지문이 같은 파일을 다시 열지 않도록 여기서 읽은 바이트의 해시를 넘긴다(Windows에서 open이 파일당 ~0.5ms). */
+    contentSha1: createHash("sha1").update(buffer).digest("hex"),
     encoding: { label: decoded.encoding, detected_by: decoded.detected_by },
     mtime: file.stats.mtime.toISOString(),
     size: file.stats.size,
@@ -1991,7 +1994,7 @@ function gitCommit(root) {
  * clone·OS·로케일과 무관하게 같은 내용이면 같은 값이고 실측 2ms다. git이 아니거나 실패하면
  * 파일 목록과 크기로 대체한다(같은 보장은 아니지만 없는 것보다 낫다).
  */
-function sourceFingerprint(root, includePaths, files) {
+function sourceFingerprint(root, includePaths, files, knownHashes = null) {
   /*
    * 지문은 **인덱싱 대상 파일만** 덮는다. git이 보고하는 전체 변경을 그대로 쓰면
    * `_workspace/`나 README 같은 비대상 파일 때문에 항상 "변경됨"이 되어 쓸모가 없다
@@ -2004,6 +2007,8 @@ function sourceFingerprint(root, includePaths, files) {
   const digest = (label, payload) => `${label}:${createHash("sha1").update(payload).digest("hex").slice(0, 16)}`;
   const indexed = files.map((file) => file.rel).sort(byCodeUnit);
   const contentHash = (rel) => {
+    const known = knownHashes?.get(rel);
+    if (known) return known;
     const full = join(root, rel);
     try {
       return createHash("sha1").update(readFileSync(full)).digest("hex");
@@ -2161,11 +2166,23 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   /* `pkg.Owner.method` → `pkg.Owner` (필드 사전의 키와 맞추기 위한 소유 클래스 id) */
   const ownerIdOf = (callerId) => String(callerId || "").split(".").slice(0, -1).join(".");
   const nodeBySimple = new Map();
+  /*
+   * 후보 좁히기용 색인. 호출마다 동명 후보 전체를 `filter`하면 `selectList`·`save`처럼 DAO마다 있는
+   * 이름에서 호출 수 × 후보 수가 되어, 2,500파일 합성 저장소에서 호출 해석만 2.4초였다(2026-09-24 실측).
+   * 소유 클래스 단순 이름(`OrderDao`)·소유 id(`com.acme.OrderDao`)와 메서드 이름을 키로 미리 묶는다.
+   */
+  const nodeByOwnerSimple = new Map();
+  const nodeByOwnerId = new Map();
+  const pushTo = (map, key, node) => { const list = map.get(key); if (list) list.push(node); else map.set(key, [node]); };
   for (const node of nodes) {
-    const simple = node.id.split(".").at(-1);
-    if (!nodeBySimple.has(simple)) nodeBySimple.set(simple, []);
-    nodeBySimple.get(simple).push(node);
+    const parts = node.id.split(".");
+    const simple = parts.at(-1);
+    pushTo(nodeBySimple, simple, node);
+    if (parts.length > 1) pushTo(nodeByOwnerSimple, `${parts.at(-2)}\u0000${simple}`, node);
+    pushTo(nodeByOwnerId, `${parts.slice(0, -1).join(".")}\u0000${simple}`, node);
   }
+  const qualifierMemo = new Map();
+  const sameOwnerSafeExt = new Set([".java", ".kt", ".kts", ".cs", ".vue", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ...SQL_COMMENT_EXTENSIONS]);
   /*
    * 이름이 겹치는 후보가 둘 이상일 때 스코프(같은 파일 → 같은 패키지 → 같은 워크스페이스)로 좁혀
    * 하나로 줄면 결정론적으로 확정하는 방안을 구현했다가 **되돌렸다**(2026-08-16).
@@ -2215,8 +2232,7 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
            * (후보가 0개일 때 버리는 기존 규칙과 같은 처리다). */
           continue;
         }
-        const typed = candidates.filter((item) => item.id.split(".").slice(0, -1).at(-1) === declaredType);
-        candidates = typed;
+        candidates = nodeByOwnerSimple.get(`${declaredType}\u0000${call.name}`) || [];
       } else {
         /*
          * 선언 타입을 못 찾은 한정자(대부분 지역변수 — fieldTypes는 필드만 추적한다)는
@@ -2230,7 +2246,9 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
          * 처리해야 이런 케이스가 미해결 목록에 쌓이지 않는다(실측: 백엔드 미해결 9,691건이
          * 전부 이 한 가지 패턴이었다).
          */
-        candidates = candidates.filter((item) => item.id.toLowerCase().includes(call.qualifier.toLowerCase()));
+        const memoKey = `${call.name}\u0000${call.qualifier.toLowerCase()}`;
+        if (!qualifierMemo.has(memoKey)) qualifierMemo.set(memoKey, candidates.filter((item) => item.id.toLowerCase().includes(call.qualifier.toLowerCase())));
+        candidates = qualifierMemo.get(memoKey);
       }
     }
     /*
@@ -2254,10 +2272,8 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
      * `setup()` 안에서 지역 함수 `setPassword`를 바로 호출하는 경우가 정확히 이 패턴이었고,
      * 실제로 같은 파일의 그 함수를 가리키는 게 맞았다).
      */
-    const sameOwnerSafeExt = [".java", ".kt", ".kts", ".cs", ".vue", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ...SQL_COMMENT_EXTENSIONS];
-    if (!call.qualifier && candidates.length > 1 && sameOwnerSafeExt.includes(extname(call.file).toLowerCase())) {
-      const callerOwner = ownerIdOf(call.caller);
-      const sameClass = candidates.filter((item) => ownerIdOf(item.id) === callerOwner);
+    if (!call.qualifier && candidates.length > 1 && sameOwnerSafeExt.has(extname(call.file).toLowerCase())) {
+      const sameClass = nodeByOwnerId.get(`${ownerIdOf(call.caller)}\u0000${call.name}`) || [];
       if (sameClass.length === 1) candidates = sameClass;
     }
     if (candidates.length === 1 && candidates[0].id !== call.caller) {
@@ -2397,7 +2413,7 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   const globalMeta = {
     ...common, source_file_count: sourceFileCount, latest_source_commit: commit, latest_source_mtime: latestMtime,
     /* 팀원이 재인덱싱 필요 여부를 판정하는 값 — `--check-stale` 참조. */
-    source_fingerprint: sourceFingerprint(options.root, config.include_paths, sourceFiles),
+    source_fingerprint: sourceFingerprint(options.root, config.include_paths, sourceFiles, new Map(facts.map((item) => [item.rel, item.contentSha1]))),
     tier: options.tier, indexes: [], init_layout: config.init_layout, include_paths: config.include_paths.map((item) => item || "."), workspace_mode: config.workspace_mode, workspaces: config.workspaces,
     unresolved_count: unresolved.length,
     encoding: buildEncodingSummary(facts),
