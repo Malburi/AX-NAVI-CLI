@@ -275,3 +275,14 @@ test("정상으로 끝난 백그라운드 작업은 미완료가 아니다", () 
   watch.observe({ type: "system", subtype: "task_updated", task_id: "a3", patch: { status: "completed" } });
   assert.deepEqual(watch.unfinished(), []);
 });
+
+test("지연 로딩되는 내장 AskUserQuestion 을 끈다 — 안 끄면 질문이 권한 창으로 뜬다", () => {
+  const disallowed = toDisallowedTools(tools(["Read", "AskUserQuestion"]), true);
+  assert.ok(disallowed.includes("AskUserQuestion"), JSON.stringify(disallowed));
+  assert.ok(disallowed.includes("EnterPlanMode") && disallowed.includes("ExitPlanMode"));
+});
+
+test("질문 도구의 실제 이름을 모델에게 알린다", () => {
+  const text = toolBriefing(tools(["Read", "AskUserQuestion"]), true);
+  assert.match(text, /mcp__axnavi__AskUserQuestion/);
+});

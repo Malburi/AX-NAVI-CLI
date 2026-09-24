@@ -61,6 +61,12 @@ const CLAUDE_CODE_TOOLS = [
   "ReadMcpResourceDirTool", "ReadMcpResourceTool", "RemoteTrigger", "ReportFindings",
   "ScheduleWakeup", "SendMessage", "ShareOnboardingGuide", "Skill", "SlashCommand",
   "TaskOutput", "TaskStop", "ToolSearch", "WebFetch", "WebSearch", "Workflow", "Write",
+  /*
+   * 지연 로딩 도구 — init 이벤트의 도구 목록에는 **나오지 않는데** 이름으로 부르면 불린다.
+   * 내장 AskUserQuestion 이 새어 나와 axnavi 의 질문 도구 대신 쓰였고, -p 모드라 질문이 아니라
+   * "AskUserQuestion 실행할까요?" 권한 창으로 떴다(2026-09-24 실측, claude 2.1.281).
+   */
+  "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
 ];
 
 /*
@@ -733,6 +739,10 @@ export function toolBriefing(tools, allowDelegation = false) {
   }
   if (!names.includes("Edit")) {
     lines.push("Edit·MultiEdit 은 이 실행에 없다(서브에이전트도 마찬가지). 파일을 고치려면 Read 로 읽고 Write 로 전체를 다시 써라.");
+  }
+  /* 스킬 본문은 "AskUserQuestion 으로 묻는다"고 적혀 있다. 그 이름의 내장 도구는 꺼 두었으니 실제 이름을 알려 준다. */
+  if (names.includes("AskUserQuestion")) {
+    lines.push("사용자에게 묻는 것은 mcp__axnavi__AskUserQuestion 이다. 내장 AskUserQuestion 은 이 실행에 없다.");
   }
   lines.push(`</쓸 수 있는 도구>`);
   return lines.join(NEWLINE);
