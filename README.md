@@ -15,7 +15,7 @@
   ═══╧═══╧═══   Enterprise AI Development Navigator
 ```
 
-현재 버전 **v0.1.0-alpha.21**
+현재 버전 **v0.1.0-alpha.22**
 
 ---
 
@@ -107,7 +107,7 @@
 GitHub 태그에서 바로 받습니다. npm 계정이 필요 없습니다.
 
 ```bash
-npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.21
+npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.22
 ```
 
 > `npm i -g github:Malburi/AX-NAVI-CLI` 대신 위의 주소를 쓰세요.
@@ -116,8 +116,8 @@ npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0
 **폐쇄망**에서는 파일 하나로 옮깁니다.
 
 ```bash
-npm pack                                   # axnavi-0.1.0-alpha.21.tgz 생성
-npm i -g \\공유폴더\axnavi-0.1.0-alpha.21.tgz   # 받는 쪽
+npm pack                                   # axnavi-0.1.0-alpha.22.tgz 생성
+npm i -g \\공유폴더\axnavi-0.1.0-alpha.22.tgz   # 받는 쪽
 ```
 
 ### 업그레이드
@@ -125,12 +125,12 @@ npm i -g \\공유폴더\axnavi-0.1.0-alpha.21.tgz   # 받는 쪽
 대화형 모드를 띄우면 하루 한 번 새 판이 있는지 확인해 알려 줍니다.
 
 ```
-  새 판  0.1.0-alpha.20 → v0.1.0-alpha.21 · axnavi upgrade
+  새 판  0.1.0-alpha.21 → v0.1.0-alpha.22 · axnavi upgrade
 ```
 
 ```bash
 axnavi upgrade                   # 최신 판으로
-axnavi upgrade v0.1.0-alpha.20   # 특정 판으로
+axnavi upgrade v0.1.0-alpha.21   # 특정 판으로
 ```
 
 ### 설치 확인
