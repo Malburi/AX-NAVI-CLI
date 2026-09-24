@@ -254,7 +254,7 @@ test("사용자가 정한 대기 상한은 덮어쓰지 않는다", () => {
 test("상한에 걸려 죽은 백그라운드 작업을 가려낸다 — claude 의 result 는 success 여도", () => {
   // 실측 스트림 모양(상한 5초·45초 작업): task_started → task_updated(killed) → task_notification(stopped) → result success
   const watch = createBackgroundWatch();
-  watch.observe({ type: "system", subtype: "task_started", task_id: "a1", description: "B-A · analyzer", is_backgrounded: true });
+  watch.observe({ type: "system", subtype: "task_started", task_id: "a1", description: "B-A · analyzer", is_backgrounded: true, task_type: "local_agent" });
   watch.observe({ type: "system", subtype: "task_updated", task_id: "a1", patch: { status: "killed" } });
   watch.observe({ type: "system", subtype: "task_notification", task_id: "a1", status: "stopped" });
   watch.observe({ type: "result", subtype: "success" });
@@ -263,7 +263,7 @@ test("상한에 걸려 죽은 백그라운드 작업을 가려낸다 — claude 
 
 test("모델이 스스로 TaskStop 으로 멈춘 작업은 미완료로 보지 않는다", () => {
   const watch = createBackgroundWatch();
-  watch.observe({ type: "system", subtype: "task_started", task_id: "a2", description: "x" });
+  watch.observe({ type: "system", subtype: "task_started", task_id: "a2", description: "x", task_type: "local_agent" });
   watch.observe({ type: "assistant", message: { content: [{ type: "tool_use", id: "t", name: "TaskStop", input: { task_id: "a2" } }] } });
   watch.observe({ type: "system", subtype: "task_updated", task_id: "a2", patch: { status: "killed" } });
   assert.deepEqual(watch.unfinished(), []);
@@ -271,7 +271,7 @@ test("모델이 스스로 TaskStop 으로 멈춘 작업은 미완료로 보지 �
 
 test("정상으로 끝난 백그라운드 작업은 미완료가 아니다", () => {
   const watch = createBackgroundWatch();
-  watch.observe({ type: "system", subtype: "task_started", task_id: "a3", description: "y" });
+  watch.observe({ type: "system", subtype: "task_started", task_id: "a3", description: "y", task_type: "local_agent" });
   watch.observe({ type: "system", subtype: "task_updated", task_id: "a3", patch: { status: "completed" } });
   assert.deepEqual(watch.unfinished(), []);
 });
@@ -285,4 +285,11 @@ test("지연 로딩되는 내장 AskUserQuestion 을 끈다 — 안 끄면 질�
 test("질문 도구의 실제 이름을 모델에게 알린다", () => {
   const text = toolBriefing(tools(["Read", "AskUserQuestion"]), true);
   assert.match(text, /mcp__axnavi__AskUserQuestion/);
+});
+
+test("백그라운드 셸 명령이 정리된 것은 미완료가 아니다 — 서브에이전트만 본다", () => {
+  const watch = createBackgroundWatch();
+  watch.observe({ type: "system", subtype: "task_started", task_id: "b1", description: "find / -iname now_kst.py", task_type: "local_bash" });
+  watch.observe({ type: "system", subtype: "task_updated", task_id: "b1", patch: { status: "killed" } });
+  assert.deepEqual(watch.unfinished(), []);
 });

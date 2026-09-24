@@ -629,8 +629,13 @@ export function createBackgroundWatch() {
   return {
     /** @param {any} msg */
     observe(msg) {
-      if (msg?.type === "system" && msg.subtype === "task_started" && msg.task_id) described.set(msg.task_id, String(msg.description || msg.task_id));
-      if (msg?.type === "system" && msg.subtype === "task_updated" && msg.patch?.status === "killed" && msg.task_id) killed.add(msg.task_id);
+      /*
+       * 서브에이전트(`local_agent`)만 본다. 백그라운드 셸 명령(`local_bash`)은 메인 턴이 끝나면
+       * 몇 초 뒤 정리되는 것이 claude -p 의 정상 동작이라 결과 유실이 아니다 — 그것까지 세어
+       * 1h 38m 을 다 돌고 끝난 harness-init 을 "완료되지 않았다"고 알렸다(2026-09-24 실측).
+       */
+      if (msg?.type === "system" && msg.subtype === "task_started" && msg.task_id && msg.task_type === "local_agent") described.set(msg.task_id, String(msg.description || msg.task_id));
+      if (msg?.type === "system" && msg.subtype === "task_updated" && msg.patch?.status === "killed" && described.has(msg.task_id)) killed.add(msg.task_id);
       if (msg?.type === "assistant") {
         for (const block of msg.message?.content || []) {
           if (block?.type === "tool_use" && block.name === "TaskStop") {
