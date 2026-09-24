@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { connect } from "node:net";
-import { approvalKey, createApprover, describeToolUse } from "../../cli/src/approval.mjs";
+import { analyzeBash, approvalKey, createApprover, describeToolUse } from "../../cli/src/approval.mjs";
 import { startElicitHost } from "../../cli/src/mcp/host.mjs";
 import { APPROVE_TOOL, buildDelegatedArgs } from "../../provider-claude-cli/src/index.mjs";
 
@@ -182,4 +182,99 @@ test("위임 실행에 승인 도구를 붙인다 — 권한 모드는 넘기지
 
   // MCP 가 없으면 받을 곳이 없으므로 붙이지 않는다.
   assert.ok(!buildDelegatedArgs(spec, {}, null).includes("--permission-prompt-tool"));
+});
+
+/* ---------- 묻지 않아도 되는 것 ---------- */
+
+test("읽기만 하는 셸 명령은 묻지 않는다 — 승인이 형식이 되지 않게", async () => {
+  const person = scripted([]);
+  const log = /** @type {string[]} */ ([]);
+  const approver = createApprover({ ask: person.ask, onDecision: ({ how }) => log.push(how) });
+  for (const command of [
+    "ls -la .axnavi 2>/dev/null; echo \"---\"; ls -la ..",
+    "cd /c/work && git status --short | head -50",
+    "grep -rn \"TODO\" src | wc -l",
+    "find . -name \"*.java\" -not -path \"*/target/*\"",
+    "sed -n '1,40p' pom.xml",
+    "git log --oneline -5 && git diff --stat",
+  ]) {
+    assert.equal((await approver.decide("Bash", { command })).behavior, "allow", command);
+  }
+  assert.equal(person.asked.length, 0, "읽기 전용인데 물었다");
+  assert.ok(log.every((how) => /자동 허용/.test(how)), "감사 기록에 자동 허용으로 남겨야 한다");
+});
+
+test("바꾸는 형태가 섞이면 읽기 전용으로 보지 않는다", () => {
+  for (const command of [
+    "ls > files.txt",
+    "echo x >> a.log",
+    "find . -name '*.tmp' -delete",
+    "find . -exec rm {} \\;",
+    "sed -i 's/a/b/' x.java",
+    "git push origin main",
+    "git branch -D old",
+    "git config user.name x",
+    "cat a | xargs rm",
+    "echo $(rm -rf x)",
+    "rm -rf dist",
+    "node -e \"require('fs').rmSync('x')\"",
+  ]) {
+    assert.equal(analyzeBash(command, "C:/axnavi").readOnly, false, command);
+  }
+  assert.equal(analyzeBash("ls 2>&1 | grep x").readOnly, true, "2>&1 은 파일을 쓰지 않는다");
+  assert.equal(analyzeBash("awk '$3 > 10 {print $1}' data.txt").readOnly, true, "따옴표 안의 > 는 리다이렉트가 아니다");
+});
+
+test("axnavi 자신의 스크립트는 묻지 않는다 — 인덱서·검증기는 제품의 일부다", () => {
+  const root = "C:\\Users\\me\\AX-NAVI-CLI";
+  assert.equal(analyzeBash(`node "C:/Users/me/AX-NAVI-CLI/agents/lib/build-index.mjs" --root "C:\\work"`, root).readOnly, true);
+  assert.equal(analyzeBash(`node "C:\\Users\\me\\AX-NAVI-CLI\\agents\\lib\\build-index.mjs" --root .`, root).readOnly, true, "Windows 역슬래시 경로");
+  assert.equal(analyzeBash(`python3 "$CLAUDE_PLUGIN_ROOT/agents/lib/validator_checks.py" --root .`, root).readOnly, true);
+  assert.equal(analyzeBash(`node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" summary`, root).readOnly, true);
+  assert.equal(analyzeBash(`node "C:/other/tool.mjs"`, root).readOnly, false, "다른 스크립트는 묻는다");
+  assert.equal(analyzeBash(`python3 _workspace/_deploy_staged_skills.py`, root).readOnly, false, "작업 폴더에 새로 쓴 스크립트는 묻는다");
+});
+
+test("복합 명령은 첫 단어만 보지 않는다 — ls 허용으로 뒤의 git push 가 지나가면 안 된다", async () => {
+  const always = new Set(["Bash(ls)"]);
+  const person = scripted([["아니오"]]);
+  const decision = await createApprover({ ask: person.ask, always }).decide("Bash", { command: "ls; git push origin main" });
+  assert.equal(decision.behavior, "deny");
+  assert.equal(person.asked.length, 1);
+  assert.match(person.asked[0]?.options[1] ?? "", /Bash\(git push\)/, "묻는 대상이 읽기 전용이 아닌 조각이어야 한다");
+});
+
+test("'이번 세션 동안 모두 묻지 않음' 은 이후 전부 연다", async () => {
+  const always = new Set();
+  const person = scripted([["예, 이번 세션 동안 모두 묻지 않음"]]);
+  await createApprover({ ask: person.ask, always }).decide("Write", { file_path: "a.md" });
+  const next = scripted([]);
+  const approver = createApprover({ ask: next.ask, always });
+  assert.equal((await approver.decide("Bash", { command: "npm install" })).behavior, "allow");
+  assert.equal((await approver.decide("Edit", { file_path: "b.md" })).behavior, "allow");
+  assert.equal(next.asked.length, 0);
+});
+
+test("전부 승인 모드면 묻지 않고, 그 사실을 기록에 남긴다", async () => {
+  const person = scripted([]);
+  const log = /** @type {string[]} */ ([]);
+  const decision = await createApprover({ ask: person.ask, trustAll: () => true, onDecision: ({ how }) => log.push(how) }).decide("Bash", { command: "rm -rf dist" });
+  assert.equal(decision.behavior, "allow");
+  assert.equal(person.asked.length, 0);
+  assert.deepEqual(log, ["모드: 전부 승인"]);
+});
+
+test("실제 명령 모양: 반복문·git -C·xargs grep·heredoc·Git Bash 경로", () => {
+  const root = "C:/Users/me/AX-NAVI-CLI";
+  assert.equal(analyzeBash("for d in a b; do ls $d; done", root).readOnly, true, "반복문 안이 읽기 전용이면 읽기 전용");
+  assert.equal(analyzeBash("for f in *.tmp; do rm $f; done", root).readOnly, false, "반복문 안에 rm 이 있으면 묻는다");
+  assert.equal(analyzeBash("git -C /c/work/repo status --short", root).readOnly, true, "-C 값은 하위 명령이 아니다");
+  assert.equal(analyzeBash("git -C /c/work/repo push", root).readOnly, false);
+  assert.equal(analyzeBash("grep -rl x src | xargs grep -n y", root).readOnly, true, "xargs 로 넘기는 명령이 읽기 전용");
+  assert.equal(analyzeBash("find . -name '*.log' | xargs rm", root).readOnly, false);
+  assert.equal(analyzeBash("node /c/Users/me/AX-NAVI-CLI/agents/lib/ai-budget.mjs init --root x", root).readOnly, true, "Git Bash 경로 형식");
+  const heredoc = analyzeBash("python3 - <<'EOF'\nimport json\nwith open('a') as f:\n    print(f.read())\nEOF", root);
+  assert.equal(heredoc.readOnly, false, "heredoc 으로 넘긴 코드는 묻는다");
+  assert.deepEqual(heredoc.names, ["python3"], "heredoc 본문 줄을 명령 이름으로 늘어놓지 않는다");
+  assert.equal(analyzeBash("cat <<EOF\nhello\nEOF", root).readOnly, true, "cat 으로 보여 주기만 하면 읽기 전용");
 });

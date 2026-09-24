@@ -45,10 +45,165 @@ export function approvalKey(tool, input) {
   if (EDIT_TOOLS.has(tool)) return "파일 수정";
   if (tool === "Bash") {
     const command = typeof input["command"] === "string" ? input["command"].trim() : "";
-    const head = command.split(/\s+/)[0] ?? "";
-    return head ? `Bash(${head})` : "Bash";
+    const { names } = analyzeBash(command);
+    return names.length ? `Bash(${names.join(", ")})` : "Bash";
   }
   return tool;
+}
+
+/*
+ * 묻지 않아도 되는 셸 명령.
+ *
+ * 승인 창이 너무 잦으면 사람은 읽지 않고 "예"를 누른다 — 그러면 승인이 형식이 된다.
+ * 아무것도 바꾸지 않는 명령과 axnavi 자신의 스크립트는 묻지 않는다(감사 기록에는 남긴다).
+ * 판단은 보수적이다. 따옴표 밖 리다이렉트(`>`)·명령 치환(`$(…)`·백틱)·`xargs` 같은
+ * "무엇이든 될 수 있는" 형태가 섞이면 읽기 전용으로 보지 않는다.
+ */
+const READ_ONLY = new Set([
+  "ls", "dir", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "find", "echo", "printf", "pwd",
+  "which", "where", "type", "stat", "file", "du", "df", "sort", "uniq", "cut", "tr", "sed", "awk", "basename",
+  "dirname", "realpath", "readlink", "date", "true", "test", "[", "cd", "tree", "diff", "cmp", "column", "nl",
+  "md5sum", "sha1sum", "sha256sum", "jq",
+]);
+const READ_ONLY_GIT = new Set(["status", "log", "diff", "show", "rev-parse", "ls-files", "describe", "blame", "grep", "cat-file", "ls-tree", "shortlog", "reflog", "rev-list"]);
+const SCRIPT_RUNNERS = new Set(["node", "node.exe", "python", "python3", "python.exe", "py"]);
+
+/**
+ * 셸 명령을 따옴표를 존중하며 `&&`·`||`·`;`·`|`·`&`·줄바꿈 단위로 자른다.
+ * 따옴표 밖의 파일 리다이렉트·명령 치환이 있으면 `risky` 로 알린다.
+ * @param {string} command
+ * @returns {{ segments: string[][], risky: boolean }}
+ */
+function splitShell(command) {
+  /** @type {string[][]} */
+  const segments = [[]];
+  let word = "";
+  let quote = "";
+  let risky = false;
+  const endWord = () => { if (word) segments.at(-1)?.push(word); word = ""; };
+  for (let i = 0; i < command.length; i += 1) {
+    const c = command[i];
+    const n = command[i + 1];
+    if (quote) {
+      if (c === quote) quote = "";
+      /* bash: 큰따옴표 안의 `\` 는 $ ` " \ 줄바꿈 앞에서만 이스케이프다 — 그 밖은 글자다("C:\Users\…" 경로). */
+      else if (c === "\\" && quote === "\"" && n && "$`\"\\\n".includes(n)) { word += n; i += 1; }
+      else {
+        if (quote === "\"" && (c === "`" || (c === "$" && n === "("))) risky = true;
+        word += c;
+      }
+      continue;
+    }
+    if (c === "'" || c === "\"") { quote = c; continue; }
+    /*
+     * heredoc(`python3 - <<'EOF' … EOF`). 본문은 명령이 아니라 그 명령의 입력이다 — 줄마다 잘라
+     * 명령으로 읽으면 승인 창에 `Bash(python3, import, with, …)` 가 뜬다. 본문을 건너뛰고,
+     * 판단은 heredoc 을 받는 명령(`python3 -` → 묻는다, `cat` → 읽기 전용)으로 한다.
+     */
+    if (c === "<" && n === "<" && command[i + 2] !== "<") {
+      const spec = command.slice(i + 2).match(/^-?\s*(['"]?)([A-Za-z_][\w-]*)\1/);
+      const lineEnd = command.indexOf("\n", i);
+      if (spec && lineEnd >= 0) {
+        const delim = spec[2];
+        const lines = command.slice(lineEnd + 1).split("\n");
+        let offset = lineEnd + 1;
+        for (const line of lines) {
+          offset += line.length + 1;
+          if (line.trim() === delim) break;
+        }
+        endWord();
+        i = offset - 2; // 다음 반복에서 본문 끝 줄바꿈부터 이어 읽는다
+        continue;
+      }
+    }
+    if (c === "`" || (c === "$" && n === "(") || (c === "<" && n === "(")) { risky = true; word += c; continue; }
+    if (c === ">") {
+      /* `2>&1`·`>&2`·`>/dev/null`·`2>/dev/null` 은 파일을 쓰지 않는다. */
+      const rest = command.slice(i + 1).replace(/^>/, "").trimStart();
+      if (!(n === "&" || /^\/dev\/null\b/.test(rest) || /^NUL\b/i.test(rest))) risky = true;
+      if (/^\/dev\/null\b/.test(rest)) { i = command.indexOf("/dev/null", i) + "/dev/null".length - 1; }
+      else if (n === "&") i += 2;
+      endWord();
+      continue;
+    }
+    if (c === "&" || c === "|" || c === ";" || c === "\n") {
+      endWord();
+      if ((c === "&" || c === "|") && n === c) i += 1;
+      if (segments.at(-1)?.length) segments.push([]);
+      continue;
+    }
+    if (/\s/.test(c)) { endWord(); continue; }
+    word += c;
+  }
+  endWord();
+  if (quote) risky = true;
+  return { segments: segments.filter((s) => s.length), risky };
+}
+
+/**
+ * 한 조각의 이름과 읽기 전용 여부.
+ * @param {string[]} words
+ * @param {string} pluginRoot
+ * @returns {{ name: string, readOnly: boolean }}
+ */
+function classifySegment(words, pluginRoot) {
+  let at = 0;
+  while (at < words.length && /^[A-Za-z_][\w]*=/.test(words[at] ?? "")) at += 1; // FOO=bar cmd
+  /*
+   * 셸 제어어. `for d in a b; do ls $d; done` 은 `for …`·`do ls $d`·`done` 조각으로 잘린다 —
+   * 제어어 자체는 아무것도 바꾸지 않으니 떼고 나머지로 판단한다(실측 harness-init 명령의 흔한 모양).
+   */
+  while (["do", "then", "else", "elif", "if", "while", "until", "!", "{"].includes(words[at] ?? "")) at += 1;
+  if (at >= words.length || ["for", "done", "fi", "esac", "}", "case"].includes(words[at] ?? "")) return { name: "", readOnly: true };
+  const head = words[at] ?? "";
+  const base = head.replace(/\\/g, "/").split("/").at(-1)?.toLowerCase() ?? "";
+  const args = words.slice(at + 1);
+  if (base === "xargs") {
+    /* `xargs grep -l x` 처럼 넘기는 명령이 읽기 전용이면 읽기 전용이다. 값 받는 옵션은 값까지 건너뛴다. */
+    let i = 0;
+    while (i < args.length && (args[i] ?? "").startsWith("-")) i += ["-I", "-n", "-P", "-L", "-d", "-s", "-E"].includes(args[i] ?? "") ? 2 : 1;
+    return i < args.length ? classifySegment(args.slice(i), pluginRoot) : { name: "xargs", readOnly: false };
+  }
+  if (base === "git") {
+    /* `git -C <경로> status` — -C·-c 의 값은 하위 명령이 아니다. */
+    const rest = [...args];
+    while (rest.length && (rest[0] ?? "").startsWith("-")) rest.splice(0, ["-C", "-c", "--git-dir", "--work-tree"].includes(rest[0] ?? "") ? 2 : 1);
+    const sub = rest[0] ?? "";
+    const readOnly = READ_ONLY_GIT.has(sub)
+      || (sub === "branch" && args.every((arg) => arg === "branch" || ["--show-current", "-a", "-r", "--list", "-v", "-vv"].includes(arg)))
+      || (sub === "remote" && args.every((arg) => arg === "remote" || arg === "-v"))
+      || (sub === "config" && args.some((arg) => ["--get", "--list", "-l", "--get-all"].includes(arg)));
+    return { name: sub ? `git ${sub}` : "git", readOnly };
+  }
+  if (SCRIPT_RUNNERS.has(base)) {
+    /* axnavi 자신의 스크립트(인덱서·검증기). 제품의 일부라 묻지 않는다 — 산출물은 _workspace 에 쓴다. */
+    /* Git Bash 는 `C:\…` 를 `/c/…` 로 쓴다 — 같은 경로로 맞춰 비교한다. */
+    const unify = (/** @type {string} */ path) => path.replace(/\\/g, "/").replace(/^\/([a-zA-Z])\//, "$1:/");
+    const script = unify(args.find((arg) => !arg.startsWith("-")) ?? "");
+    const root = unify(pluginRoot).replace(/\/+$/, "").toLowerCase();
+    const ours = /^\$(?:env:)?\{?CLAUDE_PLUGIN_ROOT\}?\/agents\/lib\//.test(script)
+      || (root !== "" && script.toLowerCase().startsWith(`${root}/agents/lib/`));
+    return { name: base.replace(/\.exe$/, ""), readOnly: ours && !args.some((arg) => arg === "-e" || arg === "-c" || arg === "--eval") };
+  }
+  if (!READ_ONLY.has(base)) return { name: base || head, readOnly: false };
+  if (base === "find" && args.some((arg) => ["-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf", "-fls"].includes(arg))) return { name: base, readOnly: false };
+  if (base === "sed" && args.some((arg) => /^-[a-zA-Z]*i/.test(arg) || arg.startsWith("--in-place"))) return { name: base, readOnly: false };
+  if (base === "awk" && args.some((arg) => /system\s*\(|print[^|]*>/.test(arg))) return { name: base, readOnly: false };
+  return { name: base, readOnly: true };
+}
+
+/**
+ * 셸 명령 분석. `names` 는 묻어야 할(읽기 전용이 아닌) 조각의 이름, `readOnly` 는 전부 묻지 않아도 되는가.
+ * @param {string} command
+ * @param {string} [pluginRoot]
+ * @returns {{ readOnly: boolean, names: string[] }}
+ */
+export function analyzeBash(command, pluginRoot = "") {
+  const { segments, risky } = splitShell(command);
+  if (!segments.length) return { readOnly: false, names: [] };
+  const classified = segments.map((words) => classifySegment(words, pluginRoot));
+  const names = [...new Set(classified.filter((item) => (item.readOnly === false || risky) && item.name).map((item) => item.name))];
+  return { readOnly: !risky && classified.every((item) => item.readOnly), names };
 }
 
 /**
@@ -203,29 +358,45 @@ export function previewToolUse(tool, input, readText = readTextOrNull) {
  *        허용·거부를 기록에 남긴다
  * @param {Set<string>} [args.always]  "이번 세션 동안 묻지 않음" 기억. 턴을 넘어 살아야 해서 호출부가 쥔다
  * @param {(path: string) => string | null} [args.readText]  미리보기용 파일 읽기
+ * @param {string} [args.pluginRoot]  axnavi 설치 루트 — 이 아래 agents/lib 스크립트는 묻지 않는다
+ * @param {() => boolean} [args.trustAll]  "전부 승인" 모드인가 (/mode 전부승인)
  * @returns {Approver}
  */
-export function createApprover({ ask, onDecision, always = new Set(), readText = readTextOrNull }) {
+export function createApprover({ ask, onDecision, always = new Set(), readText = readTextOrNull, pluginRoot = "", trustAll = () => false }) {
+  /* "이번 세션 동안 모두 묻지 않음" 의 기억 표지. 도구 이름과 겹치지 않는 값이다. */
+  const ALL = "*";
   return {
     remembered: () => [...always],
     async decide(tool, input) {
       const safeInput = input && typeof input === "object" ? input : {};
-      const key = approvalKey(tool, safeInput);
+      const allow = (/** @type {string} */ how) => {
+        onDecision?.({ tool, input: safeInput, allowed: true, how });
+        return /** @type {Decision} */ ({ behavior: "allow", updatedInput: safeInput });
+      };
+      if (trustAll()) return allow("모드: 전부 승인");
+      if (always.has(ALL)) return allow("세션 전체 허용");
+
+      /*
+       * 셸 명령은 조각별로 본다. 예전에는 첫 단어만 봐서 `ls …; cd .. && git push` 가
+       * `Bash(ls)` 허용 하나로 통째로 지나갔다. 이제는 읽기 전용이 아닌 조각이 전부
+       * 세션 허용돼 있어야 지나간다.
+       */
+      const bash = tool === "Bash" ? analyzeBash(typeof safeInput["command"] === "string" ? safeInput["command"] : "", pluginRoot) : null;
+      if (bash?.readOnly) return allow("자동 허용(읽기 전용·axnavi 스크립트)");
+      const keys = bash ? (bash.names.length ? bash.names.map((name) => `Bash(${name})`) : ["Bash"]) : [approvalKey(tool, safeInput)];
+      if (keys.every((key) => always.has(key))) return allow("세션 허용");
+
+      const key = bash ? `Bash(${bash.names.join(", ") || "?"})` : /** @type {string} */ (keys[0]);
       const what = describeToolUse(tool, safeInput);
-
-      if (always.has(key)) {
-        onDecision?.({ tool, input: safeInput, allowed: true, how: "세션 허용" });
-        return { behavior: "allow", updatedInput: safeInput };
-      }
-
       const YES = "예";
       const ALWAYS = `예, 이번 세션 동안 ${key}은(는) 묻지 않음`;
+      const EVERYTHING = "예, 이번 세션 동안 모두 묻지 않음";
       const NO = "아니오";
       /** @type {string[]} */
       let answers = [];
       try {
         const preview = previewToolUse(tool, safeInput, readText);
-        answers = await ask(`${what}\n실행할까요?`, [YES, ALWAYS, NO], {
+        answers = await ask(`${what}\n실행할까요?`, [YES, ALWAYS, EVERYTHING, NO], {
           header: "권한",
           ...(preview.length ? { preview } : {}),
         });
@@ -234,10 +405,13 @@ export function createApprover({ ask, onDecision, always = new Set(), readText =
       }
       const picked = answers[0] ?? "";
 
+      if (picked === EVERYTHING) {
+        always.add(ALL);
+        return allow("허용(이번 세션 동안 모두)");
+      }
       if (picked === YES || picked === ALWAYS) {
-        if (picked === ALWAYS) always.add(key);
-        onDecision?.({ tool, input: safeInput, allowed: true, how: picked === ALWAYS ? "허용(이후 묻지 않음)" : "허용" });
-        return { behavior: "allow", updatedInput: safeInput };
+        if (picked === ALWAYS) for (const each of keys) always.add(each);
+        return allow(picked === ALWAYS ? "허용(이후 묻지 않음)" : "허용");
       }
       /*
        * 답이 없으면 거부다. 묻지도 못했는데 허용하면 이 모듈이 있는 이유가 없다.
