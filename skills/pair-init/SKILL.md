@@ -124,7 +124,7 @@ PowerShell: `Test-Path "[파트너 경로]"` 또는 bash: `[ -d "[파트너 경�
 Agent(
   subagent_type="general-purpose",
   description="파트너 하네스 자동 생성 ([파트너 경로])",
-  prompt="${CLAUDE_PLUGIN_ROOT}/skills/harness-init/SKILL.md 파일을 읽고 그 지침을 그대로 따라 harness-init을 수행하라(환경변수가 비어 있으면 이 스킬이 위치한 플러그인 설치 루트의 절대경로로 대체. cwd 상대경로 금지).
+  prompt="${CLAUDE_PLUGIN_ROOT}/skills/harness-init/SKILL.md 파일을 Read로 읽고 그 지침을 그대로 따라 harness-init을 수행하라. 스킬 도구로 harness-init을 다시 부르지 말고, 지침에 적힌 서브에이전트 호출(analyzer·writer·pattern-extractor·validator·pipeline-runner)은 네가 Agent 도구로 직접 한다 — 서브에이전트 안에서도 서브에이전트를 띄울 수 있다. 읽은 지침 안의 플러그인 경로가 변수 이름 그대로 남아 있으면 그 SKILL.md가 있는 플러그인 설치 루트의 절대경로로 바꿔 쓴다(cwd 상대경로 금지).
   프로젝트 루트: [파트너 절대경로] (cwd 아님 — 이 경로 기준으로 모든 파일 읽기/쓰기 수행).
   init_layout: 'paired-roots' (멀티레포 확정 상태 — Phase -1 구성 확인 재질문 불필요, source: explicit-request로 기록).
   partner_info: { role: '[현재 프로젝트 역할과 반대]', path: '[현재 프로젝트 절대경로]', api_url: '[api_base_url]' }.
