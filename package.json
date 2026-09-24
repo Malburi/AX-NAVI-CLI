@@ -46,7 +46,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:harness": "node agents/lib/tests/run.js",
-    "test:cli": "node --test packages/core/test/",
+    "test:cli": "node --test packages/core/test/*.test.mjs",
     "test": "npm run test:harness && npm run test:cli",
     "validate:plugin": "claude plugin validate . --strict",
     "prepublishOnly": "npm test && npm run typecheck"
