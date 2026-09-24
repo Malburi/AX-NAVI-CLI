@@ -1371,4 +1371,126 @@ class OrderDao {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  register("PL/SQL 패키지·프로시저·트리거의 심볼·호출·정적 SQL과 Java→프로시저 호출을 인덱싱한다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-plsql-"));
+    try {
+      write(root, "db/pkg_order.pks", `CREATE OR REPLACE PACKAGE APP.PKG_ORDER AS
+  PROCEDURE SAVE_ORDER(p_id IN NUMBER);
+  FUNCTION GET_STATUS(p_id IN NUMBER) RETURN VARCHAR2;
+END PKG_ORDER;
+/
+`);
+      write(root, "db/pkg_order.pkb", `CREATE OR REPLACE PACKAGE BODY pkg_order AS
+  PROCEDURE log_step(p_msg IN VARCHAR2);
+
+  FUNCTION get_status(p_id IN NUMBER) RETURN VARCHAR2 IS
+    v_status VARCHAR2(10);
+  BEGIN
+    SELECT status INTO v_status FROM orders WHERE id = p_id;
+    RETURN v_status;
+  END get_status;
+
+  PROCEDURE save_order(p_id IN NUMBER) IS
+    v_id NUMBER;
+  BEGIN
+    -- UPDATE old_orders SET x = 1;
+    IF get_status(p_id) = 'NEW' THEN
+      UPDATE orders SET status = 'SAVED' WHERE id = p_id;
+    END IF;
+    INSERT INTO order_hist (id, msg) VALUES (p_id, 'it''s saved; ok') RETURNING hist_id INTO v_id;
+    DELETE order_tmp WHERE id = p_id;
+    FOR r IN (SELECT o.id FROM orders o JOIN customers c ON o.cust_id = c.id) LOOP
+      NULL;
+    END LOOP;
+    EXECUTE IMMEDIATE 'UPDATE order_stats SET cnt = cnt + 1';
+    log_step('done');
+    proc_audit;
+  END save_order;
+
+  PROCEDURE log_step(p_msg IN VARCHAR2) IS
+  BEGIN
+    INSERT INTO order_log (msg) VALUES (p_msg);
+  END log_step;
+END pkg_order;
+/
+`);
+      write(root, "db/proc_audit.prc", `CREATE OR REPLACE PROCEDURE proc_audit IS
+BEGIN
+  INSERT INTO audit_log (ts) VALUES (SYSDATE);
+END;
+/
+`);
+      write(root, "db/trg_orders.trg", `CREATE OR REPLACE TRIGGER trg_orders_biu
+BEFORE INSERT OR UPDATE ON orders
+FOR EACH ROW
+BEGIN
+  pkg_order.log_step('trigger');
+END;
+/
+`);
+      write(root, "db/install.sql", `-- 시드 데이터는 사용처가 아니다
+INSERT INTO code_table VALUES ('A', 'x');
+CREATE OR REPLACE FUNCTION fn_tax(p_amt NUMBER) RETURN NUMBER AS
+BEGIN
+  RETURN p_amt * 0.1;
+END;
+/
+`);
+      write(root, "src/OrderDao.java", `package com.acme;
+public class OrderDao {
+  private SqlSessionTemplate sqlSession;
+  public void save(long id) {
+    CallableStatement cs = conn.prepareCall("{call PKG_ORDER.SAVE_ORDER(?)}");
+    cs.execute();
+  }
+  public void audit() { sqlSession.update("OrderMapper.callAudit"); }
+}
+`);
+      write(root, "src/OrderMapper.xml", `<mapper namespace="OrderMapper">
+  <update id="callAudit" statementType="CALLABLE">{call proc_audit}</update>
+</mapper>`);
+
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const symbols = json(root, "symbols.json").symbols;
+      const pkg = symbols.find((item) => item.id === "PKG_ORDER");
+      assert.equal(pkg?.type, "package", JSON.stringify(symbols));
+      assert.ok(pkg.methods.some((item) => item.id === "PKG_ORDER.SAVE_ORDER"), JSON.stringify(pkg));
+      const trigger = symbols.find((item) => item.id === "TRG_ORDERS_BIU");
+      assert.equal(trigger?.trigger_table, "ORDERS");
+      assert.equal(JSON.stringify(trigger.trigger_events), JSON.stringify(["INSERT", "UPDATE"]));
+      assert.equal(symbols.find((item) => item.id === "FN_TAX")?.type, "function", ".sql 안의 PL/SQL 단위");
+
+      const graph = json(root, "call_graph.json");
+      const nodeIds = graph.nodes.map((item) => item.id);
+      for (const id of ["PKG_ORDER.GET_STATUS", "PKG_ORDER.SAVE_ORDER", "PKG_ORDER.LOG_STEP", "PROC_AUDIT", "FN_TAX"]) {
+        assert.ok(nodeIds.includes(id), `${id} 노드: ${JSON.stringify(nodeIds)}`);
+      }
+      assert.equal(graph.nodes.filter((item) => item.id === "PKG_ORDER.LOG_STEP").length, 1, "전방 선언은 별도 노드가 아니다");
+      const hasEdge = (from, to) => graph.edges.some((item) => item.type === "call" && item.from === from && item.to === to);
+      assert.ok(hasEdge("PKG_ORDER.SAVE_ORDER", "PKG_ORDER.GET_STATUS"), `같은 패키지 호출: ${JSON.stringify(graph.edges)}`);
+      assert.ok(hasEdge("PKG_ORDER.SAVE_ORDER", "PKG_ORDER.LOG_STEP"), "전방 선언된 멤버 호출");
+      assert.ok(hasEdge("PKG_ORDER.SAVE_ORDER", "PROC_AUDIT"), "괄호 없는 프로시저 호출");
+      assert.ok(hasEdge("TRG_ORDERS_BIU", "PKG_ORDER.LOG_STEP"), "트리거 → 패키지 호출");
+      assert.ok(hasEdge("com.acme.OrderDao.save", "PKG_ORDER.SAVE_ORDER"), "JDBC prepareCall → 프로시저");
+      assert.ok(hasEdge("com.acme.OrderDao.audit", "PROC_AUDIT"), "MyBatis CALLABLE 매퍼 → 프로시저");
+
+      const { sqls, usages } = json(root, "sql_usage.json");
+      const tablesOf = (method) => usages.filter((item) => item.method === method).flatMap((item) => sqls.find((sql) => sql.id === item.sql_id)?.tables || []).map((name) => name.toLowerCase()).sort().join(",");
+      assert.equal(tablesOf("PKG_ORDER.GET_STATUS"), "orders", "SELECT INTO 변수는 테이블이 아니다");
+      assert.equal(tablesOf("PKG_ORDER.SAVE_ORDER"), "customers,order_hist,order_stats,order_tmp,orders,orders", JSON.stringify(sqls));
+      assert.equal(tablesOf("PKG_ORDER.LOG_STEP"), "order_log");
+      const allTables = sqls.flatMap((item) => item.tables || []).map((name) => name.toLowerCase());
+      assert.ok(!allTables.includes("old_orders"), "주석 처리된 SQL");
+      assert.ok(!allTables.includes("code_table"), "프로그램 단위 밖의 시드 INSERT");
+      assert.ok(!allTables.includes("v_id") && !allTables.includes("v_status"), "INTO 변수");
+
+      const coverage = json(root, "_meta.json").adapter_coverage;
+      assert.equal(coverage.extensions.find((item) => item.extension === ".pkb")?.level, "PARTIAL");
+      assert.ok(!coverage.unsupported_files.some((file) => file.endsWith(".pkb")), "더 이상 discovery-only가 아니다");
+      assert.equal(assessTargetCoverage(coverage, "db/install.sql").decision, "HOLD", "PL/SQL이 든 .sql은 HOLD");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 }

@@ -85,7 +85,8 @@ WinForms `.Designer.cs`와 DevExpress 컴포넌트는 `.cs`가 `FULL`이어도 �
 
 | 스택 | 탐지 시그니처 | 분석 깊이 |
 |------|---------------|-----------|
-| Oracle / PostgreSQL / MySQL·MariaDB | `ojdbc*`·`*.pkb`, `postgresql-*`·`pg`, `mysql-connector-*`·`mysql2` | HIGH |
+| Oracle PL/SQL | `*.pks`·`*.pkb`·`*.pck`·`*.prc`·`*.fnc`·`*.trg`, `.sql` 안의 `CREATE PROCEDURE`·`PACKAGE`·`TRIGGER` | MEDIUM (패키지·프로시저·함수·트리거 심볼, 호출 관계, 본문 정적 SQL, Java `{call}`·MyBatis CALLABLE 연결. 동적 SQL 변수·오버로드·중첩 프로시저는 근사, 변경은 HOLD) |
+| Oracle / PostgreSQL / MySQL·MariaDB | `ojdbc*`, `postgresql-*`·`pg`, `mysql-connector-*`·`mysql2` | HIGH |
 | SQL Server / Tibero / MongoDB / Redis | `mssql-jdbc`, `tibero-jdbc`, `mongoose`, `jedis` 등 | MEDIUM |
 | Altibase | `altibase-jdbc` | LOW |
 | Go | `go.mod` | MEDIUM |

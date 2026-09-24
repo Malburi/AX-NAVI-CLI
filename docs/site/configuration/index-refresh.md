@@ -18,7 +18,7 @@ LLM을 쓰지 않고 JSON 한 덩어리와 exit code로 답합니다.
 | 1 | `true` | `지문 없는 구버전 인덱스` | `source_fingerprint`가 없는 옛 인덱스. `--mode init` |
 | 1 | `true` | `소스가 변경됨` | `--mode incremental` |
 
-판정 순서는 `_meta.json` 존재 → `version`이 현재 `INDEXER_VERSION`(현재 `1.11.0`)과 일치 → `source_fingerprint` 존재 → 현재 소스 지문과 비교입니다. 지문은 git 저장소면 추적 파일 상태에서, 아니면 파일 내용 해시에서 계산하므로 줄바꿈이나 OS 로케일에 따라 달라지지 않습니다.
+판정 순서는 `_meta.json` 존재 → `version`이 현재 `INDEXER_VERSION`(현재 `1.12.0`)과 일치 → `source_fingerprint` 존재 → 현재 소스 지문과 비교입니다. 지문은 git 저장소면 추적 파일 상태에서, 아니면 파일 내용 해시에서 계산하므로 줄바꿈이나 OS 로케일에 따라 달라지지 않습니다.
 
 `safe-modify`·`analyze-impact`·`trace-logic`·`find-feature`는 시작 시 이 검사를 먼저 실행합니다. `safe-modify`와 `analyze-impact`는 stale이면 재인덱싱 후 진행하고, `trace-logic`·`find-feature`는 급한 1회성 조회라면 "인덱스가 stale일 수 있음"만 알리고 진행할 수 있습니다.
 

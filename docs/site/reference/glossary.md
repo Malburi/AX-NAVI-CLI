@@ -23,7 +23,7 @@ AX Navi 문서와 에이전트 리포트에 반복해서 나오는 용어를 모
 | 용어 | 의미 |
 |------|------|
 | 결정론적 인덱스 | `build-index.mjs`(Node 18+, LLM 미개입)가 소스에서 만드는 `_workspace/index/*.json`. 같은 소스면 같은 결과 |
-| 인덱서(indexer) | `agents/lib/build-index.mjs`. `INDEXER_VERSION`(현재 `1.11.0`)이 `_meta.version`에 기록됨 |
+| 인덱서(indexer) | `agents/lib/build-index.mjs`. `INDEXER_VERSION`(현재 `1.12.0`)이 `_meta.version`에 기록됨 |
 | `_meta.json` | 인덱스 전역 매니페스트. tier·복잡도·`adapter_coverage`·`indexes[]`·`source_fingerprint`·`excluded_sources`·`encoding` |
 | 소스 지문(source_fingerprint) | 인덱싱 시점 소스 상태의 해시. `--check-stale`이 현재 지문과 비교해 재인덱싱 필요 여부를 판정 |
 | stale | 인덱스가 코드보다 오래된 상태. `--check-stale` exit 1, 또는 스킬 리포트의 `지식 모델 stale` WARN |

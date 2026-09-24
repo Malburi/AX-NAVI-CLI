@@ -92,7 +92,8 @@ analyzer Step 1~2 에서 다음 파일/문자열로 자동 탐지:
 
 | DB | 탐지 | 깊이 |
 |----|------|------|
-| Oracle | `ojdbc*`, `oracle.jdbc.*`, `*.pkb`/`*.pks` (PL/SQL) | HIGH |
+| Oracle | `ojdbc*`, `oracle.jdbc.*` | HIGH |
+| Oracle PL/SQL | `*.pks`·`*.pkb`·`*.pck`·`*.prc`·`*.fnc`·`*.trg`, `.sql` 안의 `CREATE PROCEDURE`·`PACKAGE`·`TRIGGER` | MEDIUM (패키지·프로시저·함수·트리거 심볼, 호출 관계, 본문 정적 SQL, Java `{call}`·MyBatis CALLABLE 연결. 동적 SQL 변수·오버로드·중첩 프로시저는 근사, 변경은 HOLD) |
 | PostgreSQL | `postgresql-*`, `pg`, `psycopg` | HIGH |
 | MySQL / MariaDB | `mysql-connector-*`, `mariadb-java-client`, `mysql2` | HIGH |
 | SQL Server | `mssql-jdbc`, `System.Data.SqlClient`, `tedious` | MEDIUM |

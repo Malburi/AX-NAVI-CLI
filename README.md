@@ -148,7 +148,7 @@ axnavi doctor
   ✓ git        git version 2.46.0
   ✓ 실행 경로   claude-cli 2.1.280 · 구독 인증
   ✓ 인덱스      최신
-  ✓ 인덱서      v1.11.0
+  ✓ 인덱서      v1.12.0
   ✓ 에이전트    19개
   ✓ 스킬        24개
 ```
@@ -605,6 +605,7 @@ axnavi 는 모델을 `haiku` · `sonnet` · `opus` 세 등급으로 부르고, �
 | Python · Go · C#/.NET | FULL |
 | ASP.NET Core · WinForms · Nexacro | 전용 어댑터로 보강 |
 | WinForms Designer · DevExpress · XFDL · JSP/Struts XML | **PARTIAL** |
+| Oracle PL/SQL (패키지 · 프로시저 · 트리거) | **PARTIAL** — 심볼 · 호출 · 정적 SQL · Java `{call}` 연결 |
 
 인덱서는 파일마다 `FULL` / `PARTIAL` / `UNSUPPORTED` 를 기록합니다.
 PARTIAL 대상은 빌드 · UI · 통합 검증 전까지 자동 변경을 보류(`HOLD`)합니다.

@@ -42,7 +42,7 @@
 |------|-----|
 | `generated_at` | `now_kst.py` 실행 결과(KST, `+09:00`). 자정 고정값이나 UTC `Z` 표기는 WARN |
 | `generator` | `deterministic-indexer` / `analyzer` 등 |
-| `version` | 인덱서 버전(현재 `1.11.0`) |
+| `version` | 인덱서 버전(현재 `1.12.0`) |
 | `source_root` | `.` (이식 가능한 인덱스) |
 | `mode` | `init` / `incremental` / `feature-scoped` |
 | `git_commit` | `git rev-parse HEAD` 결과. git 저장소가 아니면 `null` |

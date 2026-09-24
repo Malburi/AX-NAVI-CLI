@@ -15,6 +15,8 @@ export const ADAPTERS = [
   { id: "python", label: "Python", extensions: [".py"], level: "FULL" },
   { id: "go", label: "Go", extensions: [".go"], level: "FULL" },
   { id: "sql", label: "SQL/DDL", extensions: [".sql"], level: "FULL" },
+  /* 정규식 기반이라 오버로드·동적 SQL(EXECUTE IMMEDIATE 변수)·중첩 로컬 프로시저는 근사다. 변경은 HOLD. */
+  { id: "plsql", label: "Oracle PL/SQL", extensions: [".pks", ".pkb", ".pck", ".spc", ".bdy", ".prc", ".fnc", ".trg", ".pls"], level: "PARTIAL" },
   { id: "legacy-web", label: "JSP/Struts/WebForms/markup", extensions: [".xml", ".jsp", ".jspx", ".tag", ".asp", ".aspx", ".ascx", ".ashx", ".asmx", ".xaml", ".cshtml", ".vbhtml", ".razor", ".html", ".htm"], level: "PARTIAL" },
 ];
 
@@ -23,7 +25,7 @@ const EXTENSION_RULES = new Map(ADAPTERS.flatMap((adapter) => adapter.extensions
 export const ADAPTER_SOURCE_EXTENSIONS = new Set(ADAPTERS.flatMap((adapter) => adapter.extensions));
 export const ADAPTER_DISCOVERY_ONLY_EXTENSIONS = new Set([
   ".sln", ".suo", ".fmb", ".mmb", ".olb", ".pbl", ".pbw", ".rpt",
-  ".frm", ".vbp", ".bas", ".cls", ".pkb", ".pks", ".prc",
+  ".frm", ".vbp", ".bas", ".cls",
   ".c", ".cc", ".cpp", ".h", ".hpp", ".rs", ".swift", ".dart", ".scala", ".groovy", ".fs", ".fsx",
 ]);
 
@@ -42,6 +44,7 @@ export function detectAdapters(rel, text = "") {
   if (/\bReact\b|from\s+["']react["']|\.(?:jsx|tsx)$/i.test(rel)) result.add("react");
   if (/<template\b|\bdefineComponent\b|\.(?:vue)$/i.test(rel)) result.add("vue");
   if (/struts|<action\b/i.test(text)) result.add("struts");
+  if (/\.sql$/i.test(rel) && /\bcreate\s+(?:or\s+replace\s+)?(?:(?:non)?editionable\s+)?(?:package|procedure|function|trigger)\b/i.test(text)) result.add("plsql");
   return [...result];
 }
 
@@ -59,6 +62,10 @@ export function buildAdapterCoverage(facts, unsupportedFiles) {
     if (level !== "FULL") current.level = "PARTIAL";
     extensions.set(extension, current);
     for (const id of fact.adapters || []) active.set(id, (active.get(id) || 0) + 1);
+    /* .sql 확장자는 FULL(DDL)이지만 안에 PL/SQL 프로그램 단위가 있으면 그 파일은 PL/SQL과 같은 PARTIAL이다. */
+    if ((fact.adapters || []).includes("plsql") && /\.sql$/i.test(fact.rel)) {
+      partialTargets.push({ path: fact.rel, level: "PARTIAL", reason: "PL/SQL program units (regex-based)" });
+    }
     if ((fact.adapters || []).includes("devexpress") || /\.Designer\.cs$/i.test(fact.rel)) {
       partialTargets.push({ path: fact.rel, level: "PARTIAL", reason: (fact.adapters || []).includes("devexpress") ? "DevExpress designer/component semantics" : "generated WinForms Designer semantics" });
     }

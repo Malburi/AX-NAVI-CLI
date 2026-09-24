@@ -29,6 +29,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
+  ADAPTERS,
   ADAPTER_DISCOVERY_ONLY_EXTENSIONS,
   ADAPTER_SOURCE_EXTENSIONS,
   buildAdapterCoverage,
@@ -36,7 +37,7 @@ import {
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
 
-export const INDEXER_VERSION = "1.11.0"; // AI 패치 보존·파생 흐름 갱신·안정적인 그룹 판정 ID.
+export const INDEXER_VERSION = "1.12.0"; // Oracle PL/SQL 심볼·호출·정적 SQL, Java→프로시저 호출.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
 const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
@@ -518,7 +519,16 @@ function lineOrdered(methods) {
 }
 
 // 문자열과 줄바꿈은 보존하고 주석 문자만 공백으로 바꿔 line/offset을 안정적으로 유지한다.
+/*
+ * SQL 계열은 주석이 `--`이고 문자열 안의 `\`가 이스케이프가 아니다(`'C:\'`가 정상 리터럴).
+ * C 계열 규칙으로 지우면 `-- 옛 로직 UPDATE ...` 같은 주석 처리된 SQL이 살아남고,
+ * `//`를 주석으로 오인해 뒤따르는 코드를 지운다.
+ */
+const PLSQL_EXTENSIONS = new Set(ADAPTERS.find((item) => item.id === "plsql").extensions);
+const SQL_COMMENT_EXTENSIONS = new Set([".sql", ...PLSQL_EXTENSIONS]);
+
 function stripComments(text, ext) {
+  const sql = SQL_COMMENT_EXTENSIONS.has(ext);
   let output = "";
   let state = "code";
   let quote = "";
@@ -532,9 +542,11 @@ function stripComments(text, ext) {
       else output += c === "\n" ? "\n" : " ";
     } else if (state === "string") {
       output += c;
-      if (c === "\\") { output += n || ""; i += 1; }
+      if (c === "\\" && !sql) { output += n || ""; i += 1; }
       else if (c === quote) state = "code";
-    } else if (c === "/" && n === "/") {
+    } else if (sql && c === "-" && n === "-") {
+      output += "  "; i += 1; state = "line";
+    } else if (!sql && c === "/" && n === "/") {
       output += "  "; i += 1; state = "line";
     } else if (c === "/" && n === "*") {
       output += "  "; i += 1; state = "block";
@@ -654,6 +666,175 @@ function extractLegacySymbols(text, clean, rel, workspace) {
 }
 
 /*
+ * Oracle PL/SQL — 패키지 스펙·바디, 독립 프로시저·함수, 트리거.
+ * PL/SQL은 대소문자를 가리지 않으므로 이름을 대문자로 정규화한다. Java의 `{call pkg_order.save}`와
+ * 바디의 `PROCEDURE Save`가 같은 노드로 이어져야 하기 때문이다. 스키마 접두사(`APP.PKG_ORDER`)는
+ * 스펙에는 붙고 바디에는 안 붙는 식으로 파일마다 달라 id에서 빼고 `package` 필드에만 남긴다.
+ * 바디 안의 멤버 범위는 "다음 멤버 선언 직전까지"로 근사한다 — 중첩 로컬 프로시저는 별도 멤버로 잘린다.
+ */
+const PLSQL_UNIT_DETECT = /\bcreate\s+(?:or\s+replace\s+)?(?:(?:non)?editionable\s+)?(?:package|procedure|function|trigger)\b/i;
+const PLSQL_IDENT = String.raw`"?[A-Za-z][\w$#]*"?`;
+const PLSQL_NAME = String.raw`${PLSQL_IDENT}(?:\s*\.\s*${PLSQL_IDENT})?`;
+const PLSQL_UNIT_RE = new RegExp(
+  String.raw`\bcreate\s+(?:or\s+replace\s+)?(?:(?:non)?editionable\s+)?(package\s+body|package|procedure|function|trigger)\s+(${PLSQL_NAME})`
+  + String.raw`|(?:^|\n)[ \t]*(package\s+body|package)\s+(${PLSQL_NAME})\s+(?:authid\s+\w+\s+)?(?:is|as)\b`,
+  "gi",
+);
+const PLSQL_MEMBER_RE = new RegExp(String.raw`\b(procedure|function)\s+(${PLSQL_IDENT})`, "gi");
+const PLSQL_CALL_PART = String.raw`([A-Za-z][\w$#]*)`;
+const PLSQL_CALL_TAIL = String.raw`(?:\s*\.\s*${PLSQL_CALL_PART})?(?:\s*\.\s*${PLSQL_CALL_PART})?`;
+const PLSQL_CALL_PAREN = new RegExp(String.raw`\b${PLSQL_CALL_PART}${PLSQL_CALL_TAIL}\s*\(`, "g");
+/* 괄호 없는 호출(`log_step;`)은 문장 첫머리에서만 인정한다 — `x := y;`의 `y`를 호출로 보지 않는다. */
+const PLSQL_CALL_BARE = new RegExp(String.raw`(?<=(?:^|;|\b(?:begin|then|else|loop))\s*)\b${PLSQL_CALL_PART}${PLSQL_CALL_TAIL}\s*;`, "gim");
+const PLSQL_CALL_SKIP = new Set(["IF", "ELSIF", "WHILE", "FOR", "IN", "AND", "OR", "NOT", "VALUES", "INTO", "RETURN", "WHEN", "END", "NULL", "COMMIT", "ROLLBACK", "RAISE", "EXIT", "CONTINUE", "BEGIN", "EXCEPTION", "EXISTS", "PROCEDURE", "FUNCTION"]);
+
+function isPlsqlSource(ext, clean) {
+  return PLSQL_EXTENSIONS.has(ext) || (ext === ".sql" && PLSQL_UNIT_DETECT.test(clean));
+}
+
+function plsqlName(raw) {
+  const parts = String(raw).replace(/"/g, "").split(".").map((part) => part.trim().toUpperCase()).filter(Boolean);
+  return { schema: parts.length > 1 ? parts.at(-2) : "", name: parts.at(-1) || "" };
+}
+
+/* 문자열 내용을 공백으로 지운다(길이·줄 보존). 동적 SQL 문자열 속 `SELECT`·`pkg.proc(`를 코드로 읽지 않기 위함. */
+function blankSqlStrings(clean) {
+  return clean.replace(/'(?:[^']|'')*'/g, (match) => `'${match.slice(1, -1).replace(/[^\n]/g, " ")}'`);
+}
+
+/* `PROCEDURE x (...) [RETURN t ...] IS|AS` 면 구현, `;`로 끝나면 선언(스펙·전방 선언)이다. */
+function plsqlIsImplementation(code, afterName) {
+  let i = afterName;
+  while (/\s/.test(code[i] || "")) i += 1;
+  if (code[i] === "(") {
+    const close = matchingParen(code, i);
+    if (close < 0) return false;
+    i = close + 1;
+  }
+  const next = code.slice(i, i + 4000).match(/;|\b(?:is|as)\b/i);
+  return Boolean(next && next[0] !== ";");
+}
+
+function extractPlsqlSymbols(text, clean, rel, workspace) {
+  const atLine = lineIndex(text);
+  const code = blankSqlStrings(clean);
+  const base = { file: rel, workspace: workspace.id, origin: "deterministic-indexer" };
+  const units = [...code.matchAll(PLSQL_UNIT_RE)].map((match) => ({
+    kind: (match[1] || match[3]).toLowerCase().replace(/\s+/g, " "),
+    ...plsqlName(match[2] || match[4]),
+    start: match.index + match[0].search(/\S/),
+    headerEnd: match.index + match[0].length,
+  }));
+  units.forEach((unit, i) => { unit.end = units[i + 1]?.start ?? code.length; });
+
+  const symbols = [];
+  const nodes = [];
+  const methods = [];
+  const addMethod = (name, owner, schema, start, end, type = "method") => {
+    const id = symbolId("", owner, name);
+    methods.push({ id, name, owner, package: schema, file: rel, line: atLine(start), start, end, visibility: "unknown", workspace: workspace.id, type });
+  };
+  for (const unit of units) {
+    const line = atLine(unit.start);
+    const pkgFields = unit.schema ? { package: unit.schema } : {};
+    if (unit.kind === "package" || unit.kind === "package body") {
+      const members = [];
+      for (const match of code.slice(unit.headerEnd, unit.end).matchAll(PLSQL_MEMBER_RE)) {
+        const offset = unit.headerEnd + match.index;
+        members.push({ name: plsqlName(match[2]).name, offset, implemented: plsqlIsImplementation(code, offset + match[0].length) });
+      }
+      const listed = unit.kind === "package" ? members : members.filter((item) => item.implemented);
+      if (unit.kind === "package body") {
+        listed.forEach((member, i) => addMethod(member.name, unit.name, unit.schema, member.offset, listed[i + 1]?.offset ?? unit.end));
+      }
+      symbols.push({
+        id: unit.name, type: "package", line, ...pkgFields, ...base, confidence: "MEDIUM",
+        methods: unique(listed, (item) => item.name).map((item) => ({ name: item.name, id: symbolId("", unit.name, item.name), line: atLine(item.offset), visibility: unit.kind === "package" ? "public" : "unknown" })),
+      });
+      nodes.push({ id: unit.name, type: "package", line, ...base, confidence: "MEDIUM" });
+    } else if (unit.kind === "trigger") {
+      const header = code.slice(unit.headerEnd, Math.min(unit.end, unit.headerEnd + 2000));
+      const timing = header.match(new RegExp(String.raw`\b(?:before|after|instead\s+of|for)\b([\s\S]*?)\bon\s+(${PLSQL_NAME})`, "i"));
+      const events = timing ? [...new Set([...timing[1].matchAll(/\b(insert|update|delete)\b/gi)].map((item) => item[1].toUpperCase()))] : [];
+      addMethod(unit.name, "", unit.schema, unit.start, unit.end, "db_trigger");
+      symbols.push({ id: unit.name, type: "db_trigger", line, ...pkgFields, ...(timing ? { trigger_table: plsqlName(timing[2]).name } : {}), ...(events.length ? { trigger_events: events } : {}), ...base, confidence: "MEDIUM" });
+      nodes.push({ id: unit.name, type: "db_trigger", line, ...base, confidence: "MEDIUM" });
+    } else {
+      addMethod(unit.name, "", unit.schema, unit.start, unit.end);
+      symbols.push({ id: unit.name, type: unit.kind, line, ...pkgFields, ...base, confidence: "MEDIUM" });
+    }
+  }
+  /* 오버로드는 같은 id로 여러 범위를 갖는다 — 범위는 모두 남기고 노드는 하나만 만든다. */
+  for (const method of unique(methods.filter((item) => item.type === "method"), (item) => item.id)) {
+    nodes.push({ id: method.id, type: "method", line: method.line, visibility: method.visibility, ...base, confidence: "MEDIUM" });
+  }
+
+  const callSites = [];
+  for (const method of methods) {
+    const body = code.slice(method.start, method.end);
+    for (const regex of [PLSQL_CALL_PAREN, PLSQL_CALL_BARE]) {
+      for (const match of body.matchAll(regex)) {
+        const parts = [match[1], match[2], match[3]].filter(Boolean).map((part) => part.toUpperCase());
+        const name = parts.at(-1);
+        if (PLSQL_CALL_SKIP.has(parts[0]) || PLSQL_CALL_SKIP.has(name)) continue;
+        if (name === method.name && match.index < 200) continue;
+        callSites.push({ caller: method.id, name, qualifier: parts.length > 1 ? parts.at(-2) : "", file: rel, line: atLine(method.start + match.index), workspace: workspace.id });
+      }
+    }
+  }
+  return { symbols, nodes, methods, callSites, injects: [], fields: [], classes: [] };
+}
+
+/*
+ * PL/SQL 본문의 정적 SQL. 문자열이 아니라 맨 문장이라 extractSql의 리터럴 스캔이 못 잡는다.
+ * 멤버 본문 안의 문장만 인정한다 — 같은 .sql에 섞인 시드 데이터 INSERT 수천 줄은 사용처가 아니다.
+ * `SELECT a INTO v_a FROM t`의 INTO 절, `RETURNING id INTO v_id`는 테이블이 아니므로 떼고 센다.
+ */
+function extractPlsqlSql(text, clean, rel, methods) {
+  const atLine = lineIndex(text);
+  const code = blankSqlStrings(clean);
+  const sqls = [];
+  const usages = [];
+  const relations = [];
+  let consumed = 0;
+  for (const match of code.matchAll(/\b(select|insert|update|delete|merge)\b/gi)) {
+    if (match.index < consumed) continue;
+    const owner = enclosingMethod(methods, match.index);
+    if (!owner) continue;
+    let back = match.index - 1;
+    while (back >= 0 && /\s/.test(code[back])) back -= 1;
+    const open = code[back] === "(" ? back : -1;
+    const close = open >= 0 ? matchingParen(code, open) : -1;
+    const semicolon = code.indexOf(";", match.index);
+    const end = close >= 0 ? close : semicolon >= 0 ? semicolon : owner.end;
+    let statement = code.slice(match.index, end);
+    /* 오라클은 `DELETE tbl WHERE ...`처럼 FROM을 생략할 수 있다. 트리거 머리의 `DELETE ON`·`DELETE OR`는 제외. */
+    if (/^delete\s+(?!from\b|on\b|or\b)[\w.$"]+/i.test(statement)) statement = statement.replace(/^delete\s+/i, "DELETE FROM ");
+    const type = sqlStatementType(statement);
+    if (!type) continue;
+    consumed = end;
+    const forTables = type === "select"
+      ? statement.replace(/\b(?:bulk\s+collect\s+)?into\b[\s\S]*?(?=\bfrom\b)/i, " ")
+      : statement.replace(/\breturning\b[\s\S]*$/i, " ");
+    const using = type === "merge" ? [...forTables.matchAll(/\busing\s+([\w.$"]+)/gi)].map((item) => item[1].replace(/"/g, "")) : [];
+    const line = atLine(match.index);
+    const id = `${rel}:${line}:plsql`;
+    sqls.push({ id, file: rel, line, type, tables: [...new Set([...sqlTables(forTables), ...using])], text_preview: clean.slice(match.index, end).replace(/\s+/g, " ").trim().slice(0, 240), origin: "deterministic-indexer", confidence: "MEDIUM" });
+    relations.push(...extractSqlRelations(forTables, { sql_id: id, file: rel, line }));
+    usages.push({ sql_id: id, file: rel, line, method: owner.id, evidence: "PL/SQL 본문 내 정적 SQL", origin: "deterministic-indexer", confidence: "HIGH" });
+  }
+  return { sqls, usages, relations };
+}
+
+/* `{call PKG.PROC(?)}`·`{? = call F(?)}`·`BEGIN PKG.PROC(?); END;` — JDBC·MyBatis·ADO.NET이 프로시저를 부르는 모양. */
+const PROCEDURE_CALL_TEXT = new RegExp(String.raw`^\s*(?:\{\s*(?:\?\s*=\s*)?call\s+|begin\s+)((?:${PLSQL_IDENT}\s*\.\s*){0,2}${PLSQL_IDENT})\s*[(;}]`, "i");
+
+function procedureTarget(raw) {
+  const parts = String(raw).replace(/"/g, "").split(".").map((part) => part.trim().toUpperCase()).filter(Boolean);
+  return { name: parts.at(-1), qualifier: parts.length > 1 ? parts.at(-2) : "" };
+}
+
+/*
  * multiline 정규식에서 `^\s*`를 쓰면 안 된다 — `\s`는 개행을 포함하므로 `^`가 **앞쪽 빈 줄**에서
  * 매치된 뒤 `\s*`가 그 개행을 삼켜, `match.index`가 실제 정의보다 위쪽 빈 줄을 가리킨다.
  * 파이썬처럼 정의 사이에 빈 줄을 두는 것이 표준인 언어에서는 사실상 모든 심볼의 줄 번호가
@@ -662,6 +843,7 @@ function extractLegacySymbols(text, clean, rel, workspace) {
  */
 function extractSymbols(text, clean, rel, workspace) {
   const ext = extname(rel).toLowerCase();
+  if (isPlsqlSource(ext, clean)) return extractPlsqlSymbols(text, clean, rel, workspace);
   if (!STRUCTURED_SOURCE_EXTENSIONS.includes(ext)) {
     return extractLegacySymbols(text, clean, rel, workspace);
   }
@@ -1327,7 +1509,9 @@ function extractSql(text, clean, rel, methods) {
      */
     if (!namespace && !sqlStatementType(match[3])) continue;
     const id = namespace ? `${namespace}.${match[2]}` : match[2];
-    sqls.push({ id, file: rel, line: atLine(match.index), type: match[1].toLowerCase(), tables: [...new Set(sqlTables(match[3]))], text_preview: match[3].replace(/\s+/g, " ").trim().slice(0, 240), origin: "deterministic-indexer", confidence: "HIGH" });
+    /* statementType="CALLABLE"의 `{call PKG.PROC(...)}` — 이 SQL id를 쓰는 메서드가 프로시저를 부른다(aggregate가 잇는다). */
+    const callable = match[3].replace(/<!\[CDATA\[/g, "").match(PROCEDURE_CALL_TEXT)?.[1];
+    sqls.push({ id, file: rel, line: atLine(match.index), type: match[1].toLowerCase(), tables: [...new Set(sqlTables(match[3]))], text_preview: match[3].replace(/\s+/g, " ").trim().slice(0, 240), ...(callable ? { procedure: callable.replace(/"/g, "").replace(/\s+/g, "").toUpperCase() } : {}), origin: "deterministic-indexer", confidence: "HIGH" });
     relations.push(...extractSqlRelations(match[3], { sql_id: id, file: rel, line: atLine(match.index) }));
     if (namespace) usages.push({ sql_id: id, file: rel, line: atLine(match.index), method: id, evidence: "MyBatis mapper namespace + statement id", origin: "deterministic-indexer", confidence: "HIGH" });
   }
@@ -1360,7 +1544,11 @@ function extractSql(text, clean, rel, methods) {
     const decorated = nextMethod(methods, atLine(match.index));
     if (decorated) usages.push({ sql_id: id, file: rel, line: atLine(match.index), method: decorated.id, evidence: "SQL 애노테이션이 데코레이트한 메서드", origin: "deterministic-indexer", confidence: "MEDIUM" });
   }
+  const procedureCalls = [];
   for (const lit of extractStringLiterals(clean)) {
+    const callable = lit.content.match(PROCEDURE_CALL_TEXT)?.[1];
+    const caller = callable && enclosingMethod(methods, lit.start);
+    if (caller) procedureCalls.push({ caller: caller.id, ...procedureTarget(callable), file: rel, line: atLine(lit.start) });
     if (lit.content.length < 8 || lit.content.length > 1000) continue;
     const normalized = lit.content.replace(/\\(?:r|n|t)/g, " ").replace(/\s+/g, " ").trim();
     const type = normalized.match(/^select\s+[\s\S]+?\s+from\s+[\w$`"[\].]+(?:\s|$)/i) ? "select"
@@ -1384,7 +1572,7 @@ function extractSql(text, clean, rel, methods) {
     const line = atLine(match.index);
     usages.push({ sql_id: match[1], file: rel, line, method: nextMethod(methods, line)?.id || "unknown", evidence: "쿼리 ID 상수 참조", candidate: true, origin: "deterministic-indexer", confidence: "HIGH" });
   }
-  return { sqls, usages, relations };
+  return { sqls, usages, relations, procedureCalls };
 }
 
 function extractTransactions(text, clean, rel, workspace, methods) {
@@ -1674,6 +1862,11 @@ function analyzeFile(file, root, config) {
   const symbolFacts = extractSymbols(text, clean, file.rel, workspace);
   const nexacro = extractNexacro(text, file.rel, workspace);
   const api = extractApi(text, clean, file.rel, workspace, symbolFacts.methods, symbolFacts.classes);
+  const sql = extractSql(text, clean, file.rel, symbolFacts.methods);
+  if (isPlsqlSource(ext, clean)) {
+    const plsql = extractPlsqlSql(text, clean, file.rel, symbolFacts.methods);
+    sql.sqls.push(...plsql.sqls); sql.usages.push(...plsql.usages); sql.relations.push(...plsql.relations);
+  }
   return {
     rel: file.rel,
     encoding: { label: decoded.encoding, detected_by: decoded.detected_by },
@@ -1690,7 +1883,7 @@ function analyzeFile(file, root, config) {
     endpoints: api.endpoints,
     consumers: [...api.consumers, ...nexacro.consumers],
     uiFlow: nexacro.uiFlow,
-    ...extractSql(text, clean, file.rel, symbolFacts.methods),
+    ...sql,
     boundaries: extractTransactions(text, clean, file.rel, workspace, symbolFacts.methods),
     communications: extractExternalIo(text, clean, file.rel, workspace, symbolFacts.methods),
     env: extractEnv(text, clean, file.rel, workspace),
@@ -1861,6 +2054,22 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   const bindings = facts.flatMap((item) => item.bindings || []);
   const nodes = unique([...facts.flatMap((item) => item.nodes), ...bindings.map((item) => ({ id: `trigger:${item.trigger}`, type: "trigger", file: item.file, line: item.line, workspace: item.workspace, origin: "deterministic-indexer", confidence: "HIGH" }))], (item) => item.id);
   const callSites = facts.flatMap((item) => item.callSites);
+  /*
+   * Java·C# → 저장 프로시저. 문자열의 `{call PKG.PROC}`은 extractSql이 호출 위치까지 남기고,
+   * MyBatis CALLABLE 매퍼는 그 SQL id를 쓰는 메서드에서 부른 것으로 본다. 이름 해석은 일반 호출과 같다.
+   */
+  const callableSqls = new Map(facts.flatMap((item) => item.sqls).filter((item) => item.procedure).map((item) => [item.id, item.procedure]));
+  const seenCallableUsage = new Set();
+  for (const fact of facts) {
+    for (const call of fact.procedureCalls || []) callSites.push({ ...call, workspace: workspaceFor(call.file, config).id });
+    for (const usage of fact.usages) {
+      const target = callableSqls.get(usage.sql_id);
+      const key = `${usage.sql_id}:${usage.file}:${usage.line}`;
+      if (!target || usage.method === "unknown" || usage.method === usage.sql_id || seenCallableUsage.has(key)) continue;
+      seenCallableUsage.add(key);
+      callSites.push({ caller: usage.method, ...procedureTarget(target), file: usage.file, line: usage.line, workspace: workspaceFor(usage.file, config).id });
+    }
+  }
   const injects = facts.flatMap((item) => item.injects);
   /*
    * 한정자 → 타입 사전. `owner클래스::필드명` → 타입명.
@@ -1970,7 +2179,7 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
      * `setup()` 안에서 지역 함수 `setPassword`를 바로 호출하는 경우가 정확히 이 패턴이었고,
      * 실제로 같은 파일의 그 함수를 가리키는 게 맞았다).
      */
-    const sameOwnerSafeExt = [".java", ".kt", ".kts", ".cs", ".vue", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"];
+    const sameOwnerSafeExt = [".java", ".kt", ".kts", ".cs", ".vue", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ...SQL_COMMENT_EXTENSIONS];
     if (!call.qualifier && candidates.length > 1 && sameOwnerSafeExt.includes(extname(call.file).toLowerCase())) {
       const callerOwner = ownerIdOf(call.caller);
       const sameClass = candidates.filter((item) => ownerIdOf(item.id) === callerOwner);
