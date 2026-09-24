@@ -1619,6 +1619,15 @@ function extractTransactions(text, clean, rel, workspace, methods) {
   return boundaries;
 }
 
+const IO_CLIENT_TYPES = new Map([
+  ["RestTemplate", "http"], ["WebClient", "http"], ["HttpClient", "http"],
+  ["KafkaTemplate", "kafka_producer"], ["KafkaProducer", "kafka_producer"],
+  ["RedisTemplate", "redis"], ["StringRedisTemplate", "redis"],
+  ["JavaMailSender", "mail"],
+]);
+/* `RestTemplate rest;`·`KafkaTemplate<String, Map<String, Object>> kafka =`·생성자 파라미터 `(HttpClient http,` */
+const IO_CLIENT_DECLARATION = new RegExp(String.raw`\b(${[...IO_CLIENT_TYPES.keys()].join("|")})(?:<[^;=(){}]*>)?\s+([A-Za-z_$][\w$]*)\s*[;=),]`, "g");
+
 function extractExternalIo(text, clean, rel, workspace, methods) {
   const atLine = lineIndex(text);
   const communications = [];
@@ -1631,10 +1640,34 @@ function extractExternalIo(text, clean, rel, workspace, methods) {
     ["redis", /\b(RedisTemplate|StringRedisTemplate|ioredis|redis\.createClient)\b/g],
     ["mail", /\b(JavaMailSender|smtplib|nodemailer)\b/g],
   ];
+  /*
+   * 주입·필드로 받은 클라이언트의 호출. `private final RestTemplate restTemplate;` 뒤의
+   * `restTemplate.postForObject("http://erp/api", ...)`는 호출 줄에 타입 이름이 없어 위 패턴이 못 잡고,
+   * 대신 필드 선언 줄이 통신으로 남아 엉뚱한 메서드에 붙었다. 선언에서 변수 → 통신 종류를 모으고
+   * 메서드 본문 안의 `변수.메서드(` 호출을 기록한다. 첫 인자가 문자열이면 그것(URL·토픽)이 대상이다.
+   */
+  const clientTypeOf = new Map();
+  for (const match of clean.matchAll(IO_CLIENT_DECLARATION)) clientTypeOf.set(match[2], match[1]);
+  const callTypes = new Set();
+  if (clientTypeOf.size) {
+    const names = [...clientTypeOf.keys()].map((name) => name.replace(/\$/g, "\\$")).join("|");
+    for (const match of clean.matchAll(new RegExp(String.raw`\b(${names})\s*\.\s*(\w+)\s*\(`, "g"))) {
+      const owner = enclosingMethod(methods, match.index);
+      if (!owner) continue;
+      const clientType = clientTypeOf.get(match[1]);
+      const type = IO_CLIENT_TYPES.get(clientType);
+      const literal = clean.slice(match.index + match[0].length, match.index + match[0].length + 300).match(/^\s*(["'`])([^"'`\n]{1,200})\1/)?.[2];
+      callTypes.add(type);
+      communications.push({ id: `${rel}:${atLine(match.index)}:${type}`, type, file: rel, line: atLine(match.index), method: owner.id, target: literal || clientType, workspace: workspace.id, origin: "deterministic-indexer", confidence: "MEDIUM" });
+    }
+  }
   for (const [type, regex] of patterns) {
     for (const match of clean.matchAll(regex)) {
       /* 본문 안 호출(RestTemplate 등)은 감싸는 메서드, 메서드 위 애너테이션(@KafkaListener)은 다음 메서드다. */
-      const owner = enclosingMethod(methods, match.index) || nextMethod(methods, atLine(match.index));
+      const enclosing = enclosingMethod(methods, match.index);
+      /* 호출을 이미 잡았으면 본문 밖 타입 이름(import·필드 선언)은 통신이 아니다. 못 잡았으면 탐지를 잃지 않게 남긴다. */
+      if (!enclosing && callTypes.has(type)) continue;
+      const owner = enclosing || nextMethod(methods, atLine(match.index));
       communications.push({ id: `${rel}:${atLine(match.index)}:${type}`, type, file: rel, line: atLine(match.index), method: owner?.id || "", target: quotedValue(match[1]) || match[1] || "unknown", workspace: workspace.id, origin: "deterministic-indexer", confidence: "MEDIUM" });
     }
   }

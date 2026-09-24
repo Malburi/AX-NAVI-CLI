@@ -1414,6 +1414,50 @@ public class OrderDao {
     }
   });
 
+  register("필드·생성자로 주입된 클라이언트의 호출 줄을 외부 통신으로 잡고 선언 줄은 뺀다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-io-client-"));
+    try {
+      write(root, "src/ErpClient.java", `package com.acme;
+import org.springframework.web.client.RestTemplate;
+@Service
+@RequiredArgsConstructor
+public class ErpClient {
+  private final RestTemplate restTemplate;
+  private final KafkaTemplate<String, Map<String, Object>> kafka;
+  public String send(long id) {
+    log.info("send");
+    return restTemplate.postForObject("http://erp/api/orders", id, String.class);
+  }
+  public void publish(Object evt) {
+    kafka.send("order-events", evt);
+  }
+}
+`);
+      write(root, "src/PayClient.cs", `public class PayClient {
+  private readonly HttpClient _http;
+  public async Task<string> Pay(int id) {
+    var res = await _http.GetAsync("https://pg/pay");
+    return "ok";
+  }
+}
+`);
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const io = json(root, "external_io.json").communications;
+      const at = (file, line) => io.filter((item) => item.file === file && item.line === line);
+      assert.equal(at("src/ErpClient.java", 10)[0]?.method, "com.acme.ErpClient.send", JSON.stringify(io));
+      assert.equal(at("src/ErpClient.java", 10)[0]?.target, "http://erp/api/orders");
+      assert.equal(at("src/ErpClient.java", 13)[0]?.type, "kafka_producer");
+      assert.equal(at("src/ErpClient.java", 13)[0]?.target, "order-events");
+      assert.equal(at("src/PayClient.cs", 4)[0]?.method, "PayClient.Pay");
+      assert.equal(at("src/PayClient.cs", 4)[0]?.target, "https://pg/pay");
+      for (const [file, line] of [["src/ErpClient.java", 2], ["src/ErpClient.java", 6], ["src/ErpClient.java", 7], ["src/PayClient.cs", 2]]) {
+        assert.equal(at(file, line).length, 0, `import·필드 선언 줄은 통신이 아니다: ${file}:${line} ${JSON.stringify(io)}`);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("iBatis sqlMap은 namespace를 붙인 id로 잇고, <procedure>는 Java→프로시저 호출 엣지가 된다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-ibatis-"));
     try {
