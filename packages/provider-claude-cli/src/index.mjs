@@ -607,6 +607,13 @@ export function delegatedEnv(base, options) {
   return {
     ...base,
     ...(base["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] ? {} : { CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: BACKGROUND_WAIT_CEILING_MS }),
+    /*
+     * MCP 도구 호출의 무응답 제한(기본 30분)을 끈다. 우리 MCP 도구는 승인 창·질문이라 사람이 답할
+     * 때까지 블록되는 것이 정상이다 — 자리를 비운 사이 "Approve sent no response or progress for
+     * 1800s; aborting" 으로 끊겨 그 명령이 실패하고 오케스트레이터가 30분을 잃었다(2026-09-24 실측).
+     * 값은 claude 가 오류에서 직접 안내한 것이다(0 = 끔). 사용자가 정했으면 따른다.
+     */
+    ...(base["CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT"] ? {} : { CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: "0" }),
     ...(options.pluginDir ? { CLAUDE_PLUGIN_ROOT: options.pluginDir } : {}),
     ...options.env,
   };
@@ -741,6 +748,12 @@ export function toolBriefing(tools, allowDelegation = false) {
    */
   if (allowDelegation) {
     lines.push("Task(=Agent) 로 서브에이전트에 위임할 수 있다. subagent_type 은 ax-navi:<에이전트이름> 형식이다.");
+    /*
+     * 백그라운드 서브에이전트는 이 실행에서 승인 창에 닿지 못해 쓰기·명령이 자동 거부된다(실측:
+     * 인덱싱·analyzer 5개가 거부로 실패, 같은 일을 포그라운드로 하자 됐다). 병렬은 한 메시지에
+     * 여러 호출을 함께 보내면 포그라운드로도 된다 — 그러면 결과를 받을 때까지 턴도 기다린다.
+     */
+    lines.push("서브에이전트를 run_in_background 로 띄우지 마라 — 이 실행에서 백그라운드 서브에이전트는 승인 창을 받을 수 없어 쓰기·명령이 거부된다. 병렬이 필요하면 한 메시지에 Agent 호출 여러 개를 함께 보내라.");
   }
   if (!names.includes("Edit")) {
     lines.push("Edit·MultiEdit 은 이 실행에 없다(서브에이전트도 마찬가지). 파일을 고치려면 Read 로 읽고 Write 로 전체를 다시 써라.");

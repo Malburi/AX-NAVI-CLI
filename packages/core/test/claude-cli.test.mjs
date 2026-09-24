@@ -293,3 +293,13 @@ test("백그라운드 셸 명령이 정리된 것은 미완료가 아니다 — 
   watch.observe({ type: "system", subtype: "task_updated", task_id: "b1", patch: { status: "killed" } });
   assert.deepEqual(watch.unfinished(), []);
 });
+
+test("MCP 도구 무응답 제한을 끈다 — 승인 창이 30분 뒤 끊기면 그 명령이 실패한다", () => {
+  assert.equal(delegatedEnv({}, {})["CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT"], "0");
+  assert.equal(delegatedEnv({ CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: "60000" }, {})["CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT"], "60000", "사용자 값은 존중");
+});
+
+test("위임 실행에서는 서브에이전트를 백그라운드로 띄우지 말라고 알린다", () => {
+  assert.match(toolBriefing(tools(["Read"]), true), /run_in_background 로 띄우지 마라/);
+  assert.doesNotMatch(toolBriefing(tools(["Read"]), false), /run_in_background/, "위임이 없는 실행에는 필요 없다");
+});
