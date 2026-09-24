@@ -164,9 +164,11 @@ test("스킬 본문을 넣는 자리마다 치환을 거친다", () => {
   assert.equal(raw, 0, "치환 없이 본문을 그대로 넣는 자리가 남았다");
 });
 
-test("위임 프로세스에 CLAUDE_PLUGIN_ROOT 를 채워 준다 — 두 번째 방어선", () => {
+test("위임 프로세스에 CLAUDE_PLUGIN_ROOT 를 채워 준다 — 두 번째 방어선", async () => {
   const src = readFileSync(join(REPO, "packages", "provider-claude-cli", "src", "index.mjs"), "utf8");
-  assert.match(src, /CLAUDE_PLUGIN_ROOT: this\.options\.pluginDir/);
+  assert.match(src, /env: delegatedEnv\(process\.env, this\.options\)/, "위임 프로세스가 delegatedEnv 를 거치지 않는다");
+  const { delegatedEnv } = await import("../../provider-claude-cli/src/index.mjs");
+  assert.equal(delegatedEnv({}, { pluginDir: "C:/axnavi" })["CLAUDE_PLUGIN_ROOT"], "C:/axnavi");
 });
 
 /* ---------- 무응답과 스킵 ---------- */

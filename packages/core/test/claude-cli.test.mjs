@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDelegatedArgs, flattenToolContent, toDisallowedTools, toolBriefing, translateEvent } from "../../provider-claude-cli/src/index.mjs";
+import { BACKGROUND_WAIT_CEILING_MS, buildDelegatedArgs, createBackgroundWatch, delegatedEnv, flattenToolContent, toDisallowedTools, toolBriefing, translateEvent } from "../../provider-claude-cli/src/index.mjs";
 
 /** @param {string[]} names */
 const tools = (names) =>
@@ -237,4 +237,41 @@ test("assistant 메시지마다 세션을 다시 내보내지는 않는다", () 
 test("result 에서도 여전히 받는다 — 첫머리를 놓친 경우의 마지막 기회다", () => {
   const events = translateEvent({ type: "result", subtype: "success", session_id: "s2", usage: {} });
   assert.ok(events.some((e) => e.type === "session" && /** @type {any} */ (e).id === "s2"));
+});
+
+test("백그라운드 대기 상한을 넉넉히 준다 — 기본 10분이면 레거시 Full 분석의 analyzer 가 죽는다", () => {
+  const env = delegatedEnv({ PATH: "x" }, { pluginDir: "C:/p" });
+  assert.equal(env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"], BACKGROUND_WAIT_CEILING_MS);
+  assert.ok(Number(BACKGROUND_WAIT_CEILING_MS) > 10 * 60 * 1000);
+  assert.equal(env["CLAUDE_PLUGIN_ROOT"], "C:/p");
+});
+
+test("사용자가 정한 대기 상한은 덮어쓰지 않는다", () => {
+  const env = delegatedEnv({ CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: "5000" }, {});
+  assert.equal(env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"], "5000");
+});
+
+test("상한에 걸려 죽은 백그라운드 작업을 가려낸다 — claude 의 result 는 success 여도", () => {
+  // 실측 스트림 모양(상한 5초·45초 작업): task_started → task_updated(killed) → task_notification(stopped) → result success
+  const watch = createBackgroundWatch();
+  watch.observe({ type: "system", subtype: "task_started", task_id: "a1", description: "B-A · analyzer", is_backgrounded: true });
+  watch.observe({ type: "system", subtype: "task_updated", task_id: "a1", patch: { status: "killed" } });
+  watch.observe({ type: "system", subtype: "task_notification", task_id: "a1", status: "stopped" });
+  watch.observe({ type: "result", subtype: "success" });
+  assert.deepEqual(watch.unfinished(), ["B-A · analyzer"]);
+});
+
+test("모델이 스스로 TaskStop 으로 멈춘 작업은 미완료로 보지 않는다", () => {
+  const watch = createBackgroundWatch();
+  watch.observe({ type: "system", subtype: "task_started", task_id: "a2", description: "x" });
+  watch.observe({ type: "assistant", message: { content: [{ type: "tool_use", id: "t", name: "TaskStop", input: { task_id: "a2" } }] } });
+  watch.observe({ type: "system", subtype: "task_updated", task_id: "a2", patch: { status: "killed" } });
+  assert.deepEqual(watch.unfinished(), []);
+});
+
+test("정상으로 끝난 백그라운드 작업은 미완료가 아니다", () => {
+  const watch = createBackgroundWatch();
+  watch.observe({ type: "system", subtype: "task_started", task_id: "a3", description: "y" });
+  watch.observe({ type: "system", subtype: "task_updated", task_id: "a3", patch: { status: "completed" } });
+  assert.deepEqual(watch.unfinished(), []);
 });

@@ -469,13 +469,10 @@ export class ClaudeCliProvider {
        * scaffold-feature 가 "인덱싱 스크립트 경로를 확보하지 못해 갱신 못함"이라 보고).
        * 값은 우리 설치 경로다 — 스크립트가 실제로 거기 있다.
        */
-      env: {
-        ...process.env,
-        ...(this.options.pluginDir ? { CLAUDE_PLUGIN_ROOT: this.options.pluginDir } : {}),
-        ...this.options.env,
-      },
+      env: delegatedEnv(process.env, this.options),
     });
     child.stdin.end(payload, "utf8");
+    const background = createBackgroundWatch();
 
     const onAbort = () => terminateTree(child);
     signal?.addEventListener("abort", onAbort, { once: true });
@@ -498,7 +495,9 @@ export class ClaudeCliProvider {
       const text = line.trim();
       if (!text.startsWith("{")) return;
       try {
-        pending.push(...translateEvent(JSON.parse(text)));
+        const msg = JSON.parse(text);
+        background.observe(msg);
+        pending.push(...translateEvent(msg));
         wake();
       } catch {
         // 파싱 실패한 줄은 버리되 조용히 넘어가지 않도록 stderr에 남긴다.
@@ -528,6 +527,18 @@ export class ClaudeCliProvider {
        * 단, 사용자가 끊은 경우는 제외한다 — 우리가 죽여 놓고 "claude 종료 코드 1"을
        * 오류라고 알리는 것은 사실이 아니다(실측: 중단할 때마다 불필요한 오류가 찍혔다).
        */
+      /* 상한에 걸려 죽은 백그라운드 작업이 있으면 claude 가 success 라고 해도 완료가 아니다. */
+      const unfinished = signal?.aborted ? [] : background.unfinished();
+      if (unfinished.length) {
+        yield {
+          type: "error",
+          error: {
+            kind: "unknown",
+            message: `백그라운드 작업 ${unfinished.length}개가 끝나기 전에 중단됐습니다(claude -p 대기 상한 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS). 결과가 버려져 이 실행은 완료되지 않았습니다: ${unfinished.join(", ")}`,
+            retryable: false,
+          },
+        };
+      }
       if (exitCode !== 0 && exitCode !== null && !signal?.aborted) {
         yield {
           type: "error",
@@ -566,6 +577,68 @@ export class ClaudeCliProvider {
 
   /** @returns {Promise<void>} */
   async cancel() {}
+}
+
+/*
+ * `claude -p` 의 백그라운드 대기 상한.
+ *
+ * 헤드리스 claude 는 메인 턴이 끝난 뒤에도 백그라운드 서브에이전트를 기다리지만, 기다리며 쉬는
+ * 시간이 기본 10분(CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=600000)을 넘으면 **돌던 작업을 죽이고
+ * 부분 결과를 버린 채 success 로 끝난다.** 페어 harness-init 에서 오케스트레이터가 analyzer 둘을
+ * 백그라운드로 띄우고 턴을 마치자 정확히 10분 뒤 둘 다 죽고 axnavi 는 종료 코드 0 으로 끝났다
+ * (실측 2회: 10m 13s·10m 9s / 17:19→17:29). 레거시 Full 분석은 10분을 쉽게 넘으므로 넉넉히 준다.
+ * 사용자가 값을 정해 뒀으면 그것을 따른다.
+ */
+export const BACKGROUND_WAIT_CEILING_MS = String(6 * 60 * 60 * 1000);
+
+/**
+ * 위임 실행의 환경 변수.
+ * @param {NodeJS.ProcessEnv} base
+ * @param {{ pluginDir?: string, env?: Record<string, string> }} options
+ * @returns {NodeJS.ProcessEnv}
+ */
+export function delegatedEnv(base, options) {
+  return {
+    ...base,
+    ...(base["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] ? {} : { CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: BACKGROUND_WAIT_CEILING_MS }),
+    ...(options.pluginDir ? { CLAUDE_PLUGIN_ROOT: options.pluginDir } : {}),
+    ...options.env,
+  };
+}
+
+/**
+ * 끝나기 전에 죽은 백그라운드 작업을 가려낸다.
+ *
+ * 상한에 걸려 죽어도 claude 의 result 는 success 다. 스트림의 `system/task_updated`
+ * (`patch.status: "killed"`)만이 그 사실을 알려 준다. 모델이 스스로 TaskStop 으로 멈춘 것은
+ * 의도한 중단이라 뺀다. 남는 것이 있으면 이 실행은 완료되지 않은 것이다.
+ */
+export function createBackgroundWatch() {
+  /** @type {Map<string, string>} */
+  const described = new Map();
+  /** @type {Set<string>} */
+  const killed = new Set();
+  /** @type {Set<string>} */
+  const stoppedByModel = new Set();
+  return {
+    /** @param {any} msg */
+    observe(msg) {
+      if (msg?.type === "system" && msg.subtype === "task_started" && msg.task_id) described.set(msg.task_id, String(msg.description || msg.task_id));
+      if (msg?.type === "system" && msg.subtype === "task_updated" && msg.patch?.status === "killed" && msg.task_id) killed.add(msg.task_id);
+      if (msg?.type === "assistant") {
+        for (const block of msg.message?.content || []) {
+          if (block?.type === "tool_use" && block.name === "TaskStop") {
+            const id = block.input?.task_id ?? block.input?.shell_id;
+            if (id) stoppedByModel.add(String(id));
+          }
+        }
+      }
+    },
+    /** @returns {string[]} 의도치 않게 중단된 작업 설명 */
+    unfinished() {
+      return [...killed].filter((id) => !stoppedByModel.has(id)).map((id) => described.get(id) ?? id);
+    },
+  };
 }
 
 /**
