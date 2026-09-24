@@ -1,4 +1,6 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pythonBin } from "../python-bin.mjs";
 
@@ -61,6 +63,28 @@ export async function test(register, assert) {
     if (bin) {
       /* 두 번째 호출은 캐시에서 같은 값이 나와야 한다(매 호출마다 프로세스를 띄우지 않는다). */
       assert.equal(pythonBin(), bin, "결과가 캐시돼야 함");
+    }
+  });
+
+  register("스택 사전 점검은 벤더·점 폴더의 파일을 스택 근거로 쓰지 않는다", () => {
+    const bin = pythonBin();
+    if (!bin) return; // 파이썬이 없는 환경 — python-bin 테스트가 사유를 남긴다
+    /* 실측: fck_editor/editor/filemanager/connectors/py/*.py 12개만으로 jQuery/HTML 저장소를 python_web으로 판정했다. */
+    const root = mkdtempSync(join(tmpdir(), "ax-precheck-"));
+    try {
+      const put = (rel, text) => { mkdirSync(join(root, rel, ".."), { recursive: true }); writeFileSync(join(root, rel), text); };
+      put("html/fck_editor/editor/filemanager/connectors/py/connector.py", "import os\n");
+      put(".settings/tool.py", "x = 1\n");
+      put("html/script/js/forms.js", "function Forms() {}\n");
+      execFileSync(bin, [join(ROOT, "agents", "lib", "stack_precheck.py"), "--root", root], { encoding: "utf8" });
+      const result = JSON.parse(readFileSync(join(root, "_workspace", "00_stack_precheck.json"), "utf8"));
+      assert.equal(result.extractors.length, 0, JSON.stringify(result.extractors));
+      put("app/service.py", "def run():\n    return 1\n");
+      execFileSync(bin, [join(ROOT, "agents", "lib", "stack_precheck.py"), "--root", root], { encoding: "utf8" });
+      const again = JSON.parse(readFileSync(join(root, "_workspace", "00_stack_precheck.json"), "utf8"));
+      assert.equal(again.extractors[0]?.stack, "python_web", "우리 코드의 .py는 그대로 근거다");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 }

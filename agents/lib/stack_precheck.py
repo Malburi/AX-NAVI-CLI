@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import argparse
+import re
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -11,16 +12,29 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 from now_kst import now_kst
 
-SKIP_DIRS = {".git", "node_modules", "target", "build", "dist", "out", ".idea", ".vscode", "__pycache__", "bin", "obj"}
+SKIP_DIRS = {".git", "node_modules", "target", "build", "dist", "out", ".idea", ".vscode", "__pycache__", "bin", "obj", "_workspace", "_workspace_prev"}
+
+# 벤더 라이브러리 폴더 — build-index.mjs의 VENDOR_DIR과 같은 목록이다(한쪽을 바꾸면 같이 바꾼다).
+# 이게 없어서 fck_editor/editor/filemanager/connectors/py/*.py 12개만으로 jQuery/HTML 저장소를
+# python_web으로 판정했다(2026-09-24 계열사 실측).
+VENDOR_DIR = re.compile(
+    r"^(?:ckeditor|fckeditor|fck_editor|smarteditor\d*|tinymce|summernote|jquery|jquery[-_.][\w.-]*|bootstrap|fullcalendar|datatables|highcharts|chartjs|swiper|slick|owlcarousel|select2|moment|lodash|underscore|backbone|prototype|scriptaculous|modernizr|codemirror|ace-builds|webuploader|jszip|xlsx|nivo-slider|dynatree|jplayer|videojs|booklet|vkeyboard|jscalendar|jqgrid)(?:[-_.][\w.-]*)?$",
+    re.IGNORECASE,
+)
+
+
+def _skip_dir(name):
+    """`.settings` 같은 점 폴더(IDE·도구 메타데이터)와 벤더 폴더는 스택 근거가 아니다."""
+    return name in SKIP_DIRS or name.startswith(".") or bool(VENDOR_DIR.match(name))
 
 
 def _walk_files(root, names_or_suffix, max_files=4000):
-    """SKIP_DIRS를 건너뛰며 root 하위를 훑어 이름이 일치하거나(집합) 확장자가 일치하는(문자열)
-    파일 경로를 최대 max_files개까지 수집한다."""
+    """SKIP_DIRS·점 폴더·벤더 폴더를 건너뛰며 root 하위를 훑어 이름이 일치하거나(집합) 확장자가
+    일치하는(문자열) 파일 경로를 최대 max_files개까지 수집한다."""
     found = []
     is_suffix = isinstance(names_or_suffix, str)
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [d for d in dirnames if not _skip_dir(d)]
         for fn in filenames:
             if (is_suffix and fn.endswith(names_or_suffix)) or (not is_suffix and fn in names_or_suffix):
                 found.append(os.path.join(dirpath, fn))
