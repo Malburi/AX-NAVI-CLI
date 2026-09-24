@@ -153,7 +153,9 @@ P-PAIR의 1차 드리프트 검증 결과(`_workspace/reports/api_drift_report.m
 
 > 레인 실패로 P-BARRIER에 도달하지 못했거나 P-PAIR/P-REFRESH 도중 실패해도 현재 프로젝트 파이프라인 자체는 막지 않는다 — WARN 기록 후 Phase 3.6 메뉴로 진행하되 wiki 항목에 "파트너 병합 없이 단독 wiki로 생성됨"을 표시한다.
 
-### 연동 여부 질문 방식 (Phase -1 스킵 + pair_config.md 없는 경우)
+### 연동 여부 질문 방식 (Phase -1 스킵 + pair_config.md 없는 경우, 또는 single-root인데 구성 미확인·이전 연동 설정이 남은 경우)
+
+> 실측(2026-09-24): 구성 질문이 전달되지 않아 single-root로 기본 진행된 서버 저장소가, `_workspace_prev/pair_config.md`에 클라이언트 연동 설정이 있다는 사실을 스스로 기록하고도 연동 여부를 한 번도 묻지 않고 끝났다. 그래서 SKILL.md Phase 3.5 표의 첫 행이 이 질문을 부른다.
 
 ```
 백엔드/프론트엔드가 별도 저장소로 분리되어 있나요?

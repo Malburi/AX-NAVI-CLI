@@ -587,7 +587,8 @@ HIGH 우선순위 항목이 있으면 사용자에게 명시적 안내. 자동 �
 
 | 조건 | 동작 |
 |------|------|
-| `init_layout = "single-root"`, `"monorepo"`, `"selected-paths"` | 이 Phase 전체 스킵 → Phase 3.6으로 |
+| `init_layout = "single-root"`인데 ① 구성이 미확인(`00_init_scope.md`에 `unconfirmed: true`)이거나 ② 재초기화 전 연동 설정 `_workspace_prev/pair_config.md`(또는 `_workspace/pair_config.md`)가 남아 있음 | **연동 여부를 묻는다** — 아래 "연동 여부 질문 방식"을 쓰되, ②면 질문 본문에 이전 파트너 경로·역할을 적고 그 값을 pair-init에 제안값으로 넘긴다. 예면 `pair-init` 단독 실행(파트너 하네스가 없으면 pair-init Phase 1의 3지선다가 이어진다) → Phase 3.6으로 |
+| `init_layout = "single-root"`, `"monorepo"`, `"selected-paths"` (위 행에 해당 안 함) | 이 Phase 전체 스킵 → Phase 3.6으로 |
 | `_workspace/pair_config.md` 이미 있고 `pair_lane_state.md`도 `pair_state: complete` | 이 Phase 전체 스킵 → Phase 3.6으로 |
 | `init_layout = "paired-roots"`/`"hub-roots"` + Phase 2의 분리 저장소 레인이 방금 `pair_state: barrier_done`으로 끝남 | 아래 P-BARRIER부터 진행 |
 | Phase -1 스킵 + `pair_config.md` 없음 (레인 그래프 자체를 안 거친 경우) | 연동 여부 질문 후 진행(기존 방식 — pair-init 단독 실행) |
