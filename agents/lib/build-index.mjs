@@ -2335,8 +2335,11 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
      * 1,100개 근사-반복 화면에서 handler 이름(save/search 등)이 겹치는 경우가 흔해(2026-08-19
      * 실측, Vue 템플릿 이벤트 바인딩 추출 추가 직후 미해결 5,300건 급증 확인) 이 좁히기 없이는
      * 템플릿 이벤트 추출 자체가 손해가 된다.
+     * process_entry(`main`)·scheduler(`@Scheduled` 바로 아래 메서드)도 같은 파일의 메서드에서
+     * 만들어진 바인딩이라 다른 파일을 가리킬 수 없다 — 배치 프로그램마다 `main`이 있는 Pro*C·Java
+     * 배치에서 진입점이 전부 모호하다고 AI 판정 대기열에 올라가던 것을 막는다(2026-09-24).
      */
-    if (candidates.length > 1 && (binding.type === "ui_event" || binding.type === "markup_event")) {
+    if (candidates.length > 1 && ["ui_event", "markup_event", "process_entry", "scheduler"].includes(binding.type)) {
       const sameFile = candidates.filter((item) => item.file === binding.file);
       if (sameFile.length === 1) candidates = sameFile;
     }

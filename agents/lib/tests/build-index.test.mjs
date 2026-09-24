@@ -1482,6 +1482,8 @@ int main(void) { err_exit("x"); return 0; }
       assert.ok(!hasEdge("batch.order_close.close_orders", "batch.other.err_exit"), "다른 배치 파일의 동명 함수로 잇지 않는다");
       assert.ok(hasEdge("batch.order_close.close_orders", "PKG_ORDER.SAVE_ORDER"), "EXEC SQL EXECUTE BEGIN ... END-EXEC");
       assert.ok(hasEdge("batch.order_close.close_orders", "PROC_AUDIT"), "EXEC SQL CALL");
+      assert.ok(graph.edges.some((item) => item.type === "process_entry" && item.to === "batch.other.main"), "배치마다 있는 main은 같은 파일의 진입점이다");
+      assert.equal(json(root, "_meta.json").unresolved_count, 0, "main 진입점이 AI 판정 대기열로 가지 않는다");
 
       const { sqls, usages } = json(root, "sql_usage.json");
       const tables = usages.filter((item) => item.method === "batch.order_close.close_orders")
