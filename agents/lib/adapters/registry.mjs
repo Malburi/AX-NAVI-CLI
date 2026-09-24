@@ -19,6 +19,8 @@ export const ADAPTERS = [
   { id: "plsql", label: "Oracle PL/SQL", extensions: [".pks", ".pkb", ".pck", ".spc", ".bdy", ".prc", ".fnc", ".trg", ".pls"], level: "PARTIAL" },
   /* C 함수·호출과 EXEC SQL 정적 SQL. 매크로·함수 포인터·전처리 분기는 해석하지 않는다. 변경은 HOLD. */
   { id: "proc", label: "Oracle Pro*C", extensions: [".pc"], level: "PARTIAL" },
+  /* .pbl은 바이너리라 못 읽는다. 소스 관리용 텍스트 내보내기(윈도·사용자 객체·함수·메뉴·앱·DataWindow)만 본다. */
+  { id: "powerbuilder", label: "PowerBuilder (텍스트 내보내기)", extensions: [".srw", ".sru", ".srf", ".srm", ".sra", ".srd"], level: "PARTIAL" },
   { id: "legacy-web", label: "JSP/Struts/WebForms/markup", extensions: [".xml", ".jsp", ".jspx", ".tag", ".asp", ".aspx", ".ascx", ".ashx", ".asmx", ".xaml", ".cshtml", ".vbhtml", ".razor", ".html", ".htm"], level: "PARTIAL" },
 ];
 

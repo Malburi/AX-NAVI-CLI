@@ -1496,6 +1496,129 @@ int main(void) { err_exit("x"); return 0; }
     }
   });
 
+  register("PowerBuilder 내보내기의 이벤트·함수·호출·임베디드 SQL·DataWindow 연결을 인덱싱한다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-pb-"));
+    try {
+      write(root, "db/pkg_order.pkb", `CREATE OR REPLACE PACKAGE BODY pkg_order AS
+  PROCEDURE save_order(p_id IN NUMBER) IS
+  BEGIN
+    NULL;
+  END save_order;
+END pkg_order;
+/
+`);
+      write(root, "pb/w_order.srw", `$PBExportHeader$w_order.srw
+forward
+global type w_order from window
+end type
+type cb_save from commandbutton within w_order
+end type
+type dw_list from datawindow within w_order
+end type
+end forward
+
+global type w_order from window
+integer width = 3000
+string title = "주문 관리"
+event ue_init ( )
+event ue_reset ( )
+cb_save cb_save
+dw_list dw_list
+end type
+global w_order w_order
+
+forward prototypes
+public function integer wf_save ()
+end prototypes
+
+public function integer wf_save ();long ll_id
+ll_id = dw_list.GetItemNumber(1, "id")
+UPDATE orders SET status = 'S' WHERE id = :ll_id USING SQLCA;
+DECLARE lp_save PROCEDURE FOR pkg_order.save_order(:ll_id);
+EXECUTE lp_save;
+if dw_list.Update() = 1 then
+	f_log("saved")
+end if
+return 1
+end function
+
+event open;dw_list.SetTransObject(SQLCA)
+dw_list.Retrieve()
+this.event ue_init()
+end event
+
+event ue_init();TriggerEvent("ue_reset")
+end event
+
+event ue_reset;
+end event
+
+on w_order.create
+this.cb_save=create cb_save
+end on
+
+type cb_save from commandbutton within w_order
+integer x = 100
+string text = "저장"
+end type
+
+event clicked;string ls_path = "C:\\temp\\"
+parent.wf_save()
+SELECT COUNT(*) INTO :ll_cnt FROM order_hist WHERE id = :ll_id;
+end event
+
+type dw_list from datawindow within w_order
+string dataobject = "d_order_list"
+end type
+`);
+      write(root, "pb/d_order_list.srd", `$PBExportHeader$d_order_list.srd
+release 12;
+datawindow(units=0 )
+table(column=(type=long updatewhereclause=yes name=id dbname="orders.id" )
+ retrieve="PBSELECT( VERSION(400) TABLE(NAME=~"orders~" ) TABLE(NAME=~"customers~" ) COLUMN(NAME=~"orders.id~")) " update="orders" updatewhere=1 updatekeyinplace=no )
+`);
+      write(root, "pb/f_log.srf", `$PBExportHeader$f_log.srf
+global type f_log from function_object
+end type
+
+forward prototypes
+global subroutine f_log (string as_msg)
+end prototypes
+
+global subroutine f_log (string as_msg);INSERT INTO app_log (msg) VALUES (:as_msg);
+end subroutine
+`);
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const graph = json(root, "call_graph.json");
+      const typeOf = (id) => graph.nodes.find((item) => item.id === id)?.type;
+      assert.equal(typeOf("w_order.wf_save"), "method", JSON.stringify(graph.nodes.map((item) => item.id)));
+      assert.equal(typeOf("w_order.open"), "pb_event");
+      assert.equal(typeOf("w_order.cb_save.clicked"), "pb_event");
+      assert.equal(typeOf("f_log.f_log"), "method");
+      const hasEdge = (from, to) => graph.edges.some((item) => item.type === "call" && item.from === from && item.to === to);
+      assert.ok(hasEdge("w_order.cb_save.clicked", "w_order.wf_save"), `parent.wf_save(): ${JSON.stringify(graph.edges)}`);
+      assert.ok(hasEdge("w_order.wf_save", "f_log.f_log"), "전역 함수");
+      assert.ok(hasEdge("w_order.wf_save", "PKG_ORDER.SAVE_ORDER"), "DECLARE PROCEDURE FOR");
+      assert.ok(hasEdge("w_order.open", "w_order.ue_init"), "this.event ue_init()");
+      assert.ok(hasEdge("w_order.ue_init", "w_order.ue_reset"), "TriggerEvent(\"ue_reset\")");
+
+      const { sqls, usages } = json(root, "sql_usage.json");
+      assert.equal(sqls.find((item) => item.id === "d_order_list")?.tables.join(","), "orders,customers", JSON.stringify(sqls));
+      const usedBy = (method) => usages.filter((item) => item.method === method)
+        .flatMap((item) => (sqls.find((sql) => sql.id === item.sql_id)?.tables || []).map((table) => `${item.sql_id.includes(":update") ? "dw-update" : sqls.find((sql) => sql.id === item.sql_id)?.type}:${table.toLowerCase()}`)).sort().join(",");
+      assert.equal(usedBy("w_order.open"), "select:customers,select:orders", "dw_list.Retrieve() → dataobject d_order_list");
+      assert.equal(usedBy("w_order.wf_save"), "dw-update:orders,update:orders", JSON.stringify(usages));
+      assert.equal(usedBy("w_order.cb_save.clicked"), "select:order_hist", "경로 문자열의 \\ 뒤에서도 코드가 어긋나지 않고, INTO 호스트 변수는 테이블이 아니다");
+      assert.equal(usedBy("f_log.f_log"), "insert:app_log");
+      /* 후보가 하나도 없으면 dead_code.json 자체를 만들지 않는다. */
+      const dead = readdirSync(join(root, "_workspace", "index")).includes("dead_code.json") ? json(root, "dead_code.json").unused_methods.map((item) => item.id) : [];
+      assert.ok(!dead.some((id) => id.endsWith(".open") || id.endsWith(".clicked")), `이벤트는 런타임 진입점이다: ${JSON.stringify(dead)}`);
+      assert.equal(json(root, "_meta.json").adapter_coverage.extensions.find((item) => item.extension === ".srw")?.level, "PARTIAL");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("필드·생성자로 주입된 클라이언트의 호출 줄을 외부 통신으로 잡고 선언 줄은 뺀다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-io-client-"));
     try {

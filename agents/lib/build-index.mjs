@@ -560,8 +560,12 @@ function lineOrdered(methods) {
 const PLSQL_EXTENSIONS = new Set(ADAPTERS.find((item) => item.id === "plsql").extensions);
 const SQL_COMMENT_EXTENSIONS = new Set([".sql", ...PLSQL_EXTENSIONS]);
 
+/* PowerScript는 `//` 주석을 쓰지만 문자열 이스케이프가 `~`다(`"~"따옴표~""`). `\`는 경로 문자다. */
+const PB_EXTENSIONS = new Set(ADAPTERS.find((item) => item.id === "powerbuilder").extensions);
+
 function stripComments(text, ext) {
   const sql = SQL_COMMENT_EXTENSIONS.has(ext);
+  const pb = PB_EXTENSIONS.has(ext);
   let output = "";
   let state = "code";
   let quote = "";
@@ -575,7 +579,7 @@ function stripComments(text, ext) {
       else output += c === "\n" ? "\n" : " ";
     } else if (state === "string") {
       output += c;
-      if (c === "\\" && !sql) { output += n || ""; i += 1; }
+      if ((pb ? c === "~" : c === "\\" && !sql)) { output += n || ""; i += 1; }
       else if (c === quote) state = "code";
     } else if (sql && c === "-" && n === "-") {
       output += "  "; i += 1; state = "line";
@@ -953,6 +957,154 @@ function extractProcSql(text, clean, rel, methods) {
   return { sqls, usages, relations };
 }
 
+/*
+ * PowerBuilder 텍스트 내보내기(.srw·.sru·.srf·.srm·.sra·.srd).
+ * PowerScript는 대소문자를 가리지 않아 이름을 소문자로 정규화한다. id는 `전역객체.컨트롤.이벤트`
+ * (`w_order.cb_save.clicked`)·`전역객체.함수`(`w_order.wf_save`)다 — PowerBuilder 객체 이름은
+ * 라이브러리 목록 안에서 유일해서 파일 경로 접두사가 필요 없다. 스크립트 소유자는 "그 앞의 마지막
+ * `type X from Y within Z` 선언"이다(내보내기 형식이 컨트롤 선언 뒤에 그 컨트롤 이벤트를 둔다).
+ * DataWindow(.srd)는 retrieve SQL·update 테이블을 SQL로 등록하고, 윈도의 `dw_1.Retrieve()`를
+ * dataobject로 되짚어 그 SQL의 사용처로 잇는다.
+ */
+const PB_TYPE_RE = /^[ \t]*(global\s+)?type\s+(\w+)\s+from\s+([\w`.]+)(?:\s+within\s+(\w+))?/gim;
+const PB_SCRIPT_RES = [
+  /^[ \t]*(?:(?:public|private|protected|global)\s+)?function\s+[\w.]+(?:\s*\[\s*\])?\s+(\w+)\s*\([^)\n]*\)[^;\n]*;/gim,
+  /^[ \t]*(?:(?:public|private|protected|global)\s+)?subroutine\s+(\w+)\s*\([^)\n]*\)[^;\n]*;/gim,
+  /^[ \t]*event\s+(?:type\s+[\w.]+\s+)?(\w+)\s*(?:\([^)\n]*\))?[^;\n]*;/gim,
+];
+const PB_KEYWORDS = new Set(["if", "elseif", "choose", "case", "for", "while", "until", "return", "create", "destroy", "and", "or", "not", "halt", "call", "event", "function"]);
+
+function blankPbStrings(clean) {
+  return clean.replace(/"(?:~.|[^"~\n])*"|'(?:~.|[^'~\n])*'/g, (match) => `${match[0]}${match.slice(1, -1).replace(/[^\n]/g, " ")}${match.at(-1)}`);
+}
+
+function extractPbDataWindow(text, rel) {
+  const name = basename(rel).replace(/\.[^.]+$/, "").toLowerCase();
+  const atLine = lineIndex(text);
+  const sqls = [];
+  const retrieve = text.match(/\bretrieve\s*=\s*"((?:~.|[^"~])*)"/i);
+  const unescape = (value) => value.replace(/~"/g, "\"").replace(/~[rnt]/gi, " ").replace(/~~/g, "~");
+  if (retrieve) {
+    const value = unescape(retrieve[1]);
+    const pbselect = /^\s*PBSELECT\s*\(/i.test(value);
+    const tables = pbselect
+      ? [...value.matchAll(/TABLE\s*\(\s*NAME\s*=\s*"([^"]+)"/gi)].map((item) => item[1])
+      : sqlTables(value);
+    if (pbselect || sqlStatementType(value) === "select") {
+      sqls.push({ id: name, file: rel, line: atLine(retrieve.index), type: "select", tables: [...new Set(tables)], text_preview: value.replace(/\s+/g, " ").trim().slice(0, 240), origin: "deterministic-indexer", confidence: "MEDIUM" });
+    }
+  }
+  /* DataWindow.Update()가 쓰는 테이블. retrieve 값 안의 `update` 단어와 섞이지 않게 값을 지우고 찾는다. */
+  const updateTable = (retrieve ? text.replace(retrieve[0], "") : text).match(/\bupdate\s*=\s*"([\w.$#]+)"/i)?.[1];
+  if (updateTable) sqls.push({ id: `${name}:update`, file: rel, line: 1, type: "update", tables: [updateTable], text_preview: `DataWindow ${name} Update() → ${updateTable}`, origin: "deterministic-indexer", confidence: "MEDIUM" });
+  const symbols = [{ id: name, type: "datawindow", file: rel, line: 1, origin: "deterministic-indexer", confidence: "MEDIUM" }];
+  return { symbols, nodes: [], methods: [], callSites: [], injects: [], fields: [], classes: [], sqlFacts: { sqls, usages: [], relations: [] } };
+}
+
+function extractPbSymbols(text, clean, rel, workspace) {
+  if (extname(rel).toLowerCase() === ".srd") return extractPbDataWindow(text, rel);
+  const atLine = lineIndex(text);
+  const code = blankPbStrings(clean);
+  const types = [...code.matchAll(PB_TYPE_RE)].map((match) => ({ name: match[2].toLowerCase(), base: match[3].toLowerCase(), global: Boolean(match[1]), start: match.index }));
+  const globalName = types.find((item) => item.global)?.name || basename(rel).replace(/\.[^.]+$/, "").toLowerCase();
+  const ownerAt = (offset) => {
+    let last = null;
+    for (const item of types) if (item.start < offset) last = item; else break;
+    return !last || last.name === globalName ? globalName : `${globalName}.${last.name}`;
+  };
+  const ends = [...code.matchAll(/^[ \t]*end\s+(?:function|subroutine|event)\b/gim)].map((match) => match.index);
+  const methods = [];
+  for (const [index, regex] of PB_SCRIPT_RES.entries()) {
+    /* 이벤트 스크립트(clicked·open 등)는 런타임이 부른다 — 호출처가 없어도 dead code가 아니므로 노드 종류를 나눈다. */
+    const type = index === 2 ? "pb_event" : "method";
+    for (const match of code.matchAll(regex)) {
+      const start = match.index + match[0].search(/\S/);
+      const end = ends.find((offset) => offset > start) ?? code.length;
+      const name = match[1].toLowerCase();
+      const owner = ownerAt(start);
+      methods.push({ id: symbolId("", owner, name), name, owner, package: "", file: rel, line: atLine(start), start, bodyStart: match.index + match[0].length, end, visibility: /^\s*private\b/i.test(match[0]) ? "private" : "public", workspace: workspace.id, type });
+    }
+  }
+  methods.sort((left, right) => left.start - right.start);
+
+  /* 컨트롤 → dataobject. 선언 블록의 `string dataobject = "d_x"`와 실행 중 `dw_1.dataobject = "d_x"` 둘 다. */
+  const dataobjectOf = new Map();
+  for (const item of types) {
+    const blockEnd = code.slice(item.start).search(/^[ \t]*end\s+type\b/im);
+    const block = clean.slice(item.start, blockEnd < 0 ? clean.length : item.start + blockEnd);
+    const value = block.match(/\bdataobject\s*=\s*"(\w+)"/i)?.[1];
+    if (value) dataobjectOf.set(item.name, value.toLowerCase());
+  }
+  for (const match of clean.matchAll(/\b(\w+)\s*\.\s*dataobject\s*=\s*"(\w+)"/gi)) dataobjectOf.set(match[1].toLowerCase(), match[2].toLowerCase());
+
+  const callSites = [];
+  const usages = [];
+  const sqls = [];
+  const relations = [];
+  const push = (method, offset, name, qualifier) => {
+    if (!name || PB_KEYWORDS.has(name)) return;
+    callSites.push({ caller: method.id, name, qualifier, file: rel, line: atLine(offset), workspace: workspace.id });
+  };
+  for (const method of methods) {
+    const control = method.owner.includes(".") ? method.owner.split(".").at(-1) : "";
+    /* `this.`는 스크립트 소유자, `parent.`는 컨트롤이 속한 전역 객체다. */
+    const qualifierOf = (raw) => {
+      const value = (raw || "").toLowerCase();
+      if (value === "this") return method.owner;
+      if (value === "parent") return globalName;
+      return value === "super" ? "" : value;
+    };
+    const body = code.slice(method.bodyStart, method.end);
+    const bodyClean = clean.slice(method.bodyStart, method.end);
+    for (const match of body.matchAll(/\b(?:(\w+)\s*\.\s*)?(\w+)\s*\(/g)) {
+      if (/\bevent\s*$/i.test(body.slice(Math.max(0, match.index - 12), match.index))) continue;
+      push(method, method.bodyStart + match.index, match[2].toLowerCase(), qualifierOf(match[1]));
+    }
+    for (const match of body.matchAll(/\b(?:(\w+)\s*\.\s*)?event\s+(?:trigger\s+|post\s+)?(\w+)\s*\(/gi)) push(method, method.bodyStart + match.index, match[2].toLowerCase(), qualifierOf(match[1]));
+    for (const match of bodyClean.matchAll(/\b(?:(\w+)\s*\.\s*)?(?:triggerevent|postevent)\s*\(\s*"(\w+)"/gi)) push(method, method.bodyStart + match.index, match[2].toLowerCase(), qualifierOf(match[1]));
+    for (const match of body.matchAll(/\b(\w+)\s*\.\s*(retrieve|update)\s*\(/gi)) {
+      const target = match[1].toLowerCase() === "this" ? control : match[1].toLowerCase();
+      const dataobject = dataobjectOf.get(target);
+      if (!dataobject) continue;
+      usages.push({ sql_id: /update/i.test(match[2]) ? `${dataobject}:update` : dataobject, file: rel, line: atLine(method.bodyStart + match.index), method: method.id, evidence: `DataWindow ${target}.${match[2]}()`, origin: "deterministic-indexer", confidence: "MEDIUM" });
+    }
+    /* 임베디드 SQL은 줄 첫머리에서 시작해 `;`로 끝난다. `DECLARE p PROCEDURE FOR pkg.proc(:a)`는 프로시저 호출이다. */
+    let consumed = 0;
+    for (const match of body.matchAll(/^[ \t]*(select|insert|update|delete|declare)\b/gim)) {
+      const offset = method.bodyStart + match.index + match[0].length - match[1].length;
+      /* `DECLARE c CURSOR FOR` 다음 줄의 `SELECT`·INSERT … SELECT를 두 번 세지 않는다. */
+      if (offset < consumed) continue;
+      const semicolon = code.indexOf(";", offset);
+      consumed = semicolon < 0 || semicolon > method.end ? method.end : semicolon;
+      let statement = code.slice(offset, consumed).replace(/\busing\s+\w+\s*$/i, "").trim();
+      const procedure = statement.match(/^declare\s+\w+\s+procedure\s+for\s+([\w$#.]+)/i)?.[1];
+      if (procedure) { callSites.push({ caller: method.id, ...procedureTarget(procedure), file: rel, line: atLine(offset), workspace: workspace.id }); continue; }
+      statement = statement.replace(/^declare\s+\w+\s+cursor\s+for\s+/i, "");
+      if (/^delete\s+(?!from\b)[\w.$"]+/i.test(statement)) statement = statement.replace(/^delete\s+/i, "DELETE FROM ");
+      const type = sqlStatementType(statement);
+      if (!type) continue;
+      const forTables = type === "select" ? statement.replace(/\binto\b[\s\S]*?(?=\bfrom\b)/i, " ") : statement;
+      const line = atLine(offset);
+      const id = `${rel}:${line}:pb`;
+      sqls.push({ id, file: rel, line, type, tables: [...new Set(sqlTables(forTables))], text_preview: clean.slice(offset, offset + statement.length).replace(/\s+/g, " ").slice(0, 240), origin: "deterministic-indexer", confidence: "MEDIUM" });
+      relations.push(...extractSqlRelations(forTables, { sql_id: id, file: rel, line }));
+      usages.push({ sql_id: id, file: rel, line, method: method.id, evidence: "PowerScript 임베디드 SQL", origin: "deterministic-indexer", confidence: "HIGH" });
+    }
+  }
+  const base = { file: rel, workspace: workspace.id, origin: "deterministic-indexer", confidence: "MEDIUM" };
+  const symbols = [{
+    id: globalName, type: "pb_object", line: types.find((item) => item.global) ? atLine(types.find((item) => item.global).start) : 1, ...base,
+    methods: unique(methods, (item) => item.id).map((item) => ({ name: item.name, id: item.id, line: item.line, visibility: item.visibility })),
+  }];
+  /* 전역 함수(.srf `from function_object`)는 함수 자체가 객체다 — 객체 노드를 두면 `f_log(...)` 호출 후보가 둘이 된다. */
+  const functionObject = types.find((item) => item.global)?.base === "function_object";
+  const nodes = [
+    ...(functionObject ? [] : [{ id: globalName, type: "pb_object", line: symbols[0].line, ...base }]),
+    ...unique(methods, (item) => item.id).map((item) => ({ id: item.id, type: item.type, line: item.line, visibility: item.visibility, ...base })),
+  ];
+  return { symbols, nodes, methods, callSites, injects: [], fields: [], classes: [], sqlFacts: { sqls, usages, relations } };
+}
+
 /* `{call PKG.PROC(?)}`·`{? = call F(?)}`·`BEGIN PKG.PROC(?); END;` — JDBC·MyBatis·ADO.NET이 프로시저를 부르는 모양. */
 const PROCEDURE_CALL_TEXT = new RegExp(String.raw`^\s*(?:\{\s*(?:\?\s*=\s*)?call\s+|begin\s+)((?:${PLSQL_IDENT}\s*\.\s*){0,2}${PLSQL_IDENT})\s*[(;}]`, "i");
 
@@ -972,6 +1124,7 @@ function extractSymbols(text, clean, rel, workspace) {
   const ext = extname(rel).toLowerCase();
   if (isPlsqlSource(ext, clean)) return extractPlsqlSymbols(text, clean, rel, workspace);
   if (PROC_EXTENSIONS.has(ext)) return extractProcSymbols(text, clean, rel, workspace);
+  if (PB_EXTENSIONS.has(ext)) return extractPbSymbols(text, clean, rel, workspace);
   if (!STRUCTURED_SOURCE_EXTENSIONS.includes(ext)) {
     return extractLegacySymbols(text, clean, rel, workspace);
   }
@@ -2052,8 +2205,8 @@ function analyzeFile(file, root, config) {
   const nexacro = extractNexacro(text, file.rel, workspace);
   const api = extractApi(text, clean, file.rel, workspace, symbolFacts.methods, symbolFacts.classes);
   const sql = extractSql(text, clean, file.rel, symbolFacts.methods);
-  const embedded = isPlsqlSource(ext, clean) ? extractPlsqlSql(text, clean, file.rel, symbolFacts.methods)
-    : PROC_EXTENSIONS.has(ext) ? extractProcSql(text, clean, file.rel, symbolFacts.methods) : null;
+  const embedded = symbolFacts.sqlFacts || (isPlsqlSource(ext, clean) ? extractPlsqlSql(text, clean, file.rel, symbolFacts.methods)
+    : PROC_EXTENSIONS.has(ext) ? extractProcSql(text, clean, file.rel, symbolFacts.methods) : null);
   if (embedded) { sql.sqls.push(...embedded.sqls); sql.usages.push(...embedded.usages); sql.relations.push(...embedded.relations); }
   return {
     rel: file.rel,
@@ -2309,7 +2462,7 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
     pushTo(nodeByOwnerId, `${parts.slice(0, -1).join(".")}\u0000${simple}`, node);
   }
   const qualifierMemo = new Map();
-  const sameOwnerSafeExt = new Set([".java", ".kt", ".kts", ".cs", ".vue", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ...SQL_COMMENT_EXTENSIONS, ...PROC_EXTENSIONS]);
+  const sameOwnerSafeExt = new Set([".java", ".kt", ".kts", ".cs", ".vue", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ...SQL_COMMENT_EXTENSIONS, ...PROC_EXTENSIONS, ...PB_EXTENSIONS]);
   /*
    * 이름이 겹치는 후보가 둘 이상일 때 스코프(같은 파일 → 같은 패키지 → 같은 워크스페이스)로 좁혀
    * 하나로 줄면 결정론적으로 확정하는 방안을 구현했다가 **되돌렸다**(2026-08-16).

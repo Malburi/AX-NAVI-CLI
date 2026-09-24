@@ -95,6 +95,7 @@ analyzer Step 1~2 에서 다음 파일/문자열로 자동 탐지:
 | Oracle | `ojdbc*`, `oracle.jdbc.*` | HIGH |
 | Oracle PL/SQL | `*.pks`·`*.pkb`·`*.pck`·`*.prc`·`*.fnc`·`*.trg`, `.sql` 안의 `CREATE PROCEDURE`·`PACKAGE`·`TRIGGER` | MEDIUM (패키지·프로시저·함수·트리거 심볼, 호출 관계, 본문 정적 SQL, Java `{call}`·MyBatis CALLABLE 연결. 동적 SQL 변수·오버로드·중첩 프로시저는 근사, 변경은 HOLD) |
 | Oracle Pro*C | `*.pc` (`EXEC SQL`) | MEDIUM (C 함수·호출, EXEC SQL 정적 SQL·커서, `EXEC SQL EXECUTE BEGIN ... END-EXEC`·`CALL`의 PL/SQL 프로시저 연결. 매크로·함수 포인터·전처리 분기는 해석하지 않음, 변경은 HOLD. 일반 `.c`는 discovery-only) |
+| PowerBuilder (텍스트 내보내기) | `*.srw`·`*.sru`·`*.srf`·`*.srm`·`*.sra`·`*.srd` | MEDIUM (이벤트·함수·서브루틴, `parent.`·`this.`·`TriggerEvent` 호출, 임베디드 SQL, `DECLARE ... PROCEDURE FOR`의 PL/SQL 연결, DataWindow retrieve(PBSELECT 포함)·update 테이블과 `dw.Retrieve()`·`Update()` 사용처. 동적 SQL·동적 dataobject 문자열 조합은 못 따라감, 변경은 HOLD. `.pbl` 바이너리는 discovery-only) |
 | PostgreSQL | `postgresql-*`, `pg`, `psycopg` | HIGH |
 | MySQL / MariaDB | `mysql-connector-*`, `mariadb-java-client`, `mysql2` | HIGH |
 | SQL Server | `mssql-jdbc`, `System.Data.SqlClient`, `tedious` | MEDIUM |
