@@ -25,14 +25,24 @@ const WRITER = {
 /* ---------- 돌기 ---------- */
 
 test("Shift+Tab 은 모드를 한 바퀴 돌고 제자리로 온다", () => {
+  const cycle = MODES.filter((m) => !m.explicitOnly);
   let id = DEFAULT_MODE;
   const seen = [id];
-  for (let i = 0; i < MODES.length - 1; i += 1) {
+  for (let i = 0; i < cycle.length - 1; i += 1) {
     id = nextMode(id);
     seen.push(id);
   }
-  assert.equal(new Set(seen).size, MODES.length, "같은 모드를 두 번 거쳤다");
+  assert.equal(new Set(seen).size, cycle.length, "같은 모드를 두 번 거쳤다");
   assert.equal(nextMode(id), DEFAULT_MODE, "한 바퀴 뒤 기본으로 안 돌아온다");
+});
+
+test("전부승인은 Shift+Tab 으로 켜지지 않는다 — 이름으로 불러야만 켜진다", () => {
+  let id = DEFAULT_MODE;
+  for (let i = 0; i < MODES.length * 2; i += 1) {
+    id = nextMode(id);
+    assert.notEqual(id, "trust");
+  }
+  assert.equal(modeOf("trust").label, "전부승인");
 });
 
 test("모르는 모드는 기본으로 떨어진다 — 빈 화면이 되지 않게", () => {

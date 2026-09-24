@@ -18,6 +18,7 @@ const NEWLINE = String.fromCharCode(10);
  * @property {string} label
  * @property {string} hint      한 줄 설명
  * @property {string} [caveat]   런타임이 막지 못하는 부분. 없으면 전부 강제된다.
+ * @property {boolean} [explicitOnly]  Shift+Tab 순환에서 빼고 /mode 이름으로만 켠다
  */
 
 /** @type {readonly Mode[]} */
@@ -30,6 +31,12 @@ export const MODES = [
    */
   { id: "plan", label: "계획", hint: "고치지 않고 계획부터 냅니다", caveat: "Bash 는 지침으로만 막습니다" },
   { id: "vibe", label: "빠름", hint: "영향도·안전 게이트를 건너뛰고 바로 수행합니다", caveat: "전부 지침입니다" },
+  /*
+   * 승인 창을 끄는 모드. 오래 걸리는 초기화를 믿고 맡길 때 쓴다 — 감사 기록은 그대로 남는다.
+   * Shift+Tab 순환에는 넣지 않는다. 다른 회사 운영 소스를 고치는 도구라 실수로 켜지면 안 되고,
+   * `/mode 전부승인` 으로 이름을 불러야만 켜진다.
+   */
+  { id: "trust", label: "전부승인", hint: "이번 세션의 도구 사용을 묻지 않고 허용합니다 — 감사 기록은 남습니다", caveat: "되돌리기 어려운 명령도 묻지 않습니다", explicitOnly: true },
 ];
 
 export const DEFAULT_MODE = "default";
@@ -48,8 +55,9 @@ export function modeOf(id) {
  * @returns {string}
  */
 export function nextMode(id) {
-  const at = MODES.findIndex((m) => m.id === id);
-  return /** @type {Mode} */ (MODES[(at + 1) % MODES.length]).id;
+  const cycle = MODES.filter((m) => !m.explicitOnly);
+  const at = cycle.findIndex((m) => m.id === id);
+  return /** @type {Mode} */ (cycle[(at + 1) % cycle.length]).id;
 }
 
 /*

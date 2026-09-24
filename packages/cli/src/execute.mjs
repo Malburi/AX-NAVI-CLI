@@ -111,6 +111,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     ask: (question, options, opts) => elicitor.ask(question, options, opts),
     always: sessionApprovals,
     pluginRoot: REPO_ROOT,
+    trustAll: () => sessionMode() === "trust",
     onDecision: ({ tool, input, allowed, how }) => {
       approvalAudit.record({
         at: new Date().toISOString(),
