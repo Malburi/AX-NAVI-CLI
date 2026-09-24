@@ -41,7 +41,7 @@ import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, 
  * @param {import("@ax-navi/core").Conversation} [args.conversation]  주면 대화를 이어간다
  * @param {(usd: number) => void} [args.onCost]  이번 실행의 비용을 호출부에 알린다
  * @param {(tokens: number) => void} [args.onContextSize]  이번 턴이 실제로 실어 보낸 컨텍스트 크기
- * @param {(name: string, request: string) => string} [args.onSkillRequest]  모델이 스킬 실행을 요청했을 때
+ * @param {(name: string, request: string) => string | Promise<string>} [args.onSkillRequest]  모델이 스킬 실행을 요청했을 때
  * @param {(text: string) => void} [args.onAnswer]  대화를 다시 여는 데 쓸 답변 본문
  * @param {() => number} [args.queuedCount]  대기 중인 입력 줄 수 (상태 표시에 쓴다)
  * @param {import("./provider.mjs").ProviderName} [args.providerName]

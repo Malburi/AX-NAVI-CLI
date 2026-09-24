@@ -28,7 +28,7 @@ const SERVER_PATH = fileURLToPath(new URL("./server.mjs", import.meta.url));
  * @param {object} args
  * @param {import("@ax-navi/core").ProjectPaths} args.paths
  * @param {import("@ax-navi/core").Elicitor} args.elicitor
- * @param {(name: string, request: string) => string} [args.onSkill]  스킬 실행 요청
+ * @param {(name: string, request: string) => string | Promise<string>} [args.onSkill]  스킬 실행 요청
  * @param {(question: string) => void} [args.onAsk]
  * @param {(tool: string, input: Record<string, unknown>) => Promise<unknown>} [args.onApprove]  도구 사용 승인
  * @returns {Promise<McpBridge>}

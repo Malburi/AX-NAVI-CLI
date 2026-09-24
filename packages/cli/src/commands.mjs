@@ -176,6 +176,31 @@ export function resolveSkillPaths(body) {
   );
 }
 
+/**
+ * 스킬 실행 중에 모델이 다른 스킬을 부르면 그 스킬의 지침을 돌려준다.
+ *
+ * 플러그인에서 Claude Code 의 Skill 도구가 하는 일이다 — 본문을 그 자리에 싣고, 모델은
+ * 같은 턴 안에서 그대로 따른다. 예전에는 "스킬을 실행할 수 없는 경로다" 로 거절해서
+ * pair-init 이 파트너 저장소의 harness-init 을 돌리지 못했다(실측).
+ *
+ * @param {string} name
+ * @param {string} request
+ * @returns {Promise<string>}
+ */
+export async function inlineSkill(name, request) {
+  const bare = name.trim().replace(/^\//, "").replace(/^ax-navi:/, "");
+  if (!existsSync(join(SKILLS_DIR, bare, "SKILL.md"))) return `그런 스킬이 없다: ${name}. 스킬 이름을 확인하라.`;
+  const { skill } = await resolveSkill(SKILLS_DIR, bare);
+  return [
+    `'${skill.name}' 스킬의 지침이다. 이 턴 안에서 아래 절차를 그대로 수행하라. 같은 스킬로 이 도구를 다시 부르지 마라.`,
+    ...(request ? [``, `요청: ${request}`] : []),
+    ``,
+    `<스킬 절차: ${skill.name}>`,
+    resolveSkillPaths(skill.body),
+    `</스킬 절차>`,
+  ].join("\n");
+}
+
 /* ---------- index ---------- */
 
 /**
@@ -459,6 +484,7 @@ export async function runSkill(root, name, prompt, providerName, ctx = {}) {
     root,
     agentName,
     prompt: instruction,
+    onSkillRequest: inlineSkill,
     /*
      * 스킬 실행도 **같은 대화에 얹는다.**
      *
@@ -562,6 +588,7 @@ async function runOrchestratorSkill(root, skill, prompt, providerName, ctx = {})
   return executeAgent({
     root,
     prompt: instruction,
+    onSkillRequest: inlineSkill,
     agent: {
       name: `${skill.name}`,
       description: skill.description,
@@ -700,6 +727,7 @@ async function runProcedureSkill(root, skill, prompt, providerName, ctx = {}) {
   return executeAgent({
     root,
     prompt: instruction,
+    onSkillRequest: inlineSkill,
     agent: {
       name: skill.name,
       description: skill.description,

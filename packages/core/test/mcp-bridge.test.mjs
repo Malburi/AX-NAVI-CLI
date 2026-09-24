@@ -178,6 +178,26 @@ test("스킬을 실행할 수 없는 경로면 그 사실을 돌려준다 — �
   await host.close();
 });
 
+/*
+ * 스킬 실행 중의 스킬 호출. 플러그인의 Skill 도구처럼 본문을 그 자리에 돌려준다.
+ * 실측: pair-init 이 파트너의 harness-init 을 부르자 "실행할 수 없는 경로다" 로 끝났다.
+ */
+test("스킬 실행 중에 부른 스킬은 그 지침 본문이 돌아온다 — 플러그인 Skill 도구와 같다", async () => {
+  const { inlineSkill } = await import("../../cli/src/commands.mjs");
+  const host = await startElicitHost({ elicitor: { ask: async () => [] }, onSkill: inlineSkill });
+  const res = await roundTrip(host.address, {
+    id: "s4", kind: "skill", name: "ax-navi:harness-init", request: "루트 C:/p 에서 초기화",
+  });
+  const body = res.answers[0];
+  assert.match(body, /<스킬 절차: harness-init>/);
+  assert.match(body, /요청: 루트 C:\/p 에서 초기화/);
+  assert.ok(!/CLAUDE_PLUGIN_ROOT/.test(body), "플러그인 경로가 치환되지 않았다");
+  await host.close();
+
+  assert.match(await inlineSkill("/find", ""), /<스킬 절차: find-feature>/, "별칭을 따라가지 않았다");
+  assert.match(await inlineSkill("없는스킬", ""), /그런 스킬이 없다/);
+});
+
 test("질문은 그대로 사람에게 간다 — 스킬 분기가 질문을 가로채지 않는다", async () => {
   let asked = 0;
   const host = await startElicitHost({

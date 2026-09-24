@@ -66,7 +66,7 @@ const MODEL_ONLY = new Set(["시작한다."]);
  * 프롬프트 문자열을 짓는 함수들. 이름만으로는 배열 리터럴 규칙에 안 걸린다.
  * 여기 적힌 함수의 본문은 통째로 건너뛴다 — 읽는 쪽이 에이전트다.
  */
-const PROMPT_FNS = new Set(["delegationLines", "toolBriefing"]);
+const PROMPT_FNS = new Set(["delegationLines", "toolBriefing", "inlineSkill"]);
 
 /** @returns {Array<{ file: string, line: number, text: string }>} */
 function scan() {
@@ -99,7 +99,7 @@ function scan() {
         return;
       }
       {
-        const fn = /^(?:export\s+)?function\s+(\w+)\s*\(/.exec(t);
+        const fn = /^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/.exec(t);
         if (fn && PROMPT_FNS.has(String(fn[1]))) {
           inPromptFn = true;
           return;

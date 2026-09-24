@@ -40,7 +40,7 @@ function makeAddress() {
  * @param {object} args
  * @param {Elicitor} args.elicitor              실제로 사람에게 묻는 구현 (터미널)
  * @param {(text: string) => void} [args.onNotice]  사용자에게 보여 줄 안내
- * @param {(name: string, request: string) => string} [args.onSkill]  스킬 실행 요청을 받아 답을 돌려준다
+ * @param {(name: string, request: string) => string | Promise<string>} [args.onSkill]  스킬 실행 요청을 받아 답을 돌려준다
  * @param {(tool: string, input: Record<string, unknown>) => Promise<unknown>} [args.onApprove]  도구 사용 승인
  * @returns {Promise<ElicitHost>}
  */
@@ -72,7 +72,7 @@ export async function startElicitHost({ elicitor, onNotice, onSkill, onApprove }
          * 출력이 섞여 무엇이 어느 실행의 것인지 구분되지 않는다.
          */
         if (req.kind === "skill") {
-          const answer = onSkill?.(req.name ?? "", req.request ?? "")
+          const answer = await onSkill?.(req.name ?? "", req.request ?? "")
             ?? "스킬을 실행할 수 없는 경로다.";
           socket.write(`${JSON.stringify({ id: req.id, answers: [answer] })}${NEWLINE}`);
           continue;

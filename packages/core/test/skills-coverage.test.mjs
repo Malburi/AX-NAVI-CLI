@@ -154,13 +154,13 @@ test("스킬 본문의 플러그인 루트 참조가 실제 경로로 바뀐다"
 
 test("스킬 본문을 넣는 자리마다 치환을 거친다", () => {
   /*
-   * 주입 지점이 셋이다 — 에이전트 경로·오케스트레이터·절차 실행기.
+   * 주입 지점이 넷이다 — 에이전트 경로·오케스트레이터·절차 실행기·스킬 안의 스킬 호출(inlineSkill).
    * 한 곳만 빼먹으면 그 경로의 스킬만 조용히 실패한다.
    */
   const src = readFileSync(join(REPO, "packages", "cli", "src", "commands.mjs"), "utf8");
   const wrapped = (src.match(/resolveSkillPaths\(skill\.body\)/g) ?? []).length;
   const raw = (src.match(/^\s+skill\.body,$/gm) ?? []).length;
-  assert.equal(wrapped, 3, `치환을 거치는 주입 지점이 ${wrapped}곳 — 3곳이어야 한다`);
+  assert.equal(wrapped, 4, `치환을 거치는 주입 지점이 ${wrapped}곳 — 4곳이어야 한다`);
   assert.equal(raw, 0, "치환 없이 본문을 그대로 넣는 자리가 남았다");
 });
 
