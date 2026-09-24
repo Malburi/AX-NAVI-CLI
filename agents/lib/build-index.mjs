@@ -1378,7 +1378,24 @@ function extractSymbols(text, clean, rel, workspace) {
       }
     }
   }
-  return { symbols, nodes, methods, callSites, injects, fields, classes };
+  /*
+   * 메서드 안의 지역 변수·파라미터 선언 타입(`UserSession user = ...`, `(Map param)`).
+   * fieldTypes는 필드만 추적해서 `user.getUserNo()`처럼 지역 변수를 한정자로 쓰는 호출이 전부
+   * 부분 문자열 근사로 갔다 — 실측(레거시 Java 600파일)에서 미해결 1,074건이 이 한 패턴이었다.
+   * 같은 이름을 if/else 블록마다 다른 타입으로 선언하는 코드가 흔해서(`ExcelReader excel` / `ExcelRead excel`)
+   * 선언 줄을 함께 남기고, 해석 때 호출 줄 바로 앞의 가장 가까운 선언을 쓴다.
+   */
+  const locals = [];
+  if ([".java", ".cs"].includes(ext)) {
+    for (const method of methods) {
+      /* 문자열 안의 `"User name = "`를 선언으로 읽지 않게 리터럴 내용을 먼저 지운다(길이는 보존). */
+      const body = clean.slice(method.start, method.end).replace(/"(?:\\.|[^"\\\n])*"/g, (literal) => `"${" ".repeat(literal.length - 2)}"`);
+      for (const match of body.matchAll(/\b([A-Z]\w*)(?:<[^;=(){}]*?>)?(?:\[\])?\s+([a-z_$][\w$]*)\s*(?=[=;,):])/g)) {
+        locals.push({ method: method.id, name: match[2], typeName: match[1], line: atLine(method.start + match.index) });
+      }
+    }
+  }
+  return { symbols, nodes, methods, callSites, injects, fields, classes, locals };
 }
 
 function extractBindings(text, clean, rel, workspace, methods) {
@@ -2225,6 +2242,8 @@ function analyzeFile(file, root, config) {
     callSites: symbolFacts.callSites,
     injects: symbolFacts.injects,
     fields: symbolFacts.fields || [],
+    locals: symbolFacts.locals || [],
+    includes: symbolFacts.includes || [],
     adapters: detectAdapters(file.rel, text),
     bindings: [...extractBindings(text, clean, file.rel, workspace, symbolFacts.methods), ...nexacro.bindings],
     fastApi: extractFastApiMeta(text, clean, file.rel),
@@ -2447,7 +2466,42 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   for (const field of facts.flatMap((item) => item.fields || [])) {
     fieldTypes.set(`${field.owner}::${field.fieldName}`, field.typeName);
   }
+  /* `호출 메서드::변수명` → [{ line, typeName }] 선언 순. 지역 변수·파라미터는 같은 이름의 필드를 가린다. */
+  const localDeclarations = new Map();
+  for (const local of facts.flatMap((item) => item.locals || [])) {
+    const key = `${local.method}::${local.name}`;
+    const list = localDeclarations.get(key);
+    if (list) list.push(local); else localDeclarations.set(key, [local]);
+  }
+  /* 호출 줄 이전의 가장 가까운 선언. 없으면 undefined(필드로 넘어간다). */
+  const localTypeAt = (caller, name, line) => {
+    let found;
+    for (const local of localDeclarations.get(`${caller}::${name}`) || []) if (local.line <= line) found = local.typeName;
+    return found;
+  };
   const indexedSimpleNames = new Set(nodes.map((item) => item.id.split(".").at(-1)));
+  /*
+   * 상속 체인. 한정자 없는 호출은 같은 클래스에 없으면 부모 클래스 멤버다(`getLogger()`를 부모
+   * `DataAccesser`에서 물려받는 식 — 실측 미해결 195건). 부모 이름이 인덱스에서 클래스 하나로
+   * 정해질 때만 따라간다.
+   */
+  const symbolById = new Map(symbols.map((item) => [item.id, item]));
+  /* 타입 단순 이름 → 그것을 implements·extends하는 클래스 id(외부 jar 타입 포함) */
+  const implementorsOf = new Map();
+  for (const symbol of symbols) {
+    for (const base of [symbol.extends, ...(symbol.implements || [])].filter(Boolean)) {
+      const simple = String(base).split(".").at(-1).replace(/<.*/, "").trim();
+      const list = implementorsOf.get(simple);
+      if (list) list.push(symbol.id); else implementorsOf.set(simple, [symbol.id]);
+    }
+  }
+  const superClassOf = (classId) => {
+    const base = symbolById.get(classId)?.extends;
+    if (!base) return null;
+    const simple = String(base).split(".").at(-1).replace(/<.*/, "").trim();
+    const classes = (nodeBySimple.get(simple) || []).filter((item) => item.type === "class");
+    return classes.length === 1 ? classes[0].id : null;
+  };
   /* `pkg.Owner.method` → `pkg.Owner` (필드 사전의 키와 맞추기 위한 소유 클래스 id) */
   const ownerIdOf = (callerId) => String(callerId || "").split(".").slice(0, -1).join(".");
   const nodeBySimple = new Map();
@@ -2513,14 +2567,23 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
        * 예전에는 이름이 겹치지 않으면 후보를 그대로 두어(아래 폴백) 오답뿐인 목록이
        * LLM 판정 대기열로 갔다. 타입을 알면 셋 중 하나로 정확히 갈린다.
        */
-      const declaredType = fieldTypes.get(`${ownerIdOf(call.caller)}::${call.qualifier}`);
-      if (declaredType) {
-        if (!indexedSimpleNames.has(declaredType)) {
-          /* 선언 타입이 인덱스에 없다 = 프레임워크·외부 라이브러리 호출. 엣지도 미해결도 만들지 않는다
-           * (후보가 0개일 때 버리는 기존 규칙과 같은 처리다). */
-          continue;
+      const localType = localTypeAt(call.caller, call.qualifier, call.line);
+      const declaredType = localType !== undefined ? localType : fieldTypes.get(`${ownerIdOf(call.caller)}::${call.qualifier}`);
+      /* 클래스 이름 그대로인 한정자(`Pager.calBetweenRow`)는 정적 호출이다 — 부분 문자열(`FrontPager`)이 아니라 정확히 그 클래스. */
+      const staticOwner = !declaredType && /^[A-Z]/.test(call.qualifier) ? nodeByOwnerSimple.get(`${call.qualifier}\u0000${call.name}`) : null;
+      if (staticOwner?.length) {
+        candidates = staticOwner;
+      } else if (declaredType) {
+        candidates = indexedSimpleNames.has(declaredType) ? nodeByOwnerSimple.get(`${declaredType}\u0000${call.name}`) || [] : [];
+        /*
+         * 선언 타입에 그 메서드 본문이 없으면(외부 jar 인터페이스 `User`, 본문 없는 인터페이스 선언)
+         * 그 타입을 implements·extends한 우리 클래스의 메서드로 간다 — `User user; user.getLoginId()`는
+         * 런타임에 `UserSession implements User`로 디스패치된다. 구현이 없으면 외부 호출이라 버린다.
+         */
+        if (!candidates.length) {
+          candidates = (implementorsOf.get(declaredType) || []).flatMap((classId) => nodeByOwnerId.get(`${classId}\u0000${call.name}`) || []);
+          if (!candidates.length) continue;
         }
-        candidates = nodeByOwnerSimple.get(`${declaredType}\u0000${call.name}`) || [];
       } else {
         /*
          * 선언 타입을 못 찾은 한정자(대부분 지역변수 — fieldTypes는 필드만 추적한다)는
@@ -2560,9 +2623,22 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
      * `setup()` 안에서 지역 함수 `setPassword`를 바로 호출하는 경우가 정확히 이 패턴이었고,
      * 실제로 같은 파일의 그 함수를 가리키는 게 맞았다).
      */
-    if (!call.qualifier && candidates.length > 1 && sameOwnerSafeExt.has(extname(call.file).toLowerCase())) {
+    /* `new QueryUpdateException(...)`는 클래스 노드와 생성자 노드(`X.X`)가 함께 후보가 된다 — 생성자다. */
+    if (candidates.length > 1) {
+      const constructors = (nodeByOwnerSimple.get(`${call.name}\u0000${call.name}`) || []).filter((item) => item.type === "method" && candidates.includes(item));
+      if (constructors.length === 1) candidates = constructors;
+    }
+    const callExt = extname(call.file).toLowerCase();
+    if (!call.qualifier && candidates.length > 1 && sameOwnerSafeExt.has(callExt)) {
       const sameClass = nodeByOwnerId.get(`${ownerIdOf(call.caller)}\u0000${call.name}`) || [];
       if (sameClass.length === 1) candidates = sameClass;
+      else if (!sameClass.length && [".java", ".kt", ".kts", ".cs"].includes(callExt)) {
+        for (let ancestor = superClassOf(ownerIdOf(call.caller)), depth = 0; ancestor && depth < 10; ancestor = superClassOf(ancestor), depth += 1) {
+          const inherited = nodeByOwnerId.get(`${ancestor}\u0000${call.name}`) || [];
+          if (inherited.length === 1) { candidates = inherited; break; }
+          if (inherited.length > 1) break;
+        }
+      }
     }
     if (candidates.length === 1 && candidates[0].id !== call.caller) {
       edges.push({ from: call.caller, to: candidates[0].id, type: "call", file: call.file, line: call.line, workspace: call.workspace, origin: "deterministic-indexer", confidence: call.qualifier ? "HIGH" : "MEDIUM" });

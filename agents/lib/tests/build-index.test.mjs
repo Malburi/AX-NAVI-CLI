@@ -1414,6 +1414,58 @@ public class OrderDao {
     }
   });
 
+  register("Java 호출 해석: 지역 변수 타입·외부 인터페이스 구현·정적 호출·생성자·상속 메서드", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-resolve-"));
+    try {
+      write(root, "src/m/UserSession.java", "package m;\npublic class UserSession implements User {\n  public String getLoginId() { return \"\"; }\n  public long getUserNo() { return 0; }\n}\n");
+      write(root, "src/m/StudySession.java", "package m;\npublic class StudySession {\n  public long getUserNo() { return 0; }\n}\n");
+      write(root, "src/u/Pager.java", "package u;\npublic class Pager {\n  public static int calBetweenRow(int a) { return a; }\n}\n");
+      write(root, "src/u/FrontPager.java", "package u;\npublic class FrontPager {\n  public static int calBetweenRow(int a) { return a; }\n}\n");
+      write(root, "src/u/StringSplit.java", "package u;\npublic class StringSplit {\n  public boolean hasMoreTokens() { return false; }\n}\n");
+      write(root, "src/u/ExcelRead.java", "package u;\npublic class ExcelRead {\n  public List read() { return null; }\n}\n");
+      write(root, "src/u/ExcelReader.java", "package u;\npublic class ExcelReader {\n  public List read() { return null; }\n}\n");
+      write(root, "src/ex/QueryUpdateException.java", "package ex;\npublic class QueryUpdateException extends RuntimeException {\n  public QueryUpdateException(String m) { super(m); }\n}\n");
+      write(root, "src/base/DataAccesser.java", "package base;\npublic class DataAccesser {\n  protected Object getLogger() { return null; }\n}\n");
+      write(root, "src/web/AjaxController.java", "package web;\npublic class AjaxController {\n  protected Object getLogger() { return null; }\n}\n");
+      write(root, "src/svc/BoardService.java", `package svc;
+public class BoardService extends DataAccesser {
+  private StudySession session;
+  public void doList(Param param) {
+    User user = param.getUser();
+    String id = user.getLoginId();
+    UserSession session = (UserSession) param.getSession();
+    long no = session.getUserNo();
+    int row = Pager.calBetweenRow(1);
+    StringTokenizer tok = new StringTokenizer("a,b", ",");
+    while (tok.hasMoreTokens()) { tok.nextToken(); }
+    getLogger();
+    if (row > 0) {
+      ExcelReader excel = new ExcelReader();
+      excel.read();
+    } else {
+      ExcelRead excel = new ExcelRead();
+      excel.read();
+    }
+    throw new QueryUpdateException("x");
+  }
+}
+`);
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const edges = json(root, "call_graph.json").edges.filter((item) => item.type === "call" && item.from === "svc.BoardService.doList");
+      const to = (id) => edges.some((item) => item.to === id);
+      assert.ok(to("m.UserSession.getLoginId"), `외부 jar 인터페이스 User → 구현 UserSession: ${JSON.stringify(edges)}`);
+      assert.ok(to("m.UserSession.getUserNo") && !to("m.StudySession.getUserNo"), "지역 변수가 같은 이름의 필드를 가린다");
+      assert.ok(to("u.Pager.calBetweenRow") && !to("u.FrontPager.calBetweenRow"), "정적 호출은 클래스 이름 정확 일치");
+      assert.ok(!to("u.StringSplit.hasMoreTokens"), "JDK StringTokenizer 지역 변수를 우리 클래스로 잇지 않는다");
+      assert.ok(to("base.DataAccesser.getLogger") && !to("web.AjaxController.getLogger"), "한정자 없는 호출은 부모 클래스 메서드");
+      assert.ok(to("u.ExcelReader.read") && to("u.ExcelRead.read"), "블록마다 다른 타입의 같은 변수 이름은 가장 가까운 선언");
+      assert.ok(to("ex.QueryUpdateException.QueryUpdateException"), "new X(...)는 생성자");
+      assert.equal(json(root, "_meta.json").unresolved_count, 0, readFileSync(join(root, "_workspace", "index", "_unresolved.jsonl"), "utf8"));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("Pro*C 배치의 C 함수·호출·EXEC SQL 정적 SQL과 PL/SQL 프로시저 호출을 인덱싱한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-proc-"));
     try {
