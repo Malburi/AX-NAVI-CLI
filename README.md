@@ -162,6 +162,7 @@ cd /path/to/내-프로젝트
 
 # 1) 코드베이스 지도 만들기 — AI 를 쓰지 않아 비용이 없습니다
 axnavi index build
+axnavi index coverage   # 이 도구로 얼마나 다룰 수 있는지 진단서 (역시 AI 불필요)
 
 # 2) 한 번 물어보기
 axnavi ask "결제 승인 처리가 어디서 시작되나?"
@@ -446,6 +447,7 @@ axnavi keys                     터미널이 보내는 키 확인
 axnavi index build              코드베이스 인덱싱 (AI 불필요)
 axnavi index status             인덱스 신선도
 axnavi index refresh            증분 갱신
+axnavi index coverage [경로]    커버리지 진단서 (AI 불필요 · 기본 _workspace/reports/coverage.md)
 
 axnavi agent list               에이전트 목록
 axnavi agent run <이름> <요청>   에이전트 직접 실행

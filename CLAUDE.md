@@ -112,6 +112,7 @@ config / template / requirements 파일은 헤더 생략.
 | `agents/lib/validate-harness.mjs` | `_workspace/index/*.json`을 `docs/index-schema/*.json` 대조 JSON 스키마로 검증(형태 검증) — `validator_checks.py`의 check7/7b(내용 정확성)와 병행. upstream 이식 후 analyzer.md 섹션 체계와 안 맞는 마크다운 프로즈 검사는 제거 |
 | `agents/lib/tests/` | 결정론적 인덱스·AI 예산·하네스 검증·패턴 프로필·역할 계약 회귀 테스트 + 무의존 러너 (`node agents/lib/tests/run.js`) |
 | `agents/lib/pattern_profile.py` | 구조화 패턴 프로필의 실제 근거 파일·scope·상태를 검증하고 작업 경로·모듈·레이어별 preferred 프로필 선택 |
+| `agents/lib/coverage-report.mjs` | 인덱스(_meta.adapter_coverage·excluded_sources·encoding + 인덱스 건수)와 인덱서가 읽지 않는 확장자 집계를 커버리지 진단서(요약 객체 + 마크다운)로 옮김(zero-LLM). `axnavi index coverage`가 쓴다 |
 | `agents/lib/analyzer_index_summary.py` | analyzer 리포트 Section B/D(의존성그래프·트랜잭션·외부통신·환경분기·데드코드·DB스키마)를 인덱스 JSON에서 기계 생성(zero-LLM) |
 | `agents/lib/pattern_tally.py` | pattern-extractor의 `05_patterns_extracted.md` 집계 표(샘플수·신뢰도·안티패턴 수)를 개별 패턴 파일에서 기계 취합(zero-LLM) |
 | `agents/lib/validator_checks.py` | validator 체크 1,2,3,4,6,7,8,9(파일존재·트리거품질·경로교차·보안·인덱스무결성·이력)를 기계 실행(zero-LLM), 체크 5·10만 validator(LLM)에 남김 |

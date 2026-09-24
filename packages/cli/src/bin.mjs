@@ -39,6 +39,7 @@ ${ui.bold("사용법")}
   axnavi index build              결정론적 인덱싱 (LLM·API 키 불필요)
   axnavi index status             인덱스 신선도
   axnavi index refresh            증분 갱신
+  axnavi index coverage [경로]    커버리지 진단서 (LLM 불필요, 기본 _workspace/reports/coverage.md)
 
   axnavi agent list               에이전트 목록
   axnavi agent run <이름> <요청>   에이전트 직접 실행
@@ -127,6 +128,7 @@ async function main() {
       return cmdIndex(args.root, rest[0] ?? "status", {
         ...(args.tier ? { tier: args.tier } : {}),
         ...(args.indexDir ? { indexDir: args.indexDir } : {}),
+        ...(rest[1] ? { out: rest[1] } : {}),
       });
     case "agent":
       return cmdAgent(args.root, rest, args.provider);

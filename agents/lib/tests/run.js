@@ -11,6 +11,7 @@ import { test as registerPortabilityTests } from "./portability.test.mjs";
 import { test as registerVerifyTargetTests } from "./verify-target.test.mjs";
 import { test as registerAnalysisWikiTests } from "./analysis-wiki.test.mjs";
 import { test as registerSiteTests } from "./site.test.mjs";
+import { test as registerCoverageReportTests } from "./coverage-report.test.mjs";
 
 const tests = [];
 function test(name, fn) {
@@ -38,6 +39,7 @@ await registerPortabilityTests(test, assert);
 await registerVerifyTargetTests(test, assert);
 await registerAnalysisWikiTests(test, assert);
 await registerSiteTests(test, assert);
+await registerCoverageReportTests(test, assert);
 
 let passed = 0,
   failed = 0;

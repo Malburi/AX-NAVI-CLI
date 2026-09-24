@@ -7,9 +7,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pythonInfo } from "../../../agents/lib/python-bin.mjs";
 import {
+  buildCoverageReport,
   buildIndex,
   indexStaleness,
   INDEXER_VERSION,
@@ -180,7 +181,7 @@ export function resolveSkillPaths(body) {
 /**
  * @param {string} root
  * @param {string} sub
- * @param {{ tier?: string, indexDir?: string }} opts
+ * @param {{ tier?: string, indexDir?: string, out?: string }} opts
  */
 export async function cmdIndex(root, sub, opts) {
   const paths = resolveProjectPaths(root, opts.indexDir);
@@ -199,8 +200,30 @@ export async function cmdIndex(root, sub, opts) {
     return st.stale ? 1 : 0;
   }
 
+  if (sub === "coverage") {
+    if (!existsSync(join(indexDir, "_meta.json"))) {
+      process.stdout.write(`${ui.yellow("인덱스가 없습니다")} — ${indexDir}\n  axnavi index build\n`);
+      return 1;
+    }
+    const { summary, markdown } = buildCoverageReport(paths.root, opts.indexDir);
+    const out = opts.out ? resolve(opts.out) : join(paths.reportsDir, "coverage.md");
+    await mkdir(dirname(out), { recursive: true });
+    await writeFile(out, markdown, "utf8");
+    const f = summary.files;
+    const pct = (/** @type {number} */ n) => (f.indexed ? `${Math.round((n / f.indexed) * 1000) / 10}%` : "-");
+    const rate = (/** @type {number | null} */ v) => (v === null ? "-" : `${Math.round(v * 1000) / 10}%`);
+    process.stdout.write(
+      `${ui.bold("커버리지 진단")}  ${paths.root}\n` +
+        `  인덱싱 ${f.indexed}개 · 자동 변경 가능 ${f.full}개(${pct(f.full)}) · 수동 검증 ${f.partial}개(${pct(f.partial)})\n` +
+        `  분석 불가 ${f.discovery_only}개 · 읽지 않는 코드 후보 ${f.unindexed_code_candidates}개 · 제외 ${f.excluded}개\n` +
+        `  호출 확정률 ${rate(summary.quality.call_resolution)} · SQL 연결률 ${rate(summary.quality.sql_linked)}\n` +
+        ui.dim(`  ${out}\n`),
+    );
+    return 0;
+  }
+
   if (sub !== "build" && sub !== "refresh") {
-    process.stderr.write(`알 수 없는 하위 명령: index ${sub} (build | status | refresh)\n`);
+    process.stderr.write(`알 수 없는 하위 명령: index ${sub} (build | status | refresh | coverage)\n`);
     return 2;
   }
 

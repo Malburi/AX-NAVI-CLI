@@ -20,3 +20,4 @@ export {
 } from "../../agents/lib/build-index.mjs";
 
 export { COMMANDS, loadIndex } from "../../agents/lib/query-index.mjs";
+export { buildCoverageReport } from "../../agents/lib/coverage-report.mjs";

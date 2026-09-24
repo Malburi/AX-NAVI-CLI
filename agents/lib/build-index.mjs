@@ -378,6 +378,39 @@ function discoverUnsupportedFiles(root, includePaths = [""]) {
   return output.sort();
 }
 
+/*
+ * 인덱서가 아예 읽지 않는 확장자(소스도, discovery-only도, 매니페스트도 아닌 것)를 센다.
+ * 인덱스에는 이런 파일이 흔적도 남지 않아 "이 도구가 못 보는 코드가 얼마나 되나"를 알 수 없었다.
+ * 커버리지 진단(coverage-report.mjs)에서만 부른다 — stat 없이 readdir만 하므로 가볍다.
+ */
+export function scanUnindexedExtensions(rootArg) {
+  const root = resolve(rootArg);
+  const config = loadConfig(root, null);
+  const counts = new Map();
+  function walk(dir, relDir = "") {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (EXCLUDED_DIRS.has(entry.name)) continue;
+        if (relDir === "plugins" && entry.name === "AX-Harness") continue;
+        walk(join(dir, entry.name), join(relDir, entry.name));
+        continue;
+      }
+      const ext = extname(entry.name).toLowerCase();
+      if (SOURCE_EXTENSIONS.has(ext) || MANIFEST_FILES.has(entry.name) || DISCOVERY_ONLY_EXTENSIONS.has(ext)) continue;
+      const rel = slash(relative(root, join(dir, entry.name)));
+      if (!isIncluded(rel, config.include_paths)) continue;
+      const key = ext || "(확장자 없음)";
+      const current = counts.get(key) || { extension: key, files: 0, sample: rel };
+      current.files += 1;
+      counts.set(key, current);
+    }
+  }
+  walk(root);
+  return [...counts.values()].sort((left, right) => right.files - left.files || byCodeUnit(left.extension, right.extension));
+}
+
 function loadConfig(root, configArg) {
   const configPath = configArg ? (isAbsolute(configArg) ? configArg : join(root, configArg)) : join(root, "_workspace", "indexer-config.json");
   const config = readJson(configPath, {}) || {};
