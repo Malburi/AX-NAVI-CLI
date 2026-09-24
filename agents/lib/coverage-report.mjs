@@ -16,6 +16,9 @@ const NON_CODE_EXTENSIONS = new Set([
   ".zip", ".jar", ".war", ".ear", ".class", ".dll", ".exe", ".so", ".gz", ".tar", ".7z", ".pdb", ".lib", ".obj",
   ".mp3", ".mp4", ".avi", ".wav", ".swf",
   ".css", ".scss", ".sass", ".less", ".map", ".lock", ".gitignore", ".gitattributes", ".editorconfig", ".ds_store",
+  /* 명세·설정·서명·배포 부산물 — 로직이 아니다(실측 JSP 저장소에서 코드 후보로 잘못 보이던 것). */
+  ".tld", ".xsd", ".dtd", ".mf", ".ncx", ".opf", ".sch", ".lic", ".cab", ".cur", ".ani", ".fla", ".psd", ".ai", ".eps",
+  ".ocx", ".chm", ".mdb", ".ini",
 ]);
 
 function readIndex(indexDir, name) {
@@ -41,6 +44,17 @@ export function buildCoverageReport(rootArg, indexDirArg) {
   const graph = readIndex(indexDir, "call_graph") || { nodes: [], edges: [] };
   const sqlUsage = readIndex(indexDir, "sql_usage") || { sqls: [], usages: [] };
   const callEdges = graph.edges.filter((item) => item.type === "call").length;
+  /*
+   * 미해결은 성격이 둘이다. 후보가 2개 이상이면 AI가 고를 수 있고(같은 패턴은 한 그룹으로 한 번 판정),
+   * 후보가 0개면 대상이 이 저장소에 없다(짝 저장소의 .js·외부 jar 추정) — 판정 대상이 아니다.
+   */
+  const unresolvedPath = join(indexDir, "_unresolved.jsonl");
+  const unresolvedItems = existsSync(unresolvedPath)
+    ? readFileSync(unresolvedPath, "utf8").split("\n").filter((line) => line.trim()).map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean)
+    : [];
+  const decidable = unresolvedItems.filter((item) => (item.candidates || []).length >= 2);
+  const decidableCalls = decidable.filter((item) => item.kind === "ambiguous_call").length;
+  const groups = (() => { try { return JSON.parse(readFileSync(join(indexDir, "_unresolved_groups.json"), "utf8")).groups?.length ?? null; } catch { return null; } })();
   const unresolved = meta.unresolved_count || 0;
   const codeUsage = new Set(sqlUsage.usages.filter((item) => item.method && item.method !== "unknown" && item.method !== item.sql_id).map((item) => item.sql_id));
   const linkedSqls = sqlUsage.sqls.filter((item) => codeUsage.has(item.id)).length;
@@ -63,6 +77,9 @@ export function buildCoverageReport(rootArg, indexDirArg) {
       methods: graph.nodes.filter((item) => item.type === "method").length,
       call_edges: callEdges,
       unresolved_calls: unresolved,
+      ai_decidable: decidable.length,
+      ai_groups: groups ?? decidable.length,
+      target_not_found: unresolved - decidable.length,
       endpoints: readIndex(indexDir, "api_contract")?.endpoints?.length || 0,
       sql_statements: sqlUsage.sqls.length,
       tables: readIndex(indexDir, "schema")?.tables?.length || 0,
@@ -70,7 +87,8 @@ export function buildCoverageReport(rootArg, indexDirArg) {
       transactions: readIndex(indexDir, "transactions")?.boundaries?.length || 0,
     },
     quality: {
-      call_resolution: callEdges + unresolved ? callEdges / (callEdges + unresolved) : null,
+      /* 분모에는 판정할 수 있는 모호한 호출만 넣는다 — 대상이 저장소 밖인 호출은 이 저장소가 풀 문제가 아니다. */
+      call_resolution: callEdges + decidableCalls ? callEdges / (callEdges + decidableCalls) : null,
       sql_linked: sqlUsage.sqls.length ? linkedSqls / sqlUsage.sqls.length : null,
     },
     extensions,
@@ -119,7 +137,9 @@ function renderMarkdown(s) {
 
   lines.push("## 추출 결과", "");
   table(["항목", "건수"], [
-    ["심볼", e.symbols], ["메서드", e.methods], ["확정된 호출 관계", e.call_edges], ["미해결 호출 (AI 판정 대상)", e.unresolved_calls],
+    ["심볼", e.symbols], ["메서드", e.methods], ["확정된 호출 관계", e.call_edges],
+    ["AI 판정 대상 (후보 2개 이상)", `${e.ai_decidable} (판정 그룹 ${e.ai_groups})`],
+    ["대상 미발견 (짝 저장소·외부 라이브러리 추정)", e.target_not_found],
     ["API 엔드포인트", e.endpoints], ["SQL 문장", e.sql_statements], ["테이블 (DDL·SQL 유도)", e.tables],
     ["외부 통신", e.external_io], ["트랜잭션 경계", e.transactions],
   ].map(([label, value]) => [label, String(value)]));
@@ -127,7 +147,7 @@ function renderMarkdown(s) {
   lines.push("## 연결 품질", "");
   const q = s.quality;
   table(["지표", "값", "뜻"], [
-    ["호출 확정률", q.call_resolution === null ? "-" : percent(q.call_resolution, 1), "이름이 겹쳐 결정론으로 못 정한 호출은 harness-init의 AI 판정으로 넘어간다"],
+    ["호출 확정률", q.call_resolution === null ? "-" : percent(q.call_resolution, 1), "후보가 2개 이상이라 결정론으로 못 정한 호출은 harness-init의 AI 판정으로 넘어간다(대상 미발견은 분모에서 뺌)"],
     ["SQL 연결률", q.sql_linked === null ? "-" : percent(q.sql_linked, 1), "코드에서 실행 위치를 찾은 SQL 비율이다. 낮으면 동적 id·프레임워크 래퍼를 의심한다"],
   ]);
 

@@ -392,15 +392,20 @@ export function scanUnindexedExtensions(rootArg) {
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        if (EXCLUDED_DIRS.has(entry.name)) continue;
+        /* `.settings`(Eclipse) 같은 점 폴더는 IDE·도구 메타데이터다. */
+        if (EXCLUDED_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
         if (relDir === "plugins" && entry.name === "AX-Harness") continue;
         walk(join(dir, entry.name), join(relDir, entry.name));
         continue;
       }
       const ext = extname(entry.name).toLowerCase();
       if (SOURCE_EXTENSIONS.has(ext) || MANIFEST_FILES.has(entry.name) || DISCOVERY_ONLY_EXTENSIONS.has(ext)) continue;
+      /* `.classpath`·`.gitignore` 같은 점 파일, `x.mrd.bak100506`·`x.mrd_100702` 같은 백업은 코드가 아니다. */
+      if (entry.name.startsWith(".") || /\.(?:bak\w*|old|orig|tmp)$|~$|\.\w+_\d{6,8}$/i.test(entry.name)) continue;
       const rel = slash(relative(root, join(dir, entry.name)));
       if (!isIncluded(rel, config.include_paths)) continue;
+      /* 인덱서가 벤더로 빼는 폴더(fck_editor·jquery-*)의 .cfm·.pl·.as는 우리 코드 누락이 아니다. */
+      if (VENDOR_DIR.test(rel)) continue;
       const key = ext || "(확장자 없음)";
       const current = counts.get(key) || { extension: key, files: 0, sample: rel };
       current.files += 1;

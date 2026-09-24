@@ -31,6 +31,11 @@ public class OrderDao {
       write(root, "legacy/batch.pc", "EXEC SQL SELECT 1 FROM DUAL;");
       write(root, "legacy/run.ksh", "#!/bin/ksh\n");
       write(root, "web/logo.png", "img");
+      /* 실측 저장소에서 코드 후보로 잘못 보이던 것들 — 벤더 폴더, IDE 점 폴더, 백업, 태그 라이브러리 명세 */
+      write(root, "web/fck_editor/spell.cfm", "<cfset x=1>");
+      write(root, ".settings/org.eclipse.jdt.core.prefs", "x=1");
+      write(root, "report/a.mrd_100702", "old");
+      write(root, "WEB-INF/tld/c.tld", "<taglib/>");
 
       buildIndex({ root, mode: "init", tier: "Standard", config: null });
       const { summary, markdown } = buildCoverageReport(root);
@@ -40,6 +45,7 @@ public class OrderDao {
       assert.equal(summary.files.discovery_only, 1, ".pbl");
       assert.equal(summary.unindexed_code_candidates.map((item) => item.extension).sort().join(","), ".ksh", "이미지는 코드 후보가 아니다");
       assert.equal(summary.quality.sql_linked, 0.5, "두 SQL 중 하나만 코드에서 실행 위치가 있다");
+      assert.equal(summary.extracted.ai_decidable + summary.extracted.target_not_found, summary.extracted.unresolved_calls, "미해결은 AI 판정 대상과 대상 미발견으로 나뉜다");
       assert.ok(markdown.includes("| 자동 변경 가능 (FULL → GO) | 1 | 25% |"), markdown);
       assert.ok(markdown.includes("| .ksh | 1 | legacy/run.ksh |"), markdown);
       assert.ok(!markdown.includes(".png"), "이미지는 진단서에 나오지 않는다");
