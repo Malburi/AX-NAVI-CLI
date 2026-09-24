@@ -19,6 +19,7 @@ const NEWLINE = String.fromCharCode(10);
 import { resolve } from "node:path";
 import { COMMANDS } from "../../../indexer/index.mjs";
 import { isWithin } from "../../../core/src/index.mjs";
+import { noAnswerText } from "./answers.mjs";
 
 const ELICIT_ADDR = process.env["AXNAVI_ELICIT_ADDR"] ?? "";
 const PROJECT_ROOT = process.env["AXNAVI_PROJECT_ROOT"] ?? process.cwd();
@@ -43,7 +44,7 @@ function ensureSocket() {
       if (!line.trim()) continue;
       try {
         const res = JSON.parse(line);
-        waiting.get(res.id)?.(res.answers ?? []);
+        waiting.get(res.id)?.(res);
         waiting.delete(res.id);
       } catch {
         /* 깨진 줄은 버린다 */
@@ -52,7 +53,7 @@ function ensureSocket() {
   });
   socket.on("error", () => {
     // 연결이 끊기면 대기 중인 질문을 빈 답으로 깨운다 — 영원히 매달리지 않게.
-    for (const resolve of waiting.values()) resolve([]);
+    for (const resolve of waiting.values()) resolve({ answers: [], reason: "error" });
     waiting.clear();
     socket = null;
   });
@@ -67,22 +68,32 @@ function ensureSocket() {
  * @returns {Promise<string[]>}
  */
 function askUser(question, options, multiSelect, header) {
-  return request({ question, options, multiSelect, header });
+  return requestFull({ question, options, multiSelect, header });
 }
 
 /**
- * 호스트에 한 건 묻고 답을 기다린다. 질문도 스킬 요청도 같은 통로를 쓴다.
+ * 호스트에 한 건 묻고 응답 전체를 기다린다. 빈 답이면 `reason` 이 왜 비었는지 알려 준다
+ * ("skipped" 사용자가 건너뜀 · "no_one" 답할 사람이 없는 실행 · "error" 통로 문제).
  * @param {Record<string, unknown>} payload
- * @returns {Promise<string[]>}
+ * @returns {Promise<{ answers?: string[], reason?: string }>}
  */
-function request(payload) {
+function requestFull(payload) {
   const sock = ensureSocket();
-  if (!sock) return Promise.resolve([]);
+  if (!sock) return Promise.resolve({ answers: [], reason: "error" });
   const id = randomUUID();
   return new Promise((resolve) => {
     waiting.set(id, resolve);
     sock.write(`${JSON.stringify({ id, ...payload })}${NEWLINE}`);
   });
+}
+
+/**
+ * 호스트에 한 건 묻고 답만 받는다. 승인·스킬 요청이 쓴다.
+ * @param {Record<string, unknown>} payload
+ * @returns {Promise<string[]>}
+ */
+async function request(payload) {
+  return (await requestFull(payload)).answers ?? [];
 }
 
 /* ---------- 도구 ---------- */
@@ -192,31 +203,9 @@ async function callTool(name, args) {
   }
 
   if (name === "AskUserQuestion") {
-    const answers = await askUser(args.question ?? "", args.options ?? [], args.multiSelect === true, args.header ?? "");
-    if (!answers.length) {
-      /*
-       * 무응답을 "확인된 결정"으로 굳히지 못하게 한다.
-       *
-       * 예전 문구는 "무엇을 가정했는지 밝혀라"까지만 말했다. 모델은 실제로 밝혔지만,
-       * 그 가정을 파일에 **사용자 확인 내용**으로 적었고 그 파일이 다음 실행의 스킵
-       * 조건이 됐다. 실측으로 이런 기록이 남았다.
-       *
-       *   ## 사용자 확인 내용
-       *   - 초기화 구성: 단일 (AskUserQuestion 무응답 → 기본값 적용)
-       *   - source: reused
-       *
-       * 그래서 일주일 뒤 실행은 "이미 확인됨"으로 보고 다시 묻지 않았다. 사용자는
-       * 단일/멀티레포를 한 번도 고른 적이 없는데 그 선택이 영구화된 것이다.
-       * 한 번의 무응답이 되돌릴 수 없는 결정이 되면 안 된다.
-       */
-      return {
-        text: [
-          "(사용자가 응답하지 않았다. 임의로 진행하지 말고 무엇을 가정했는지 밝혀라.",
-          "이 값을 '사용자가 확인했다'로 기록하지 마라 — 파일에 남길 때는 미확인임을",
-          "함께 적고(예: unconfirmed: true), 다음 실행에서 이 항목은 다시 물어야 한다.)",
-        ].join(" "),
-      };
-    }
+    const res = await askUser(args.question ?? "", args.options ?? [], args.multiSelect === true, args.header ?? "");
+    const answers = res.answers ?? [];
+    if (!answers.length) return { text: noAnswerText(res.reason) };
     return { text: answers.join(", ") };
   }
 

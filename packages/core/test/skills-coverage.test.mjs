@@ -179,13 +179,21 @@ test("위임 프로세스에 CLAUDE_PLUGIN_ROOT 를 채워 준다 — 두 번째
  * 이유로 Phase -1 을 건너뛰었다 — 사용자는 단일/멀티레포를 한 번도 고른 적이 없는데
  * 그 선택에 묶였다. 한 번의 무응답이 되돌릴 수 없는 결정이 되면 안 된다.
  */
-test("무응답을 '사용자 확인'으로 기록하지 말라고 알린다", () => {
-  const src = readFileSync(join(REPO, "packages", "cli", "src", "mcp", "server.mjs"), "utf8");
-  const at = src.indexOf("사용자가 응답하지 않았다");
-  assert.ok(at > 0, "무응답 안내 자체가 없다");
-  const block = src.slice(at, at + 400);
-  assert.match(block, /확인했다.*기록하지 마라|기록하지 마라/, "무응답이 확인으로 굳는 것을 막지 않는다");
-  assert.match(block, /다시 물어야/, "다음 실행에서 다시 묻게 하지 않는다");
+test("무응답을 '사용자 확인'으로 기록하지 말라고 알린다", async () => {
+  const { noAnswerText } = await import("../../cli/src/mcp/answers.mjs");
+  const skipped = noAnswerText("skipped");
+  assert.match(skipped, /확인했다.*기록하지 마라|기록하지 마라/, "무응답이 확인으로 굳는 것을 막지 않는다");
+  assert.match(skipped, /다시 물어야/, "다음 실행에서 다시 묻게 하지 않는다");
+});
+
+test("답할 사람이 없는 실행이면 기본값으로 넘어가지 말고 멈추라고 알린다", async () => {
+  const { noAnswerText } = await import("../../cli/src/mcp/answers.mjs");
+  for (const reason of ["no_one", "error"]) {
+    const text = noAnswerText(reason);
+    assert.match(text, /기본값으로 넘어가지 마라/, reason);
+    assert.match(text, /멈추/, reason);
+  }
+  assert.doesNotMatch(noAnswerText("skipped"), /기본값으로 넘어가지 마라/, "사람이 건너뛴 것은 기본값으로 진행한다");
 });
 
 test("스킵할 때 무엇을 재사용하는지 밝히라고 지시한다", () => {

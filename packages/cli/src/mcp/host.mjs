@@ -105,11 +105,16 @@ export async function startElicitHost({ elicitor, onNotice, onSkill, onApprove }
               ...(req.header ? { header: req.header } : {}),
             },
           );
-          socket.write(`${JSON.stringify({ id: req.id, answers })}\n`);
+          /*
+           * 빈 답이면 왜 비었는지 함께 보낸다 — 사람이 Esc 로 건너뛴 것과 답할 사람이 없는 실행은
+           * 다르게 다뤄야 한다(뒤의 것은 기본값으로 넘어가지 않고 멈춘다. mcp/answers.mjs 참고).
+           */
+          const reason = answers.length ? undefined : elicitor.canAsk?.() === false ? "no_one" : "skipped";
+          socket.write(`${JSON.stringify({ id: req.id, answers, ...(reason ? { reason } : {}) })}\n`);
         } catch (error) {
           // 질문이 실패했다고 위임 실행을 멈추게 하지는 않는다. 사유를 답으로 돌려준다.
           const message = error instanceof Error ? error.message : String(error);
-          socket.write(`${JSON.stringify({ id: req.id, answers: [], error: message })}\n`);
+          socket.write(`${JSON.stringify({ id: req.id, answers: [], reason: "error", error: message })}\n`);
         }
       }
     });

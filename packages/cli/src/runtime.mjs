@@ -321,6 +321,8 @@ export function createHostElicitor() {
   });
 
   return {
+    /* 지금 사람에게 물을 수 있는가. 등록된 줄 독자(REPL)나 실터미널이 없으면 답할 사람이 없는 실행이다. */
+    canAsk: () => Boolean(lineReader) || Boolean(process.stdin.isTTY),
     async ask(question, options, opts = {}) {
       /*
        * TTY 가 아니면 줄 입력으로 간다 — 파이프·CI 경로다.

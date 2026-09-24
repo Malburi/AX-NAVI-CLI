@@ -75,6 +75,30 @@ test("무응답은 빈 배열로 돌아온다 — 답을 지어내지 않는다"
   }
 });
 
+test("빈 답에는 이유가 붙는다 — 사람이 건너뛴 것과 답할 사람이 없는 것을 가른다", async () => {
+  const skippedHost = await startElicitHost({ elicitor: { canAsk: () => true, async ask() { return []; } } });
+  const noOneHost = await startElicitHost({ elicitor: { canAsk: () => false, async ask() { return []; } } });
+  const failingHost = await startElicitHost({ elicitor: { async ask() { throw new Error("터미널 없음"); } } });
+  try {
+    assert.equal((await roundTrip(skippedHost.address, { id: "r1", question: "q" })).reason, "skipped");
+    assert.equal((await roundTrip(noOneHost.address, { id: "r2", question: "q" })).reason, "no_one");
+    assert.equal((await roundTrip(failingHost.address, { id: "r3", question: "q" })).reason, "error");
+  } finally {
+    await skippedHost.close(); await noOneHost.close(); await failingHost.close();
+  }
+});
+
+test("답이 있으면 이유를 붙이지 않는다", async () => {
+  const host = await startElicitHost({ elicitor: { canAsk: () => true, async ask() { return ["예"]; } } });
+  try {
+    const res = await roundTrip(host.address, { id: "r4", question: "q" });
+    assert.deepEqual(res.answers, ["예"]);
+    assert.equal(res.reason, undefined);
+  } finally {
+    await host.close();
+  }
+});
+
 test("질문 처리가 실패해도 위임 실행을 멈추지 않는다", async () => {
   const host = await startElicitHost({
     elicitor: { async ask() { throw new Error("터미널 없음"); } },

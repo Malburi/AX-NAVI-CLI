@@ -47,6 +47,8 @@ export interface Elicitor {
     options: readonly string[],
     opts?: { multiSelect?: boolean; header?: string; preview?: readonly PreviewLine[] },
   ): Promise<string[]>;
+  /** 지금 사람에게 물을 수 있는가. 없으면(비대화형) 빈 답을 "건너뜀"이 아니라 "답할 사람 없음"으로 알린다. */
+  canAsk?(): boolean;
 }
 
 /**
