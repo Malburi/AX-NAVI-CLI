@@ -1501,17 +1501,36 @@ function extractSql(text, clean, rel, methods) {
   const relations = [];
   const mapper = /<(select|insert|update|delete)\b[^>]*\bid\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/\1>/gi;
   const namespace = text.match(/<mapper\b[^>]*namespace\s*=\s*["']([^"']+)["']/i)?.[1] || "";
+  /*
+   * iBatis 2 `<sqlMap namespace="Order">`. Java는 보통 `queryForList("Order.list")`로 부르므로
+   * id에 namespace를 붙이고 `statement_id`에 짧은 id를 남긴다 — useStatementNamespaces=false로
+   * `"list"`만 쓰는 프로젝트는 aggregate가 짧은 id로 되짚는다.
+   */
+  const sqlMapNamespace = namespace ? "" : text.match(/<sqlMap\b[^>]*namespace\s*=\s*["']([^"']+)["']/i)?.[1] || "";
+  const statementId = (raw) => (namespace ? `${namespace}.${raw}` : sqlMapNamespace ? `${sqlMapNamespace}.${raw}` : raw);
+  const shortId = (raw) => (sqlMapNamespace ? { statement_id: raw } : {});
+  const callableTarget = (body) => body.replace(/<!\[CDATA\[/g, "").match(PROCEDURE_CALL_TEXT)?.[1]?.replace(/"/g, "").replace(/\s+/g, "").toUpperCase();
+  /* 프로시저 호출 문장은 SQL이 아니라 호출 관계다 — sql_usage가 아니라 call_graph 엣지가 된다(aggregate). */
+  const callables = [];
+  for (const match of text.matchAll(/<procedure\b[^>]*\bid\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/procedure>/gi)) {
+    const procedure = callableTarget(match[2]);
+    if (procedure) callables.push({ id: statementId(match[1]), ...shortId(match[1]), procedure, file: rel, line: atLine(match.index) });
+  }
   for (const match of text.matchAll(mapper)) {
     /*
      * HTML/JSP/ASP의 <select id="cmbLanguages"> 드롭다운도 이 정규식에 걸린다.
      * 레거시 화면이 많은 프로젝트에서 실제로 수백 건이 SQL로 잘못 등록됐다 —
      * MyBatis 매퍼 파일이 아니면 본문이 SQL 모양일 때만 인정한다.
      */
-    if (!namespace && !sqlStatementType(match[3])) continue;
-    const id = namespace ? `${namespace}.${match[2]}` : match[2];
     /* statementType="CALLABLE"의 `{call PKG.PROC(...)}` — 이 SQL id를 쓰는 메서드가 프로시저를 부른다(aggregate가 잇는다). */
-    const callable = match[3].replace(/<!\[CDATA\[/g, "").match(PROCEDURE_CALL_TEXT)?.[1];
-    sqls.push({ id, file: rel, line: atLine(match.index), type: match[1].toLowerCase(), tables: [...new Set(sqlTables(match[3]))], text_preview: match[3].replace(/\s+/g, " ").trim().slice(0, 240), ...(callable ? { procedure: callable.replace(/"/g, "").replace(/\s+/g, "").toUpperCase() } : {}), origin: "deterministic-indexer", confidence: "HIGH" });
+    const callable = callableTarget(match[3]);
+    if (sqlMapNamespace && callable) {
+      callables.push({ id: statementId(match[2]), ...shortId(match[2]), procedure: callable, file: rel, line: atLine(match.index) });
+      continue;
+    }
+    if (!namespace && !sqlStatementType(match[3])) continue;
+    const id = statementId(match[2]);
+    sqls.push({ id, ...shortId(match[2]), file: rel, line: atLine(match.index), type: match[1].toLowerCase(), tables: [...new Set(sqlTables(match[3]))], text_preview: match[3].replace(/\s+/g, " ").trim().slice(0, 240), ...(callable ? { procedure: callable } : {}), origin: "deterministic-indexer", confidence: "HIGH" });
     relations.push(...extractSqlRelations(match[3], { sql_id: id, file: rel, line: atLine(match.index) }));
     if (namespace) usages.push({ sql_id: id, file: rel, line: atLine(match.index), method: id, evidence: "MyBatis mapper namespace + statement id", origin: "deterministic-indexer", confidence: "HIGH" });
   }
@@ -1578,7 +1597,7 @@ function extractSql(text, clean, rel, methods) {
     const line = atLine(match.index);
     usages.push({ sql_id: match[1], file: rel, line, method: executingMethod(match.index)?.id || "unknown", evidence: "쿼리 ID 상수 참조", candidate: true, origin: "deterministic-indexer", confidence: "HIGH" });
   }
-  return { sqls, usages, relations, procedureCalls };
+  return { sqls, usages, relations, procedureCalls, callables };
 }
 
 function extractTransactions(text, clean, rel, workspace, methods) {
@@ -2066,14 +2085,29 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
    * Java·C# → 저장 프로시저. 문자열의 `{call PKG.PROC}`은 extractSql이 호출 위치까지 남기고,
    * MyBatis CALLABLE 매퍼는 그 SQL id를 쓰는 메서드에서 부른 것으로 본다. 이름 해석은 일반 호출과 같다.
    */
-  const callableSqls = new Map(facts.flatMap((item) => item.sqls).filter((item) => item.procedure).map((item) => [item.id, item.procedure]));
+  const allSqls = facts.flatMap((item) => item.sqls);
+  const callables = facts.flatMap((item) => item.callables || []);
+  /*
+   * 쿼리 id 되짚기. iBatis sqlMap의 id는 `Order.list`인데 useStatementNamespaces=false 프로젝트의
+   * Java는 `"list"`만 쓴다. 짧은 id가 전체에서 하나일 때만 바꾸고, 둘 이상이면 모호하므로 그대로 둔다.
+   */
+  const knownStatementIds = new Set([...allSqls, ...callables].map((item) => item.id));
+  const byShortId = new Map();
+  for (const item of [...allSqls, ...callables]) {
+    if (!item.statement_id) continue;
+    const seen = byShortId.has(item.statement_id);
+    byShortId.set(item.statement_id, seen && byShortId.get(item.statement_id) !== item.id ? null : item.id);
+  }
+  const resolveStatementId = (id) => (knownStatementIds.has(id) ? id : byShortId.get(id) || id);
+  const callableSqls = new Map([...allSqls.filter((item) => item.procedure), ...callables].map((item) => [item.id, item.procedure]));
   const seenCallableUsage = new Set();
   for (const fact of facts) {
     for (const call of fact.procedureCalls || []) callSites.push({ ...call, workspace: workspaceFor(call.file, config).id });
     for (const usage of fact.usages) {
-      const target = callableSqls.get(usage.sql_id);
-      const key = `${usage.sql_id}:${usage.file}:${usage.line}`;
-      if (!target || usage.method === "unknown" || usage.method === usage.sql_id || seenCallableUsage.has(key)) continue;
+      const sqlId = resolveStatementId(usage.sql_id);
+      const target = callableSqls.get(sqlId);
+      const key = `${sqlId}:${usage.file}:${usage.line}`;
+      if (!target || usage.method === "unknown" || usage.method === sqlId || seenCallableUsage.has(key)) continue;
       seenCallableUsage.add(key);
       callSites.push({ caller: usage.method, ...procedureTarget(target), file: usage.file, line: usage.line, workspace: workspaceFor(usage.file, config).id });
     }
@@ -2271,11 +2305,15 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
       matchedEndpoints.add(endpoint.id); matchedConsumers.add(consumer.id);
     }
   }
-  const sqls = unique(facts.flatMap((item) => item.sqls), (item) => item.id);
+  const sqls = unique(allSqls, (item) => item.id);
   /* 후보(쿼리 ID 상수 참조)는 실제로 존재하는 SQL id일 때만 사용처로 인정한다 — 그냥 대문자 상수와 구분. */
   const sqlIds = new Set(sqls.map((item) => item.id));
+  /* 프로시저 호출 문장을 쓰는 곳은 위에서 call_graph 엣지가 됐다 — SQL 사용처로 두 번 세지 않는다. */
+  const callableIds = new Set(callables.map((item) => item.id));
   const usages = unique(
-    facts.flatMap((item) => item.usages).filter((item) => !item.candidate || sqlIds.has(item.sql_id)),
+    facts.flatMap((item) => item.usages)
+      .map((item) => ({ ...item, sql_id: resolveStatementId(item.sql_id) }))
+      .filter((item) => !callableIds.has(item.sql_id) && (!item.candidate || sqlIds.has(item.sql_id))),
     (item) => `${item.sql_id}:${item.file}:${item.line}`,
   ).map(({ candidate, ...rest }) => rest);
   const sqlRelations = unique(facts.flatMap((item) => item.relations || []), (item) => `${item.from_table}:${item.from_columns?.join(",")}:${item.to_table}:${item.to_columns?.join(",")}:${item.file}:${item.line}`);

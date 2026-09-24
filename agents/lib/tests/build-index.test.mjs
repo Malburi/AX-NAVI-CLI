@@ -1414,6 +1414,70 @@ public class OrderDao {
     }
   });
 
+  register("iBatis sqlMap은 namespace를 붙인 id로 잇고, <procedure>는 Java→프로시저 호출 엣지가 된다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-ibatis-"));
+    try {
+      write(root, "db/pkg_order.pkb", `CREATE OR REPLACE PACKAGE BODY pkg_order AS
+  PROCEDURE save_order(p_id IN NUMBER) IS
+  BEGIN
+    NULL;
+  END save_order;
+  FUNCTION get_status(p_id IN NUMBER) RETURN VARCHAR2 IS
+  BEGIN
+    RETURN 'N';
+  END get_status;
+END pkg_order;
+/
+`);
+      write(root, "sqlmap/Order.xml", `<sqlMap namespace="Order">
+  <select id="list" resultClass="map">SELECT * FROM ORDERS WHERE STATUS = #status#</select>
+  <procedure id="saveOrder" parameterMap="p">{call PKG_ORDER.SAVE_ORDER(?)}</procedure>
+  <select id="getStatus" parameterMap="p2">{? = call PKG_ORDER.GET_STATUS(?)}</select>
+</sqlMap>`);
+      write(root, "sqlmap/Code.xml", `<sqlMap namespace="Code">
+  <select id="codeList">SELECT * FROM CODES</select>
+  <select id="dupe">SELECT * FROM CODES</select>
+</sqlMap>`);
+      write(root, "sqlmap/Item.xml", `<sqlMap namespace="Item">
+  <select id="dupe">SELECT * FROM ITEMS</select>
+</sqlMap>`);
+      write(root, "src/OrderDao.java", `package com.acme;
+public class OrderDao extends SqlMapClientDaoSupport {
+  public List list() {
+    return getSqlMapClientTemplate().queryForList("Order.list", null);
+  }
+  public void save(Map p) {
+    getSqlMapClientTemplate().update("Order.saveOrder", p);
+  }
+  public String status(Map p) {
+    return (String) getSqlMapClientTemplate().queryForObject("Order.getStatus", p);
+  }
+  public List codes() {
+    return getSqlMapClientTemplate().queryForList("codeList", null);
+  }
+  public List dupes() {
+    return getSqlMapClientTemplate().queryForList("dupe", null);
+  }
+}
+`);
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const { sqls, usages } = json(root, "sql_usage.json");
+      assert.equal(sqls.find((item) => item.id === "Order.list")?.statement_id, "list", JSON.stringify(sqls));
+      const methodOf = (sqlId) => usages.find((item) => item.sql_id === sqlId && item.file === "src/OrderDao.java")?.method;
+      assert.equal(methodOf("Order.list"), "com.acme.OrderDao.list", JSON.stringify(usages));
+      assert.equal(methodOf("Code.codeList"), "com.acme.OrderDao.codes", "짧은 id가 하나면 되짚는다");
+      assert.equal(methodOf("dupe"), "com.acme.OrderDao.dupes", "짧은 id가 둘 이상이면 모호하므로 그대로 둔다");
+      assert.ok(!sqls.some((item) => /saveOrder|getStatus/.test(item.id)), `프로시저 호출은 SQL이 아니다: ${JSON.stringify(sqls)}`);
+      assert.ok(!usages.some((item) => /saveOrder|getStatus/.test(item.sql_id)), "프로시저 호출은 SQL 사용처로 두 번 세지 않는다");
+      const edges = json(root, "call_graph.json").edges;
+      const hasEdge = (from, to) => edges.some((item) => item.type === "call" && item.from === from && item.to === to);
+      assert.ok(hasEdge("com.acme.OrderDao.save", "PKG_ORDER.SAVE_ORDER"), `<procedure> → 프로시저: ${JSON.stringify(edges)}`);
+      assert.ok(hasEdge("com.acme.OrderDao.status", "PKG_ORDER.GET_STATUS"), "{? = call} → 함수");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("PL/SQL 패키지·프로시저·트리거의 심볼·호출·정적 SQL과 Java→프로시저 호출을 인덱싱한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-plsql-"));
     try {
