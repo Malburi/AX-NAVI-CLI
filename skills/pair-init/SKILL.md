@@ -21,8 +21,23 @@ description: 별도 저장소로 분리된 백엔드·프론트엔드(1:1) 또�
 
 ### 하네스 존재 확인
 
-`CLAUDE.md` + `.claude/` 존재 확인:
-- 없으면 → "먼저 `harness-init`으로 현재 프로젝트 하네스를 생성한 뒤 실행하세요" 안내 후 중단.
+`CLAUDE.md` + `.claude/` 존재 확인. 없으면 바로 중단하지 않고 묻는다 — 저장소 간 연결의 핵심(API 계약 매칭,
+화면 스크립트 → 짝 저장소 JS 함수)은 `pair_config.md`와 결정론적 인덱스만으로 동작하고 하네스가 필요 없다:
+
+```
+현재 프로젝트에 하네스(CLAUDE.md·.claude/)가 없습니다.
+
+1. 인덱스만 연결 (권장, AI 없음) — pair_config.md를 양쪽에 쓰고 인덱스를 다시 만들어 저장소 간 호출·API를 잇습니다.
+   CLAUDE.md 파트너 섹션·api-bridge 드리프트 검증은 건너뜁니다(나중에 harness-init 후 pair-init을 다시 실행하면 채워집니다).
+2. 중단 — 먼저 harness-init으로 하네스를 만든 뒤 다시 실행합니다.
+
+선택? (1/2)
+```
+
+| 선택 | 동작 |
+|------|------|
+| 1 | `index_only = true`. Phase 1(파트너 하네스 3지선다는 묻지 않고 "하네스 없이 진행"으로 간주) → Phase 2 → Phase 2.5 → Phase 6. Phase 3·4·5는 건너뛴다 |
+| 2 | 중단 |
 
 ### 모드 판단
 
@@ -245,6 +260,26 @@ partner_api_contract: [절대경로 2]/_workspace/index/api_contract.json
 
 ---
 
+## Phase 2.5: 인덱스 재생성 (짝 저장소 먼저, hub 나중)
+
+인덱서는 `pair_config.md`를 읽어 두 가지를 잇는다 — ① 짝 저장소 `api_contract.json`의 엔드포인트·컨슈머 매칭,
+② 이 저장소 화면(JSP·HTML)의 이벤트·스크립트 호출이 `<script src>`로 싣는 **짝 저장소의 JS 함수**
+(짝 인덱스 `call_graph.json`의 함수 노드를 후보로 쓰고, 실제로 이어진 것만 `source: "external"` 노드로 남긴다.
+`<%= JS_PATH %>` 같은 경로 변수는 `.properties` 설정값으로 되살려 html/·mobile/ 같은 사본 중 실린 쪽을 고른다).
+그래서 **짝 저장소 인덱스가 먼저 있어야** 한다. 파트너(클라이언트)들을 먼저, hub를 마지막에 `pipeline-runner`로 실행한다:
+
+```bash
+node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[파트너 절대경로]"   # 파트너마다
+node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "[hub 절대경로]"      # 마지막에
+```
+
+실행 후 hub에서 `axnavi index coverage` 진단서(또는 `agents/lib/coverage-report.mjs`)로 "대상 미발견" 건수를 연결 전과
+비교해 Phase 6에 보고한다. 짝 저장소 코드가 바뀌면 이 순서로 다시 인덱싱해야 hub 쪽 연결이 갱신된다.
+
+`index_only`면 여기서 Phase 6으로 간다.
+
+---
+
 ## Phase 3: API 계약 추출 (백엔드 프로젝트)
 
 1:1/1:N 공통 — 백엔드는 항상 1개이므로 변경 없음. 백엔드 루트(현재 또는 파트너)에서
@@ -392,9 +427,14 @@ Phase 5-A의 "프론트엔드 CLAUDE.md에 추가" 템플릿을 그대로 사용
 프론트엔드: [경로] ([스택])
 API base:  [url]
 
-API 계약 추출: [성공/실패]
+API 계약 추출: [성공/실패 / index_only라 스킵]
   엔드포인트: N개 (공개 A개 | 인증 B개)
   저장: [백엔드]/_workspace/index/api_contract.json
+
+저장소 간 연결 (Phase 2.5 인덱스 기준):
+  API 계약 매칭: N건
+  짝 저장소 JS 함수로 이어진 화면 이벤트·호출: N건
+  대상 미발견: [연결 전] → [연결 후]
 
 API 드리프트 검증: [실행됨/스킵]
   🔴 MISSING: N건

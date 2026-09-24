@@ -742,9 +742,36 @@ function extractLegacySymbols(text, clean, rel, workspace) {
   const includes = markup.has(ext)
     ? [...text.matchAll(/<%@\s*include\s+file\s*=\s*["']([^"']+)["']|<jsp:include\s+page\s*=\s*["']([^"'<]+)["']/gi)].map((match) => (match[1] || match[2]).split("?")[0])
     : [];
+  /*
+   * 이 화면이 불러오는 외부 스크립트(`<script src="<%= JS_PATH %>back/x.js">`). 동적 앞부분은 알 수 없으니
+   * 떼고 뒷부분 경로(`back/x.js`)만 남긴다 — 같은 함수가 html/·mobile/ 사본에 다 있을 때 실제로 실린 쪽을 고른다.
+   */
+  const scripts = markup.has(ext) || ext === ".asp"
+    ? [...text.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)].map((match) => match[1].split(/[?#]/)[0]).filter((value) => /\.\w+$/.test(value))
+    : [];
+  /*
+   * 스크립틀릿 경로 변수(`String JS_PATH = CONTEXT_PATH + conf.getString("BACK_JS_PATH");`).
+   * `<%= JS_PATH %>forms.js`의 앞부분을 설정값(`/html/script/js/`)으로 되살려 html/·mobile/ 사본 중 실린 쪽을 가린다.
+   * 조각: 문자열 리터럴, 설정 키 조회(getString/getProperty), 그 밖의 식(실행해야 아는 값 — 해석 때 버린다).
+   */
+  const pathVars = markup.has(ext)
+    ? [...text.matchAll(/\bString\s+(\w+)\s*=\s*([^;%]+);/g)].map((match) => ({
+      name: match[1],
+      parts: match[2].split("+").map((token) => {
+        const literal = token.trim().match(/^"([^"]*)"$/)?.[1];
+        if (literal !== undefined) return { literal };
+        const key = token.match(/\.get(?:String|Property)\s*\(\s*"([^"]+)"/)?.[1];
+        return key ? { key } : { unknown: true };
+      }),
+    }))
+    : [];
   const symbols = methods.map((method) => ({ id: method.id, type: method.type, file: rel, line: method.line, package: pkg, workspace: workspace.id, origin: "deterministic-indexer", confidence: "MEDIUM" }));
   if (markup.has(ext)) symbols.push({ id: `view:${rel}`, type: "view", file: rel, line: 1, workspace: workspace.id, origin: "deterministic-indexer", confidence: "HIGH" });
-  return { symbols, nodes: symbols.map((item) => ({ ...item })), methods, callSites, injects: [], classes: [], includes };
+  /* 경로형 설정값(`KEY=/html/script/js/`). 값에 `/`가 없는 설정은 스크립트 경로 해석에 쓸 일이 없어 담지 않는다. */
+  const properties = ext === ".properties"
+    ? [...text.matchAll(/^[ \t]*([\w.-]+)[ \t]*[=:][ \t]*(\S*\/\S*)[ \t]*$/gm)].map((match) => [match[1], match[2]])
+    : [];
+  return { symbols, nodes: symbols.map((item) => ({ ...item })), methods, callSites, injects: [], classes: [], includes, scripts, pathVars, properties };
 }
 
 /*
@@ -2290,6 +2317,9 @@ function analyzeFile(file, root, config) {
     fields: symbolFacts.fields || [],
     locals: symbolFacts.locals || [],
     includes: symbolFacts.includes || [],
+    scripts: symbolFacts.scripts || [],
+    pathVars: symbolFacts.pathVars || [],
+    properties: symbolFacts.properties || [],
     adapters: detectAdapters(file.rel, text),
     bindings: [...extractBindings(text, clean, file.rel, workspace, symbolFacts.methods), ...nexacro.bindings],
     fastApi: extractFastApiMeta(text, clean, file.rel),
@@ -2617,12 +2647,84 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
     return scope;
   };
   const inPageScope = (file, candidate) => !MARKUP_PAGE.test(candidate.file || "") || pageScope(file).has(candidate.file);
+  /* 화면(과 인클루드)이 `<script src>`로 싣는 파일. 후보가 여럿이면 실린 스크립트·같은 화면 쪽만 남긴다. */
+  const scriptsByFile = new Map(facts.filter((item) => item.scripts?.length).map((item) => [item.rel, item.scripts]));
+  const pathVarsByFile = new Map(facts.filter((item) => item.pathVars?.length).map((item) => [item.rel, item.pathVars]));
+  const propertyValues = new Map();
+  for (const [key, value] of facts.flatMap((item) => item.properties || [])) {
+    const list = propertyValues.get(key);
+    if (list) list.push(value); else propertyValues.set(key, [value]);
+  }
+  /*
+   * 경로 변수 값. 실행해야 아는 조각(`CONTEXT_PATH`·`strPath`) 뒤에 이어지는 확정 부분만 쓴다 —
+   * 앞부분을 모르는 채 이어 붙이면 틀린 경로가 되지만, 뒷부분은 그대로 파일 경로의 꼬리다.
+   */
+  const pathVarValues = (vars) => {
+    const values = new Map();
+    for (const variable of vars) {
+      const lastUnknown = variable.parts.map((part) => Boolean(part.unknown)).lastIndexOf(true);
+      let options = [""];
+      for (const part of variable.parts.slice(lastUnknown + 1)) {
+        const choices = part.literal !== undefined ? [part.literal] : propertyValues.get(part.key) || [""];
+        options = options.flatMap((prefix) => choices.map((choice) => prefix + choice));
+      }
+      values.set(variable.name, [...new Set([...(values.get(variable.name) || []), ...options])]);
+    }
+    return values;
+  };
+  /* `<%= JS_PATH %>forms.js` → `html/script/js/forms.js`. 모르는 식은 버리고 앞의 `/`·`./`를 떼어 경로 꼬리로 쓴다. */
+  const expandScript = (raw, vars) => {
+    let expansions = [raw];
+    for (const match of raw.matchAll(/<%=\s*(\w+)\s*%>/g)) {
+      const values = vars.get(match[1]) || [""];
+      expansions = expansions.flatMap((item) => values.map((value) => item.replace(match[0], value)));
+    }
+    return expansions.map((item) => item.replace(/<%[\s\S]*?%>|\$\{[^}]*\}/g, "").replace(/\/{2,}/g, "/").replace(/^(?:\.{0,2}\/)+/, "")).filter(Boolean);
+  };
+  const loadedMemo = new Map();
+  const loadedScripts = (file) => {
+    if (!loadedMemo.has(file)) {
+      const scope = [...pageScope(file)];
+      const vars = pathVarValues(scope.flatMap((item) => pathVarsByFile.get(item) || []));
+      loadedMemo.set(file, [...new Set(scope.flatMap((item) => (scriptsByFile.get(item) || []).flatMap((raw) => expandScript(raw, vars))))]);
+    }
+    return loadedMemo.get(file);
+  };
+  const preferLoaded = (file, candidates) => {
+    if (candidates.length < 2) return candidates;
+    const suffixes = loadedScripts(file);
+    if (!suffixes.length) return candidates;
+    const kept = candidates.filter((item) => MARKUP_PAGE.test(item.file || "")
+      || suffixes.some((suffix) => item.file === suffix || String(item.file).endsWith(`/${suffix}`)));
+    return kept.length ? kept : candidates;
+  };
+  /*
+   * 짝 저장소(pair_config.md)의 JS 함수. 서버 JSP가 `<script src>`로 별도 저장소(정적 자원·클라이언트)의 .js를
+   * 불러와 그 함수를 부르는 구조가 흔한데, 인덱스가 저장소마다 따로라 화면 이벤트가 전부 "대상 없음"이었다
+   * (실측 2,417건). API 계약만 합치던 것을 넘어, 짝 인덱스의 JS 함수를 화면 스크립트의 후보로 쓴다.
+   * 실제로 이어진 것만 `source: "external"` 노드로 남긴다 — 짝 저장소 인덱스가 먼저 만들어져 있어야 한다.
+   */
+  const externalBySimple = new Map();
+  for (const link of pairConfig(options.root)?.partners || []) {
+    const graph = readJson(join(link.partner_root, "_workspace", "index", "call_graph.json"), null);
+    if (!graph?.nodes) continue;
+    const label = basename(String(link.partner_root).replace(/[\\/]+$/, ""));
+    for (const node of graph.nodes) {
+      if (node.source === "external" || !["method", "function"].includes(node.type)) continue;
+      if (!JS_FAMILY_EXTENSIONS.includes(extname(node.file || "").toLowerCase())) continue;
+      const simple = node.id.split(".").at(-1);
+      const external = { id: `ext:${label}:${node.id}`, type: "external_function", file: node.file, line: node.line, source: "external", external_repo_path: link.partner_root, workspace: `partner:${label}`, origin: "deterministic-indexer", confidence: "MEDIUM" };
+      const list = externalBySimple.get(simple);
+      if (list) list.push(external); else externalBySimple.set(simple, [external]);
+    }
+  }
+  const pageCandidates = (file, name, own) => preferLoaded(file, [...own, ...(externalBySimple.get(name) || [])].filter((item) => inPageScope(file, item)));
 
   const edges = [];
   const unresolved = [];
   for (const binding of bindings) {
     let candidates = (nodeBySimple.get(binding.handler_name) || []).filter((item) => item.type !== "trigger");
-    if (MARKUP_PAGE.test(binding.file || "")) candidates = candidates.filter((item) => inPageScope(binding.file, item));
+    if (MARKUP_PAGE.test(binding.file || "")) candidates = pageCandidates(binding.file, binding.handler_name, candidates);
     /*
      * 템플릿 이벤트 핸들러(@click 등)·markup 이벤트는 반드시 같은 파일의 스크립트 블록에
      * 정의된 메서드다 — qualifier 기반 호출(obj.method())과 달리 "다른 객체를 통한 동명
@@ -2647,7 +2749,7 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   for (const call of callSites) {
     let candidates = nodeBySimple.get(call.name) || [];
     /* 한정자 없는 화면 스크립트 호출만 좁힌다 — `opener.fnX()`·`parent.fnX()`는 정당하게 다른 화면을 가리킨다. */
-    if (!call.qualifier && MARKUP_PAGE.test(call.file || "")) candidates = candidates.filter((item) => inPageScope(call.file, item));
+    if (!call.qualifier && MARKUP_PAGE.test(call.file || "")) candidates = pageCandidates(call.file, call.name, candidates);
     if (call.qualifier) {
       /*
        * 한정자를 **선언 타입**으로 먼저 해석한다. `sqlSession.insert(...)`의 `sqlSession`은
@@ -2842,6 +2944,11 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
    * (validator_checks가 count 불일치로 FAIL), in-degree도 같은 관계를 여러 번 세고 있었다.
    */
   const uniqueEdges = unique(edges, (item) => `${item.from}:${item.to}:${item.type}`);
+  /* 짝 저장소 함수는 실제로 이어진 것만 노드로 남긴다(전부 넣으면 짝 저장소 함수 수천 개가 여기 그래프를 채운다). */
+  if (externalBySimple.size) {
+    const referenced = new Set(uniqueEdges.map((item) => item.to).filter((id) => id.startsWith("ext:")));
+    for (const list of externalBySimple.values()) for (const node of list) if (referenced.has(node.id)) { nodes.push(node); referenced.delete(node.id); }
+  }
   const { inDegree } = degreeMaps(nodes, uniqueEdges);
   /* 데드 코드 후보는 전 Tier에서 계산한다. Full 전용이면 Standard 분석이 유지보수 위험을 볼 근거를 잃는다. */
   const unusedMethods = deadCodeCandidates(nodes, inDegree, uniqueEdges, endpoints);

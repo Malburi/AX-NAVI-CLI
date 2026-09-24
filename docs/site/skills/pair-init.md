@@ -19,9 +19,10 @@ SKILL.md description에 적힌 트리거 문구는 다음과 같다.
 
 | 단계 | 하는 일 | 호출 에이전트·스크립트 | 사용자 개입 |
 |------|---------|----------------------|------------|
-| Phase 0 사전 확인·모드 판단 | `CLAUDE.md`·`.claude/` 존재 확인, 기존 `pair_config.md` 형식으로 1:1/1:N 판단 | 없음 | 신규면 "몇 개 프로젝트를 연동하나요?" 질문, 기존 1:N이면 3지선다 |
+| Phase 0 사전 확인·모드 판단 | `CLAUDE.md`·`.claude/` 존재 확인, 기존 `pair_config.md` 형식으로 1:1/1:N 판단 | 없음 | 하네스가 없으면 "인덱스만 연결(AI 없음) / 중단" 선택, 신규면 "몇 개 프로젝트를 연동하나요?" 질문, 기존 1:N이면 3지선다 |
 | Phase 1-A / 1-B 정보 수집 | 1:1은 역할·파트너 경로·API base URL·스택, 1:N은 클라이언트 수만큼 역할 라벨·경로·URL·스택 | 파트너 하네스가 없으면 `general-purpose`가 harness-init 대행 | 정보 입력, 하네스 없을 때 3지선다 |
 | Phase 2-A / 2-B pair_config.md 생성 | 현재 프로젝트와 파트너(들) 양쪽에 생성 | 없음 | 없음 |
+| Phase 2.5 인덱스 재생성 | 파트너(들) 먼저, hub 마지막에 인덱싱 — hub 인덱스가 짝 저장소 API 계약과 화면이 `<script src>`로 싣는 짝 저장소 JS 함수를 잇는다(`<%= JS_PATH %>`는 `.properties` 값으로 해석). 인덱스만 연결이면 여기서 Phase 6으로 | `pipeline-runner` (`build-index.mjs`) | 없음 |
 | Phase 3 API 계약 추출 | 백엔드 루트에서 계약 추출 | `ax-navi:api-bridge` mode extract | 없음 |
 | Phase 4-A / 4-B 드리프트 검증 | 하네스 있는 클라이언트마다 계약 대조 (1:N은 병렬) | `ax-navi:api-bridge` mode validate | 없음 |
 | Phase 5-A / 5-B CLAUDE.md 파트너 섹션 | 양쪽 `CLAUDE.md`에 "## 파트너 프로젝트" 추가·갱신 | 없음 | 없음 |

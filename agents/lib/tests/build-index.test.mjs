@@ -1502,6 +1502,46 @@ function fnCheck() { return true; }
     }
   });
 
+  register("pair_config로 이은 짝 저장소의 JS 함수를 화면 이벤트·호출 후보로 쓰고, JS_PATH 설정으로 실린 사본을 고른다", () => {
+    const server = mkdtempSync(join(tmpdir(), "ax-pair-server-"));
+    const client = mkdtempSync(join(tmpdir(), "ax-pair-client-"));
+    try {
+      write(client, "html/script/js/forms.js", "function Forms() { return {}; }\n");
+      write(client, "mobile/script/js/forms.js", "function Forms() { return {}; }\n");
+      write(client, "html/script/js/back/argil_info.js", "function onViewPage(id) { location.href = '/view?id=' + id; }\n");
+      write(client, "html/script/js/unused.js", "function neverCalled() {}\n");
+      buildIndex({ root: client, mode: "init", tier: "Standard", config: null });
+
+      write(server, "WEB-INF/config/setting.properties", "#BACK_JS_PATH=/old/js/\nBACK_JS_PATH=/html/script/js/\nTITLE=교육\n");
+      write(server, "WEB-INF/jsp/back/include/incInit.jspf", "<%\n  String CONTEXT_PATH = request.getContextPath();\n  String JS_PATH = CONTEXT_PATH + conf.getString(\"BACK_JS_PATH\");\n%>\n");
+      write(server, "WEB-INF/jsp/back/argil/list.jsp", `<%@ include file="/WEB-INF/jsp/back/include/incInit.jspf" %>
+<script src="<%= JS_PATH %>forms.js"></script>
+<script src="<%= JS_PATH %>back/argil_info.js"></script>
+<a href="#none" onclick="onViewPage('1');">보기</a>
+<script>
+function fnInit() { var f = new Forms(); }
+</script>
+`);
+      buildIndex({ root: server, mode: "init", tier: "Standard", config: null });
+      const unpaired = readFileSync(join(server, "_workspace", "index", "_unresolved.jsonl"), "utf8");
+      assert.ok(/"handler_name":"onViewPage"/.test(unpaired), "페어가 없으면 짝 저장소 함수는 대상 미발견이다");
+
+      write(server, "_workspace/pair_config.md", `# Pair Configuration\n\nproject_type: backend\npartner_type: frontend\npartner_root: ${client}\npartner_api_contract: ${join(client, "_workspace", "index", "api_contract.json")}\n`);
+      buildIndex({ root: server, mode: "init", tier: "Standard", config: null });
+      const label = client.split(/[\\/]/).at(-1);
+      const graph = json(server, "call_graph.json");
+      assert.ok(graph.edges.some((item) => item.type === "markup_event" && item.to === `ext:${label}:html.script.js.back.argil_info.onViewPage`), JSON.stringify(graph.edges));
+      assert.ok(graph.edges.some((item) => item.type === "call" && item.from.endsWith(".list.fnInit") && item.to === `ext:${label}:html.script.js.forms.Forms`), "JS_PATH=/html/script/js/로 html 사본을 고른다");
+      const external = graph.nodes.filter((item) => item.source === "external").map((item) => item.id).sort();
+      assert.equal(external.join(","), [`ext:${label}:html.script.js.back.argil_info.onViewPage`, `ext:${label}:html.script.js.forms.Forms`].sort().join(","), "이어진 짝 노드만 남긴다(mobile 사본·neverCalled 없음)");
+      const ids = new Set(graph.nodes.map((item) => item.id));
+      assert.ok(graph.edges.every((item) => ids.has(item.from) && ids.has(item.to)), "끊어진 엣지가 없다");
+    } finally {
+      rmSync(server, { recursive: true, force: true });
+      rmSync(client, { recursive: true, force: true });
+    }
+  });
+
   register("Pro*C 배치의 C 함수·호출·EXEC SQL 정적 SQL과 PL/SQL 프로시저 호출을 인덱싱한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-proc-"));
     try {
