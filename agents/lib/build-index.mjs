@@ -37,7 +37,7 @@ import {
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
 
-export const INDEXER_VERSION = "1.12.0"; // Oracle PL/SQL 심볼·호출·정적 SQL, Java→프로시저 호출.
+export const INDEXER_VERSION = "1.12.0"; // Oracle PL/SQL 심볼·호출·정적 SQL, Java→프로시저 호출, 본문 사용처를 감싸는 메서드로.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
 const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
@@ -1567,10 +1567,16 @@ function extractSql(text, clean, rel, methods) {
     if (owner) usages.push({ sql_id: id, file: rel, line: atLine(lit.start), method: owner.id, evidence: "메서드 본문 내 인라인 SQL 리터럴", origin: "deterministic-indexer", confidence: "MEDIUM" });
   }
   const usage = /\b(?:selectOne|selectList|insert|update|delete|queryForObject|queryForList)\s*\(\s*["']([^"']+)["']/g;
-  for (const match of text.matchAll(usage)) usages.push({ sql_id: match[1], file: rel, line: atLine(match.index), method: nextMethod(methods, atLine(match.index))?.id || "unknown", origin: "deterministic-indexer", confidence: "HIGH" });
+  /*
+   * `sqlSession.selectList("id")`·쿼리 ID 상수는 메서드 본문 안에 있다 — 감싸는 메서드가 실행 주체다.
+   * nextMethod("이 줄 이후 첫 메서드")만 쓰면 여러 줄짜리 메서드에서 사용처가 **다음 메서드**로 잡혀
+   * data_flow·영향도가 엉뚱한 메서드를 가리켰다. 본문 밖(필드 초기화 등)일 때만 예전처럼 다음 메서드로 둔다.
+   */
+  const executingMethod = (offset) => enclosingMethod(methods, offset) || nextMethod(methods, atLine(offset));
+  for (const match of text.matchAll(usage)) usages.push({ sql_id: match[1], file: rel, line: atLine(match.index), method: executingMethod(match.index)?.id || "unknown", origin: "deterministic-indexer", confidence: "HIGH" });
   for (const match of text.matchAll(SQL_ID_LITERAL_RE)) {
     const line = atLine(match.index);
-    usages.push({ sql_id: match[1], file: rel, line, method: nextMethod(methods, line)?.id || "unknown", evidence: "쿼리 ID 상수 참조", candidate: true, origin: "deterministic-indexer", confidence: "HIGH" });
+    usages.push({ sql_id: match[1], file: rel, line, method: executingMethod(match.index)?.id || "unknown", evidence: "쿼리 ID 상수 참조", candidate: true, origin: "deterministic-indexer", confidence: "HIGH" });
   }
   return { sqls, usages, relations, procedureCalls };
 }
@@ -1608,7 +1614,9 @@ function extractExternalIo(text, clean, rel, workspace, methods) {
   ];
   for (const [type, regex] of patterns) {
     for (const match of clean.matchAll(regex)) {
-      communications.push({ id: `${rel}:${atLine(match.index)}:${type}`, type, file: rel, line: atLine(match.index), method: nextMethod(methods, atLine(match.index))?.id || "", target: quotedValue(match[1]) || match[1] || "unknown", workspace: workspace.id, origin: "deterministic-indexer", confidence: "MEDIUM" });
+      /* 본문 안 호출(RestTemplate 등)은 감싸는 메서드, 메서드 위 애너테이션(@KafkaListener)은 다음 메서드다. */
+      const owner = enclosingMethod(methods, match.index) || nextMethod(methods, atLine(match.index));
+      communications.push({ id: `${rel}:${atLine(match.index)}:${type}`, type, file: rel, line: atLine(match.index), method: owner?.id || "", target: quotedValue(match[1]) || match[1] || "unknown", workspace: workspace.id, origin: "deterministic-indexer", confidence: "MEDIUM" });
     }
   }
   return communications;

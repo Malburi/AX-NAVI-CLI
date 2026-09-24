@@ -1372,6 +1372,48 @@ class OrderDao {
     }
   });
 
+  register("여러 줄짜리 메서드 본문의 SQL·외부 통신 사용처는 다음 메서드가 아니라 감싸는 메서드다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-enclosing-"));
+    try {
+      write(root, "src/OrderDao.java", `package com.acme;
+public class OrderDao {
+  private SqlSessionTemplate sqlSession;
+  public List list(Map param) {
+    param.put("x", 1);
+    return sqlSession.selectList("OrderMapper.list", param);
+  }
+  public void cancel(long id) {
+    String queryId = "ORDER_CANCEL_U01";
+    sqlSession.update(queryId, id);
+  }
+  public void notifyErp(long id) {
+    log.info("send");
+    WebClient.create("http://erp/api").post();
+  }
+  @KafkaListener(topics = "orders")
+  public void onMessage(String body) {
+    log.info(body);
+  }
+  public void other() {}
+}
+`);
+      write(root, "src/OrderMapper.xml", `<mapper namespace="OrderMapper">
+  <select id="list">SELECT * FROM ORDERS</select>
+</mapper>
+<queries><query><id>ORDER_CANCEL_U01</id><value>UPDATE ORDERS SET STATUS='C' WHERE ID=?</value></query></queries>
+`);
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const usages = json(root, "sql_usage.json").usages.filter((item) => item.file === "src/OrderDao.java");
+      assert.equal(usages.find((item) => item.sql_id === "OrderMapper.list")?.method, "com.acme.OrderDao.list", JSON.stringify(usages));
+      assert.equal(usages.find((item) => item.sql_id === "ORDER_CANCEL_U01")?.method, "com.acme.OrderDao.cancel", JSON.stringify(usages));
+      const io = json(root, "external_io.json").communications;
+      assert.ok(io.some((item) => item.line === 14 && item.method === "com.acme.OrderDao.notifyErp"), `본문 안 HTTP 호출: ${JSON.stringify(io)}`);
+      assert.ok(io.some((item) => item.type === "kafka_consumer" && item.method === "com.acme.OrderDao.onMessage"), `메서드 위 애너테이션: ${JSON.stringify(io)}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("PL/SQL 패키지·프로시저·트리거의 심볼·호출·정적 SQL과 Java→프로시저 호출을 인덱싱한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-plsql-"));
     try {
