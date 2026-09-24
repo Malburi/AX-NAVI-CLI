@@ -365,6 +365,12 @@ export function previewToolUse(tool, input, readText = readTextOrNull) {
 export function createApprover({ ask, onDecision, always = new Set(), readText = readTextOrNull, pluginRoot = "", trustAll = () => false }) {
   /* "이번 세션 동안 모두 묻지 않음" 의 기억 표지. 도구 이름과 겹치지 않는 값이다. */
   const ALL = "*";
+  /*
+   * 한 번 거부된 뒤에는 셸 명령의 세션 허용을 다시 쓰지 않는다. 실측: `.claude/skills` 쓰기가
+   * 거부되자 모델이 복사 스크립트를 _workspace 에 써서 `python3` 로 돌렸고, 앞서 받은
+   * `Bash(python3)` 세션 허용으로 묻지 않고 지나갔다. 거부 뒤의 명령은 사람이 다시 본다.
+   */
+  let deniedOnce = false;
   return {
     remembered: () => [...always],
     async decide(tool, input) {
@@ -384,7 +390,7 @@ export function createApprover({ ask, onDecision, always = new Set(), readText =
       const bash = tool === "Bash" ? analyzeBash(typeof safeInput["command"] === "string" ? safeInput["command"] : "", pluginRoot) : null;
       if (bash?.readOnly) return allow("자동 허용(읽기 전용·axnavi 스크립트)");
       const keys = bash ? (bash.names.length ? bash.names.map((name) => `Bash(${name})`) : ["Bash"]) : [approvalKey(tool, safeInput)];
-      if (keys.every((key) => always.has(key))) return allow("세션 허용");
+      if (keys.every((key) => always.has(key)) && !(bash && deniedOnce)) return allow("세션 허용");
 
       const key = bash ? `Bash(${bash.names.join(", ") || "?"})` : /** @type {string} */ (keys[0]);
       const what = describeToolUse(tool, safeInput);
@@ -396,7 +402,8 @@ export function createApprover({ ask, onDecision, always = new Set(), readText =
       let answers = [];
       try {
         const preview = previewToolUse(tool, safeInput, readText);
-        answers = await ask(`${what}\n실행할까요?`, [YES, ALWAYS, EVERYTHING, NO], {
+        const again = bash && deniedOnce ? "\n(앞서 거부된 작업이 있어, 세션 허용된 명령도 다시 묻습니다.)" : "";
+        answers = await ask(`${what}${again}\n실행할까요?`, [YES, ALWAYS, EVERYTHING, NO], {
           header: "권한",
           ...(preview.length ? { preview } : {}),
         });
@@ -418,6 +425,7 @@ export function createApprover({ ask, onDecision, always = new Set(), readText =
        * 모델에게는 사람이 막았다는 사실을 그대로 알린다 — 그래야 우회하려고
        * 같은 일을 다른 도구로 다시 시도하지 않는다.
        */
+      deniedOnce = true;
       onDecision?.({ tool, input: safeInput, allowed: false, how: picked === NO ? "거부" : "응답 없음" });
       return {
         behavior: "deny",

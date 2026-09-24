@@ -87,6 +87,26 @@ test("세션 허용은 그 묶음만 연다", async () => {
   assert.equal(person.asked.length, 2);
 });
 
+/*
+ * 실측. `.claude/skills` 쓰기가 거부되자 모델이 복사 스크립트를 써서 `python3` 로 돌렸고,
+ * 앞서 받은 Bash(python3) 세션 허용으로 묻지 않고 지나갔다.
+ */
+test("거부 뒤에는 셸 명령의 세션 허용을 다시 쓰지 않는다 — 우회 경로를 사람이 본다", async () => {
+  const always = new Set();
+  const person = scripted([["예, 이번 세션 동안 Bash(python3)은(는) 묻지 않음"], ["아니오"]]);
+  const approver = createApprover({ ask: person.ask, always });
+  assert.equal((await approver.decide("Bash", { command: "python3 a.py" })).behavior, "allow");
+  assert.equal((await approver.decide("Bash", { command: "python3 b.py" })).behavior, "allow", "거부 전에는 세션 허용이 그대로다");
+  assert.equal(person.asked.length, 1);
+
+  assert.equal((await approver.decide("Write", { file_path: ".claude/skills/x.md" })).behavior, "deny");
+  const bypass = await approver.decide("Bash", { command: "python3 _workspace/_deploy.py" });
+  assert.equal(bypass.behavior, "deny", "거부 뒤 세션 허용으로 우회가 지나갔다");
+  assert.equal(person.asked.length, 3, "거부 뒤 명령을 다시 묻지 않았다");
+  assert.match(person.asked[2]?.question ?? "", /다시 묻습니다/);
+  assert.equal((await approver.decide("Bash", { command: "ls .claude" })).behavior, "allow", "읽기 전용까지 막으면 조사도 못 한다");
+});
+
 test("'아니오' 는 거부하고, 우회하지 말라고 알린다", async () => {
   const decision = await createApprover({ ask: scripted([["아니오"]]).ask }).decide("Bash", { command: "rm -rf /" });
   assert.equal(decision.behavior, "deny");
