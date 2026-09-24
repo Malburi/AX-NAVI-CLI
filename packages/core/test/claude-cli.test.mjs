@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BACKGROUND_WAIT_CEILING_MS, buildDelegatedArgs, createBackgroundWatch, delegatedEnv, flattenToolContent, toDisallowedTools, toolBriefing, translateEvent } from "../../provider-claude-cli/src/index.mjs";
+import { BACKGROUND_WAIT_CEILING_MS, buildDelegatedArgs, createBackgroundWatch, delegatedEnv, delegatedSettings, flattenToolContent, toDisallowedTools, toolBriefing, translateEvent } from "../../provider-claude-cli/src/index.mjs";
 
 /** @param {string[]} names */
 const tools = (names) =>
@@ -302,4 +302,31 @@ test("MCP 도구 무응답 제한을 끈다 — 승인 창이 30분 뒤 끊기�
 test("위임 실행에서는 서브에이전트를 백그라운드로 띄우지 말라고 알린다", () => {
   assert.match(toolBriefing(tools(["Read"]), true), /run_in_background 로 띄우지 마라/);
   assert.doesNotMatch(toolBriefing(tools(["Read"]), false), /run_in_background/, "위임이 없는 실행에는 필요 없다");
+});
+
+/*
+ * 백그라운드 서브에이전트는 훅으로 포그라운드로 바꾼다. 안내문은 지침일 뿐이었다.
+ * 실측: 훅 없이 run_in_background:true → "Async agent launched", 훅 있으면 is_backgrounded:false.
+ */
+test("위임 설정은 서브에이전트 호출에 포그라운드 훅을 걸고, 호스트 플러그인을 끈다", () => {
+  const s = delegatedSettings(["ax-navi@x", "total-ito@y"], "node hook.mjs");
+  assert.deepEqual(s.enabledPlugins, { "ax-navi@x": false, "total-ito@y": false });
+  assert.equal(s.hooks.PreToolUse[0]?.matcher, "Agent");
+  assert.equal(s.hooks.PreToolUse[0]?.hooks[0]?.command, "node hook.mjs");
+  assert.ok(!("enabledPlugins" in delegatedSettings([], "x")), "끌 플러그인이 없는데 빈 목록을 넣었다");
+});
+
+test("포그라운드 훅은 뒤에서 돌리려는 호출만 바꾸고 나머지 인자는 보존한다", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const script = fileURLToPath(new URL("../../provider-claude-cli/src/foreground-agent-hook.mjs", import.meta.url));
+  const run = (/** @type {object} */ event) =>
+    spawnSync(process.execPath, [script], { input: JSON.stringify(event), encoding: "utf8" }).stdout;
+
+  const out = JSON.parse(run({ tool_name: "Agent", tool_input: { prompt: "p", subagent_type: "ax-navi:analyzer", run_in_background: true } }));
+  assert.equal(out.hookSpecificOutput.hookEventName, "PreToolUse");
+  assert.deepEqual(out.hookSpecificOutput.updatedInput, { prompt: "p", subagent_type: "ax-navi:analyzer", run_in_background: false });
+
+  assert.equal(run({ tool_name: "Agent", tool_input: { prompt: "p" } }), "", "포그라운드 호출까지 건드렸다");
+  assert.equal(spawnSync(process.execPath, [script], { input: "깨진 입력", encoding: "utf8" }).stdout, "", "입력이 깨지면 조용히 비켜야 한다");
 });

@@ -26,6 +26,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 
 const NEWLINE = String.fromCharCode(10);
 
@@ -697,27 +698,55 @@ function terminateTree(child) {
  * 끌 대상을 ax-navi 로 한정하지 않는 이유는 --strict-mcp-config 와 같다 — 우리가
  * 알지 못하는 도구·스킬이 끌어들면 도구 게이트웨이 계약이 그만큼 느슨해진다.
  *
- * @returns {string | null} 설정 파일 경로. 끌 플러그인이 없으면 null.
+ * 같은 파일에 백그라운드 서브에이전트를 포그라운드로 바꾸는 훅도 싣는다(delegatedSettings 참조).
+ *
+ * @returns {string | null} 설정 파일 경로. 만들지 못하면 null.
  */
 function pluginMuteSettings() {
   if (mutePath !== undefined) return mutePath;
   mutePath = null;
+  /** @type {string[]} */
+  let names = [];
   try {
     const registry = join(homedir(), ".claude", "plugins", "installed_plugins.json");
-    if (!existsSync(registry)) return mutePath;
-    const parsed = JSON.parse(readFileSync(registry, "utf8"));
-    const names = Object.keys(parsed?.plugins ?? {});
-    if (!names.length) return mutePath;
-    /** @type {Record<string, boolean>} */
-    const enabledPlugins = {};
-    for (const name of names) enabledPlugins[name] = false;
-    const file = join(mkdtempSync(join(tmpdir(), "axnavi-settings-")), "settings.json");
-    writeFileSync(file, JSON.stringify({ enabledPlugins }, null, 2), "utf8");
-    mutePath = file;
+    if (existsSync(registry)) names = Object.keys(JSON.parse(readFileSync(registry, "utf8"))?.plugins ?? {});
   } catch {
     // 레지스트리를 못 읽어도 실행을 멈출 일은 아니다. 그냥 끌 것이 없다고 본다.
   }
+  try {
+    const file = join(mkdtempSync(join(tmpdir(), "axnavi-settings-")), "settings.json");
+    writeFileSync(file, JSON.stringify(delegatedSettings(names, FOREGROUND_HOOK_COMMAND), null, 2), "utf8");
+    mutePath = file;
+  } catch {
+    // 임시 폴더에 못 쓰면 설정 없이 돈다. 안내문의 "뒤에서 돌리지 마라" 가 남은 방어선이다.
+  }
   return mutePath;
+}
+
+/*
+ * 백그라운드 서브에이전트를 포그라운드로 바꾸는 훅.
+ *
+ * claude -p 는 뒤에서 도는 서브에이전트를 대기 상한이 지나면 죽이고, 그 서브에이전트는
+ * 승인 창에도 닿지 못한다. 안내문으로 막았지만 지침일 뿐이었다. 실측: 이 훅이 있으면
+ * run_in_background:true 호출이 is_backgrounded:false 로 돌아 결과가 그 자리에 돌아오고,
+ * 없으면 "Async agent launched" 로 떠나 버린다. 거부하지 않고 바꿔 주므로 모델이
+ * 다시 시도하느라 턴을 쓰지 않는다. 여러 개를 한 번에 부르면 여전히 동시에 돈다.
+ */
+const FOREGROUND_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "foreground-agent-hook.mjs");
+const FOREGROUND_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${FOREGROUND_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
+
+/**
+ * 위임 실행에 얹는 설정. 순수 함수로 꺼내 테스트가 모양을 고정한다.
+ * @param {string[]} pluginNames  끌 호스트 플러그인
+ * @param {string} hookCommand
+ */
+export function delegatedSettings(pluginNames, hookCommand) {
+  return {
+    ...(pluginNames.length ? { enabledPlugins: Object.fromEntries(pluginNames.map((n) => [n, false])) } : {}),
+    hooks: {
+      PreToolUse: [{ matcher: "Agent", hooks: [{ type: "command", command: hookCommand }] }],
+    },
+  };
 }
 
 /** @type {string | null | undefined} 한 프로세스에 한 번만 만든다. */
