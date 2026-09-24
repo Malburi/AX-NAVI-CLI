@@ -87,7 +87,7 @@ const STRUCTURED_SOURCE_EXTENSIONS = [".java", ".kt", ".kts", ...JS_FAMILY_EXTEN
 const SOURCE_EXTENSIONS = new Set([
   ...ADAPTER_SOURCE_EXTENSIONS,
   ...STRUCTURED_SOURCE_EXTENSIONS,
-  ".xml", ".sql", ".jsp", ".jspx", ".tag", ".asp", ".aspx", ".ascx", ".ashx", ".asmx",
+  ".xml", ".sql", ".jsp", ".jspx", ".jspf", ".tag", ".asp", ".aspx", ".ascx", ".ashx", ".asmx",
   ".vb", ".vbs", ".xaml", ".cshtml", ".vbhtml", ".razor", ".php", ".rb",
   ".cbl", ".cob", ".cpy", ".abap", ".html", ".htm",
   ".properties", ".yml", ".yaml", ".json",
@@ -701,10 +701,50 @@ function extractLegacySymbols(text, clean, rel, workspace) {
     if (/^(?:IDENTIFICATION|ENVIRONMENT|DATA|PROCEDURE|WORKING-STORAGE|LINKAGE|END-IF|END-PERFORM)$/i.test(match[1])) continue;
     add(match[1], match.index);
   }
-  const markup = new Set([".jsp", ".jspx", ".tag", ".aspx", ".ascx", ".ashx", ".asmx", ".xaml", ".cshtml", ".vbhtml", ".razor", ".html", ".htm"]);
+  const markup = new Set([".jsp", ".jspx", ".jspf", ".tag", ".aspx", ".ascx", ".ashx", ".asmx", ".xaml", ".cshtml", ".vbhtml", ".razor", ".html", ".htm"]);
+  /*
+   * 화면 안 인라인 `<script>`의 자바스크립트 함수. 예전에는 마크업 파일에서 view 심볼만 만들어
+   * `onclick="fnSave()"`의 대상이 같은 JSP 안에 있어도 찾지 못했다 — 실측(레거시 JSP 1,815개)에서
+   * 미해결 트리거 2,385건이 JSP였다. JSP 스크립틀릿(`<% if (a) { %>`)의 중괄호가 함수 범위를
+   * 망치지 않도록 먼저 같은 길이의 공백으로 지운다. `src=` 외부 스크립트는 그 .js 파일이 따로 인덱싱된다.
+   */
+  const callSites = [];
+  if (markup.has(ext) || ext === ".asp") {
+    const scriptCode = clean.replace(/<%[\s\S]*?%>/g, (block) => block.replace(/[^\n]/g, " "));
+    const scriptMethods = [];
+    for (const block of scriptCode.matchAll(/<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/gi)) {
+      const offset = block.index + block[0].indexOf(">") + 1;
+      const body = block[1];
+      const declaration = /\bfunction\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{|\b(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*function\s*\([^)]*\)\s*\{|\b(?:this|window)\.([A-Za-z_$][\w$]*)\s*=\s*function\s*\([^)]*\)\s*\{/g;
+      for (const match of body.matchAll(declaration)) {
+        const name = match[1] || match[2] || match[3];
+        const start = offset + match.index;
+        const end = matchingBrace(scriptCode, scriptCode.indexOf("{", start + match[0].length - 1));
+        const id = symbolId(pkg, "", name);
+        if (seenIds.has(id)) continue;
+        seenIds.add(id);
+        const method = { id, name, owner: "", package: pkg, file: rel, line: atLine(start), start, end, visibility: "unknown", workspace: workspace.id, type: "function" };
+        methods.push(method);
+        scriptMethods.push(method);
+      }
+    }
+    for (const method of scriptMethods) {
+      const body = scriptCode.slice(method.start, method.end);
+      for (const match of body.matchAll(/\b([A-Za-z_$][\w$]*)(?:\s*\.\s*([A-Za-z_$][\w$]*))?\s*\(/g)) {
+        const name = match[2] || match[1];
+        if (CALL_KEYWORDS.has(name) || (!match[2] && name === method.name && match.index < 120)) continue;
+        if (!match[2] && body.slice(0, match.index).replace(/\s+$/, "").endsWith(".")) continue;
+        callSites.push({ caller: method.id, name, qualifier: match[2] ? match[1] : "", file: rel, line: atLine(method.start + match.index), workspace: workspace.id });
+      }
+    }
+  }
+  /* 이 화면에 함께 실리는 파일(`<%@ include file>`·`<jsp:include page>`). 화면 스크립트의 호출 범위를 정하는 데 쓴다. */
+  const includes = markup.has(ext)
+    ? [...text.matchAll(/<%@\s*include\s+file\s*=\s*["']([^"']+)["']|<jsp:include\s+page\s*=\s*["']([^"'<]+)["']/gi)].map((match) => (match[1] || match[2]).split("?")[0])
+    : [];
   const symbols = methods.map((method) => ({ id: method.id, type: method.type, file: rel, line: method.line, package: pkg, workspace: workspace.id, origin: "deterministic-indexer", confidence: "MEDIUM" }));
   if (markup.has(ext)) symbols.push({ id: `view:${rel}`, type: "view", file: rel, line: 1, workspace: workspace.id, origin: "deterministic-indexer", confidence: "HIGH" });
-  return { symbols, nodes: symbols.map((item) => ({ ...item })), methods, callSites: [], injects: [], classes: [] };
+  return { symbols, nodes: symbols.map((item) => ({ ...item })), methods, callSites, injects: [], classes: [], includes };
 }
 
 /*
@@ -1406,8 +1446,14 @@ function extractBindings(text, clean, rel, workspace, methods) {
   };
   const dotnetEvent = /(?:this\.)?([A-Za-z_]\w*)\.([A-Za-z_]\w*)\s*\+=\s*(?:new\s+[\w.]+(?:<[^>]+>)?\s*\(\s*)?(?:this\.)?([A-Za-z_]\w*)/g;
   for (const match of clean.matchAll(dotnetEvent)) add(`${match[1]}.${match[2]}`, match[3], "ui_event", match.index);
-  const markupEvent = /<([A-Za-z_:][\w:.-]*)\b[^>]*\b(?:OnClick|Click|OnCommand|Command)\s*=\s*["'](?:\{Binding\s+)?([A-Za-z_]\w*)[^"']*["']/gi;
-  for (const match of text.matchAll(markupEvent)) add(`${match[1]}.${match[2]}`, match[2], "markup_event", match.index);
+  /*
+   * `onclick="javascript:fnSave();"`·`onclick="return fnCheck()"`의 `javascript`·`return`을 핸들러로
+   * 읽고 있었다 — 실측(레거시 JSP 1,815개)에서 미해결 트리거 937건이 `javascript` 하나였다.
+   * 접두어를 건너뛰고, `self.close()`·`window.open()`처럼 이름 뒤에 `.`이 오는 브라우저 객체 호출은
+   * 이벤트 핸들러 바인딩이 아니므로 뺀다.
+   */
+  const markupEvent = /<([A-Za-z_:][\w:.-]*)\b[^>]*\b(?:OnClick|Click|OnCommand|Command)\s*=\s*["'](?:\{Binding\s+)?\s*(?:javascript\s*:\s*)?(?:return\s+)?([A-Za-z_]\w*)(\s*\.)?[^"']*["']/gi;
+  for (const match of text.matchAll(markupEvent)) if (!match[3]) add(`${match[1]}.${match[2]}`, match[2], "markup_event", match.index);
   const jsxEvent = /\b(on[A-Z][A-Za-z0-9_]*)\s*=\s*\{\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*\}/g;
   for (const match of text.matchAll(jsxEvent)) add(`jsx.${match[1]}`, match[2], "ui_event", match.index);
   /*
@@ -2183,7 +2229,7 @@ function xmlAttrs(source) {
  * analyzer.md Step 5가 수작업 grep으로 6~10쌍만 샘플링하던 것을 전수·결정론적으로 대체한다.
  */
 const SCRIPT_SRC_REGEX = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
-const TEMPLATE_EXTENSIONS = new Set([".jsp", ".jspx", ".tag", ".html", ".htm"]);
+const TEMPLATE_EXTENSIONS = new Set([".jsp", ".jspx", ".jspf", ".tag", ".html", ".htm"]);
 function extractClientRefs(text, rel) {
   if (!TEMPLATE_EXTENSIONS.has(extname(rel).toLowerCase())) return [];
   return [...text.matchAll(SCRIPT_SRC_REGEX)].map((match) => match[1]);
@@ -2514,6 +2560,9 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   const nodeByOwnerId = new Map();
   const pushTo = (map, key, node) => { const list = map.get(key); if (list) list.push(node); else map.set(key, [node]); };
   for (const node of nodes) {
+    /* 트리거 노드(`trigger:list.jsp#a.fnSave`)는 호출 대상이 아니다 — 점으로 자르면 끝이 `fnSave`라
+     * 같은 화면의 `fnSave()` 호출 후보로 끼어들어 호출이 모호해졌다. 바인딩 해석도 원래 트리거를 뺐다. */
+    if (node.type === "trigger") continue;
     const parts = node.id.split(".");
     const simple = parts.at(-1);
     pushTo(nodeBySimple, simple, node);
@@ -2521,7 +2570,9 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
     pushTo(nodeByOwnerId, `${parts.slice(0, -1).join(".")}\u0000${simple}`, node);
   }
   const qualifierMemo = new Map();
-  const sameOwnerSafeExt = new Set([".java", ".kt", ".kts", ".cs", ".vue", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ...SQL_COMMENT_EXTENSIONS, ...PROC_EXTENSIONS, ...PB_EXTENSIONS]);
+  const sameOwnerSafeExt = new Set([".java", ".kt", ".kts", ".cs", ".vue", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ...SQL_COMMENT_EXTENSIONS, ...PROC_EXTENSIONS, ...PB_EXTENSIONS,
+    /* 화면 인라인 스크립트의 한정자 없는 호출은 같은 화면 함수가 먼저다(JS 스코프와 같다). */
+    ".jsp", ".jspx", ".jspf", ".tag", ".asp", ".aspx", ".ascx", ".html", ".htm"]);
   /*
    * 이름이 겹치는 후보가 둘 이상일 때 스코프(같은 파일 → 같은 패키지 → 같은 워크스페이스)로 좁혀
    * 하나로 줄면 결정론적으로 확정하는 방안을 구현했다가 **되돌렸다**(2026-08-16).
@@ -2533,10 +2584,45 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
    * 미해결 항목의 실제 비용 문제는 아래 우선순위 정렬(판정 가능한 것부터)에서 해결한다.
    */
 
+  /*
+   * 화면 스크립트의 호출 범위. 다른 JSP 화면의 함수는 이 화면에 실리지 않으므로 후보가 아니다 —
+   * `function alert()`를 재정의한 화면 몇 개 때문에 모든 화면의 `alert()`가 모호해졌다(실측 438건).
+   * 같은 화면, (중첩) 인클루드한 파일, 마크업이 아닌 외부 스크립트(.js 등)만 남긴다.
+   */
+  const MARKUP_PAGE = /\.(?:jsp|jspx|jspf|tag|asp|aspx|ascx|html?)$/i;
+  const filesByBase = new Map();
+  for (const fact of facts) {
+    const base = fact.rel.split("/").at(-1);
+    const list = filesByBase.get(base);
+    if (list) list.push(fact.rel); else filesByBase.set(base, [fact.rel]);
+  }
+  const directIncludes = new Map();
+  for (const fact of facts) {
+    if (!fact.includes?.length) continue;
+    const resolved = [];
+    for (const raw of fact.includes) {
+      const target = raw.startsWith("/") ? raw.replace(/^\/+/, "") : slash(join(dirname(fact.rel), raw));
+      const hit = (filesByBase.get(target.split("/").at(-1)) || []).find((file) => file === target || file.endsWith(`/${target}`));
+      if (hit) resolved.push(hit);
+    }
+    directIncludes.set(fact.rel, resolved);
+  }
+  const pageScopeMemo = new Map();
+  const pageScope = (file) => {
+    if (pageScopeMemo.has(file)) return pageScopeMemo.get(file);
+    const scope = new Set([file]);
+    const stack = [file];
+    while (stack.length) for (const next of directIncludes.get(stack.pop()) || []) if (!scope.has(next)) { scope.add(next); stack.push(next); }
+    pageScopeMemo.set(file, scope);
+    return scope;
+  };
+  const inPageScope = (file, candidate) => !MARKUP_PAGE.test(candidate.file || "") || pageScope(file).has(candidate.file);
+
   const edges = [];
   const unresolved = [];
   for (const binding of bindings) {
     let candidates = (nodeBySimple.get(binding.handler_name) || []).filter((item) => item.type !== "trigger");
+    if (MARKUP_PAGE.test(binding.file || "")) candidates = candidates.filter((item) => inPageScope(binding.file, item));
     /*
      * 템플릿 이벤트 핸들러(@click 등)·markup 이벤트는 반드시 같은 파일의 스크립트 블록에
      * 정의된 메서드다 — qualifier 기반 호출(obj.method())과 달리 "다른 객체를 통한 동명
@@ -2560,6 +2646,8 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   }
   for (const call of callSites) {
     let candidates = nodeBySimple.get(call.name) || [];
+    /* 한정자 없는 화면 스크립트 호출만 좁힌다 — `opener.fnX()`·`parent.fnX()`는 정당하게 다른 화면을 가리킨다. */
+    if (!call.qualifier && MARKUP_PAGE.test(call.file || "")) candidates = candidates.filter((item) => inPageScope(call.file, item));
     if (call.qualifier) {
       /*
        * 한정자를 **선언 타입**으로 먼저 해석한다. `sqlSession.insert(...)`의 `sqlSession`은

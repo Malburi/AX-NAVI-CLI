@@ -1466,6 +1466,42 @@ public class BoardService extends DataAccesser {
     }
   });
 
+  register("JSP 화면 스크립트: 인라인 함수·javascript: 이벤트·인클루드 범위·다른 화면 함수 배제", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-jsp-script-"));
+    try {
+      write(root, "web/WEB-INF/jsp/common/incScript.jspf", "<script>\nfunction fnCommon() { alert(\"c\"); }\n</script>\n");
+      write(root, "web/WEB-INF/jsp/order/list.jsp", `<%@ include file="/WEB-INF/jsp/common/incScript.jspf" %>
+<a href="#" onclick="javascript:fnSave();">저장</a>
+<input type="button" onclick="return fnCheck()"/>
+<button onclick="self.close()">닫기</button>
+<a onclick="fnCommon()">공통</a>
+<script src="/js/common.js"></script>
+<script>
+function fnSave() {
+  <% if (admin) { %> fnCheck(); <% } %>
+  fnCommon();
+  alert("saved");
+}
+function fnCheck() { return true; }
+</script>
+`);
+      write(root, "web/WEB-INF/jsp/other/override.jsp", "<script>\nfunction alert(m) { console.log(m); }\nfunction fnCheck() { return false; }\n</script>\n");
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const graph = json(root, "call_graph.json");
+      const list = "web.WEB-INF.jsp.order.list";
+      const common = "web.WEB-INF.jsp.common.incScript.fnCommon";
+      const triggerTargets = graph.edges.filter((item) => item.type === "markup_event").map((item) => item.to).sort().join(",");
+      assert.equal(triggerTargets, [common, `${list}.fnCheck`, `${list}.fnSave`].sort().join(","), JSON.stringify(graph.edges));
+      const calls = graph.edges.filter((item) => item.type === "call" && item.from === `${list}.fnSave`).map((item) => item.to).sort().join(",");
+      assert.equal(calls, [common, `${list}.fnCheck`].sort().join(","), "스크립틀릿 중괄호를 넘어 같은 화면·인클루드 함수로 잇고, 다른 화면의 alert·fnCheck로 잇지 않는다");
+      const unresolved = readFileSync(join(root, "_workspace", "index", "_unresolved.jsonl"), "utf8");
+      assert.ok(!/"handler_name":"(?:javascript|return|self)"/.test(unresolved), unresolved);
+      assert.equal(json(root, "_meta.json").adapter_coverage.extensions.find((item) => item.extension === ".jspf")?.files, 1, ".jspf를 인덱싱한다");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("Pro*C 배치의 C 함수·호출·EXEC SQL 정적 SQL과 PL/SQL 프로시저 호출을 인덱싱한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-proc-"));
     try {

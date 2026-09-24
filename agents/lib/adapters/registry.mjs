@@ -21,7 +21,7 @@ export const ADAPTERS = [
   { id: "proc", label: "Oracle Pro*C", extensions: [".pc"], level: "PARTIAL" },
   /* .pbl은 바이너리라 못 읽는다. 소스 관리용 텍스트 내보내기(윈도·사용자 객체·함수·메뉴·앱·DataWindow)만 본다. */
   { id: "powerbuilder", label: "PowerBuilder (텍스트 내보내기)", extensions: [".srw", ".sru", ".srf", ".srm", ".sra", ".srd"], level: "PARTIAL" },
-  { id: "legacy-web", label: "JSP/Struts/WebForms/markup", extensions: [".xml", ".jsp", ".jspx", ".tag", ".asp", ".aspx", ".ascx", ".ashx", ".asmx", ".xaml", ".cshtml", ".vbhtml", ".razor", ".html", ".htm"], level: "PARTIAL" },
+  { id: "legacy-web", label: "JSP/Struts/WebForms/markup", extensions: [".xml", ".jsp", ".jspx", ".jspf", ".tag", ".asp", ".aspx", ".ascx", ".ashx", ".asmx", ".xaml", ".cshtml", ".vbhtml", ".razor", ".html", ".htm"], level: "PARTIAL" },
 ];
 
 const EXTENSION_RULES = new Map(ADAPTERS.flatMap((adapter) => adapter.extensions.map((extension) => [extension, adapter])));
