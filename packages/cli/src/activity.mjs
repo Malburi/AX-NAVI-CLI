@@ -93,6 +93,8 @@ export function createActivity({ output, ui }) {
    * 할지 안 보이게 된다(실측: AskUserQuestion 선택 불가).
    */
   let suspended = false;
+  /** 겹친 suspend 수. 0 이 될 때만 판을 되살린다. */
+  let suspendDepth = 0;
   /** @type {ActivityState} */
   let state = { label: "", outputTokens: 0 };
 
@@ -184,6 +186,7 @@ export function createActivity({ output, ui }) {
       startedAt = Date.now();
       frame = 0;
       suspended = false;
+      suspendDepth = 0;
       if (!active) return;
       paint();
       timer = setInterval(() => {
@@ -203,11 +206,21 @@ export function createActivity({ output, ui }) {
       state.outputTokens += tokens;
       if (painted) paint();
     },
+    /*
+     * 멈춤은 겹쳐 센다. 질문 창을 띄우며 멈춰 둔 사이 서브에이전트 줄을 찍는 쪽이
+     * suspend→write→resume 을 하면, 예전에는 그 resume 이 판을 되살렸다 — 120ms 타이머가
+     * 선택 창 위에 판을 다시 그려 같은 판이 매초 새 줄로 쌓이고(`… 50m 10s`·`50m 11s`…)
+     * 선택지는 밀려 안 보였다. 답을 못 받은 승인 창은 30분 뒤 끊겼다(2026-09-24 실측).
+     * 가장 바깥의 resume 만 판을 되살린다.
+     */
     suspend() {
+      suspendDepth += 1;
       suspended = true;
       erase();
     },
     resume() {
+      suspendDepth = Math.max(0, suspendDepth - 1);
+      if (suspendDepth > 0) return;
       suspended = false;
       paint();
     },

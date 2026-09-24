@@ -86,13 +86,25 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 안 걷으면 회전자가 질문지 위에 덮어써서 선택지가 안 보인다.
    */
   const baseElicitor = createHostElicitor();
+  /*
+   * 질문 창이 떠 있는 동안 찍을 줄은 모아 두었다가 닫힌 뒤 찍는다. 창 사이에 서브에이전트
+   * 출력이 끼어들면 선택 창의 커서 계산이 어긋나 선택지가 밀려 안 보였다(2026-09-24 실측 —
+   * 승인 창이 안 보인 채 30분 뒤 끊겼다).
+   */
+  let asking = 0;
+  /** @type {string[]} */
+  const heldLines = [];
   /** @type {import("@ax-navi/core").Elicitor} */
   const elicitor = {
+    canAsk: () => baseElicitor.canAsk?.() ?? true,
     async ask(question, options, opts) {
+      asking += 1;
       activity.suspend();
       try {
         return await baseElicitor.ask(question, options, opts ?? {});
       } finally {
+        asking -= 1;
+        if (!asking && heldLines.length) process.stdout.write(`${heldLines.splice(0).join("\n")}\n`);
         activity.resume();
       }
     },
@@ -387,6 +399,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   const emit = (text, owner) => {
     recordLine(turn, text, owner);
     if (background) return;
+    if (asking) { heldLines.push(text); return; }
     activity.suspend();
     process.stdout.write(`${text}\n`);
     activity.resume();

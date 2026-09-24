@@ -507,3 +507,19 @@ test("블록 줄도 폭을 넘지 않는다 — 접히면 올라갈 줄 수가 �
   }
   activity.stop();
 });
+
+test("멈춤은 겹쳐 센다 — 질문 창을 띄운 사이 안쪽 resume 이 판을 되살리면 선택지가 밀린다", () => {
+  const out = fakeOutput();
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("axnavi");
+  activity.set({ blocks: [{ label: "B-I · pipeline-runner", tools: 2, startedAt: Date.now(), tail: [] }] });
+  activity.suspend();          // 질문 창
+  out.reset();
+  activity.suspend();          // 서브에이전트 한 줄 찍기
+  activity.resume();
+  activity.set({ blocks: [{ label: "B-I · pipeline-runner", tools: 3, startedAt: Date.now(), tail: [] }] });
+  assert.ok(!out.text().includes("B-I"), "질문 창이 떠 있는데 판을 다시 그렸다");
+  activity.resume();           // 질문 창 닫힘
+  assert.ok(out.text().includes("B-I"), "질문 창이 닫힌 뒤 되살리지 않았다");
+  activity.stop();
+});
