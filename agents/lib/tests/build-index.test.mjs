@@ -1,4 +1,4 @@
-﻿import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+﻿import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applyAiPatch, buildIndex } from "../build-index.mjs";
@@ -1510,6 +1510,7 @@ function fnCheck() { return true; }
       write(client, "mobile/script/js/forms.js", "function Forms() { return {}; }\n");
       write(client, "html/script/js/back/argil_info.js", "function onViewPage(id) { location.href = '/view?id=' + id; }\n");
       write(client, "html/script/js/unused.js", "function neverCalled() {}\n");
+      write(client, "html/script/js/back/argil_api.js", "function loadList() { return fetch(\"/argil/list.do\", { method: \"POST\" }); }\n");
       buildIndex({ root: client, mode: "init", tier: "Standard", config: null });
 
       write(server, "WEB-INF/config/setting.properties", "#BACK_JS_PATH=/old/js/\nBACK_JS_PATH=/html/script/js/\nTITLE=교육\n");
@@ -1536,6 +1537,14 @@ function fnInit() { var f = new Forms(); }
       assert.equal(external.join(","), [`ext:${label}:html.script.js.back.argil_info.onViewPage`, `ext:${label}:html.script.js.forms.Forms`].sort().join(","), "이어진 짝 노드만 남긴다(mobile 사본·neverCalled 없음)");
       const ids = new Set(graph.nodes.map((item) => item.id));
       assert.ok(graph.edges.every((item) => ids.has(item.from) && ids.has(item.to)), "끊어진 엣지가 없다");
+      /*
+       * 짝 저장소에서 옮겨 실은 호출부는 그 저장소 기준 경로다. 실측: api-bridge 가 이것을
+       * 이 저장소에서 찾다가 "consumers 94% 오염"으로 오판했다. 파일은 external_repo_path 에 있다.
+       */
+      const contract = json(server, "api_contract.json");
+      const foreign = contract.consumers.filter((item) => item.source === "external");
+      assert.ok(foreign.length > 0, "짝 저장소 호출부가 실리지 않았다");
+      assert.ok(foreign.every((item) => item.external_repo_path === client && existsSync(join(client, item.file))), JSON.stringify(foreign));
     } finally {
       rmSync(server, { recursive: true, force: true });
       rmSync(client, { recursive: true, force: true });

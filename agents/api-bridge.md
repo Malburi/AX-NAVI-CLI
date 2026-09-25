@@ -96,6 +96,11 @@ DTO 파일 탐지가 어려운 경우 (레거시, 복잡한 상속) → 필드 �
 wiki와 드리프트 검증이 원본을 찾지 못한다. `line`을 모르면 `null`을 넣는다 — 키 자체를 빼지 않는다.
 `origin`은 `api-bridge`, `confidence`는 근거 강도에 따라 `HIGH`/`MEDIUM`/`LOW`로 적는다.
 
+**`source: "external"` 항목은 짝 저장소의 것이다.** 두 저장소를 잇는 인덱서가 파트너 인덱스의 endpoints·consumers를
+옮겨 싣고 `external_repo_path`(파트너 루트 절대경로)를 붙인다. 그 항목의 `file`은 이 저장소가 아니라
+`external_repo_path` 기준 상대경로다. 이 저장소에서 파일이 안 보인다고 "인덱스 오염"으로 판정하지 말고, 존재 확인은
+`external_repo_path`에서 한다. 병합할 때 `source`와 `external_repo_path`를 지우지 않는다.
+
 스키마에 칸이 없는 부가 정보(`roles`·`deprecated`·`models`·`query_params` 등)는 그대로 덧붙여도
 된다 — 스키마가 추가 속성을 막지 않는다. 다만 **필수 키를 대체하지는 못한다.**
 
@@ -159,6 +164,10 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/validate-harness.mjs" --root "[백엔드 
 | 서비스 레이어 | `services/`, `api/`, `src/api/` 폴더의 함수 정의 우선 탐색 |
 
 각 호출에서 추출: HTTP 메서드 + URL 문자열/템플릿 + 파일 경로 + 라인 번호
+
+프론트엔드 `_workspace/index/api_contract.json`이 있으면 grep보다 먼저 그 `consumers`를 쓴다. 이 저장소의 호출은
+`source: "local"`이다. `source: "external"`은 백엔드 저장소 안의 호출부(서버 JSP 등)이고 파일은
+`external_repo_path` 기준으로 찾는다. 두 부류를 리포트에서 나눠 센다 — 섞어서 "실존하지 않는 경로"로 세면 안 된다.
 
 URL 정규화: `` `/api/orders/${id}/cancel` `` → `/api/orders/{id}/cancel`
 
