@@ -88,6 +88,24 @@ test("멈추면 화면에서 지운다 — 잔상을 남기지 않는다", () =>
   assert.ok(!out.text().includes("axnavi"), "멈췄는데 다시 그렸다");
 });
 
+/*
+ * 실측: 턴이 끝난 뒤 찍힌 경고 한 줄(약속한 산출물 …)의 suspend→resume 이 멈춘 판을 되살려,
+ * 굳은 회전자와 빈 입력칸이 새 프롬프트 위에 남았다 — 채팅창이 둘로 보였다.
+ */
+test("멈춘 뒤에 끼어든 출력은 판을 되살리지 않는다", () => {
+  const out = fakeOutput();
+  const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });
+  activity.start("pair-init");
+  activity.stop();
+  out.reset();
+  activity.suspend();
+  activity.resume();
+  activity.set({ tool: "SubagentHandback" });
+  assert.ok(!out.text().includes("pair-init"), "멈춘 판을 다시 그렸다");
+  activity.start("다음 턴");
+  assert.ok(out.text().includes("다음 턴"), "다음 턴에 판이 안 떴다");
+});
+
 test("출력이 끼어들 때 지웠다 되살린다", () => {
   const out = fakeOutput();
   const activity = createActivity({ output: /** @type {any} */ (out), ui: plainUi });

@@ -95,6 +95,11 @@ export function createActivity({ output, ui }) {
   let suspended = false;
   /** 겹친 suspend 수. 0 이 될 때만 판을 되살린다. */
   let suspendDepth = 0;
+  /*
+   * 턴이 끝났다. 이 뒤로는 무엇도 판을 되살리지 않는다. 실측: stop() 뒤에 찍힌 경고 한 줄의
+   * suspend→resume 이 판을 다시 그려, 멈춘 회전자와 빈 입력칸이 새 프롬프트 위에 남았다(채팅창이 둘로 보임).
+   */
+  let stopped = false;
   /** @type {ActivityState} */
   let state = { label: "", outputTokens: 0 };
 
@@ -154,7 +159,7 @@ export function createActivity({ output, ui }) {
   }
 
   function paint() {
-    if (!active || suspended) return;
+    if (!active || suspended || stopped) return;
     const lines = panel();
     /*
      * 다시 그리기 전에 **판의 첫 줄로 올라간다.**
@@ -187,6 +192,7 @@ export function createActivity({ output, ui }) {
       frame = 0;
       suspended = false;
       suspendDepth = 0;
+      stopped = false;
       if (!active) return;
       paint();
       timer = setInterval(() => {
@@ -227,6 +233,7 @@ export function createActivity({ output, ui }) {
     stop() {
       if (timer) clearInterval(timer);
       timer = null;
+      stopped = true;
       suspended = true;
       erase();
     },
