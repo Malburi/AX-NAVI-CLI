@@ -130,7 +130,7 @@ def dedupe_edges(edges):
 
 def git_commit(root):
     try:
-        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, timeout=5)
+        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
         if out.returncode == 0:
             return out.stdout.strip()
     except Exception:

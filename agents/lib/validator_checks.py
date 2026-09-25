@@ -679,7 +679,7 @@ def _index_meta_freshness(root):
         try:
             probe = subprocess.run(
                 ["node", indexer, "--root", root, "--check-stale"],
-                capture_output=True, text=True, timeout=180,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
             )
             if probe.returncode == 1:
                 reason = ""
@@ -696,7 +696,7 @@ def _index_meta_freshness(root):
         try:
             head = subprocess.run(
                 ["git", "-C", root, "rev-parse", "HEAD"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
             ).stdout.strip()
             if head and head != commit:
                 lines.append(f"- 인덱스 생성 시점 커밋({commit[:8]}) ≠ 현재 HEAD({head[:8]}) — 인덱스 리프레시 권장 (구버전 인덱스)")
