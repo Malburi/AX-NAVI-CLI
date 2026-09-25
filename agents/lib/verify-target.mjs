@@ -18,6 +18,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve, relative, dirname, sep } from "node:path";
+import { pythonBin } from "./python-bin.mjs";
 import { spawnSync } from "node:child_process";
 
 const FAIL_LINE_LIMIT = 15; // 명령당 반환할 실패 라인 상한
@@ -120,11 +121,43 @@ function detectCommands(root, target) {
   if (existsSync(join(root, ".flake8")) || existsSync(join(root, "setup.cfg"))) {
     add("lint", "flake8", ".flake8/setup.cfg");
   }
+  /*
+   * Python 테스트 — pytest 설정이 있거나 conftest.py·tests/test_*.py 가 있으면 돌린다.
+   * 예전에는 린트·타입체크만 봐서 Python 프로젝트의 테스트를 한 번도 돌리지 않았다.
+   * 인터프리터 이름은 pythonBin() 으로 정한다(윈도우는 python, 리눅스는 python3 만 있는 경우가 흔하다).
+   */
+  const pytestSource = existsSync(join(root, "pytest.ini")) ? "pytest.ini"
+    : hasPyproject && /\[tool\.pytest/.test(readFileSync(join(root, "pyproject.toml"), "utf8")) ? "pyproject.toml:tool.pytest"
+    : existsSync(join(root, "setup.cfg")) && /\[tool:pytest\]/.test(readFileSync(join(root, "setup.cfg"), "utf8")) ? "setup.cfg:tool:pytest"
+    : existsSync(join(root, "tox.ini")) && /\[pytest\]/.test(readFileSync(join(root, "tox.ini"), "utf8")) ? "tox.ini:pytest"
+    : existsSync(join(root, "conftest.py")) ? "conftest.py"
+    : existsSync(join(root, "tests")) && readdirSync(join(root, "tests")).some((name) => /^test_.*\.py$/.test(name)) ? "tests/test_*.py"
+    : null;
+  if (pytestSource) add("test", `${pythonBin() ?? "python"} -m pytest -q`, pytestSource);
 
   // Java — 빌드 도구 (테스트/컴파일)
   if (existsSync(join(root, "pom.xml"))) add("build", "mvn -q -DskipTests=false test", "pom.xml");
   else if (existsSync(join(root, "build.gradle")) || existsSync(join(root, "build.gradle.kts")))
     add("build", "gradle test", "build.gradle");
+  /*
+   * Ant — 레거시 Java 웹(Struts 등)에 흔하다. 실측: eduLms 가 build.xml 뿐이라 검증 명령이 0개였다.
+   * test 타깃이 있으면 test, 없으면 compile·build 계열 타깃, 그것도 없으면 기본 타깃을 돌린다.
+   */
+  else if (existsSync(join(root, "build.xml"))) {
+    const antXml = readFileSync(join(root, "build.xml"), "utf8");
+    const targets = [...antXml.matchAll(/<target\b[^>]*\bname\s*=\s*["']([^"']+)["']/g)].map((m) => m[1]);
+    const testTarget = targets.find((name) => /^(test|junit|unit-?test)s?$/i.test(name));
+    const buildTarget = targets.find((name) => /^(compile|build|dist|war|jar)$/i.test(name));
+    if (testTarget) add("test", `ant ${testTarget}`, `build.xml:target ${testTarget}`);
+    else if (buildTarget) add("build", `ant ${buildTarget}`, `build.xml:target ${buildTarget}`);
+    else add("build", "ant", "build.xml(기본 타깃)");
+  }
+
+  // Go — go.mod 가 있으면 vet(정적 검사)과 test
+  if (existsSync(join(root, "go.mod"))) {
+    add("lint", "go vet ./...", "go.mod");
+    add("test", "go test ./...", "go.mod");
+  }
 
   // Makefile — 관례적 타깃
   if (existsSync(join(root, "Makefile"))) {
