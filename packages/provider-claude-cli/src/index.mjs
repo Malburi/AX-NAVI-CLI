@@ -466,6 +466,7 @@ export class ClaudeCliProvider {
     const preamble = [
       toolBriefing(spec.tools, spec.allowDelegation === true),
       spec.system ? `<역할 지침>\n${spec.system}\n</역할 지침>` : "",
+      RESPONSE_STYLE,
     ].filter(Boolean).join("\n\n");
     const payload = delegatedPayload(preamble, prompt, spec.resumeFrom);
     let compacted = false;
@@ -804,6 +805,22 @@ export function delegatedSettings(pluginNames, hookCommand) {
 
 /** @type {string | null | undefined} 한 프로세스에 한 번만 만든다. */
 let mutePath;
+
+/*
+ * 화면에 나가는 말의 방식. 역할 지침보다 뒤에 둔다 — 마지막에 읽은 것이 말투를 정한다.
+ *
+ * 실측(/find 수강신청): 도구 사이마다 "영문 키워드로 좁혀서 다시 찾아볼게", "이 실행 환경엔 서브에이전트
+ * 호출이 없어 내가 직접 수행할게" 같은 반말 서술이 붙어 결과와 섞였고, 마지막 서술("보고 정리할게.")
+ * 바로 뒤에 결과가 이어져 어디부터가 답인지 안 보였다. axnavi 는 사용자에게 나가는 말을 존댓말로 한다.
+ */
+export const RESPONSE_STYLE = [
+  "<응답 방식>",
+  "- 사용자에게 보이는 말은 존댓말로 쓴다.",
+  "- 도구를 부르기 전의 진행 설명은 한 문장으로 짧게 쓴다. 무엇을 왜 확인하는지만 말한다.",
+  "- 내부 역할 이름, 실행 환경, 서브에이전트를 띄울 수 있는지 같은 사정은 말하지 않는다.",
+  "- 최종 답은 제목(##)으로 시작해 진행 설명과 갈라지게 한다. 결론을 먼저 쓰고 근거를 뒤에 둔다.",
+  "</응답 방식>",
+].join(NEWLINE);
 
 /**
  * 이 실행에서 쓸 수 있는 도구를 한 덩어리로 알린다.
