@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import {
   MODEL_BY_TIER,
+  RESPONSE_STYLE,
   createBackgroundWatch,
   delegatedEnv,
   toDisallowedTools,
@@ -122,6 +123,7 @@ export class AgentSdkProvider {
     const preamble = [
       toolBriefing(spec.tools, allowDelegation, { nativeAsk: true }),
       spec.system ? `<역할 지침>\n${spec.system}\n</역할 지침>` : "",
+      RESPONSE_STYLE,
     ].filter(Boolean).join("\n\n");
 
     const abort = new AbortController();
