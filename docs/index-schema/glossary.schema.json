@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "glossary.json",
+  "description": "소스에 글자로 남은 업무 용어와 그 위치. kind 는 나온 자리다 — 정의(title·heading·header·class_doc), 설명(desc·method_doc), 언급(label). query-index search 가 이것으로 기능 후보 순위를 매긴다.",
+  "type": "object",
+  "required": ["_meta", "entries"],
+  "properties": {
+    "_meta": { "$ref": "_meta.schema.json" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["term", "kind", "file", "line"],
+        "properties": {
+          "term": { "type": "string" },
+          "kind": { "type": "string", "enum": ["title", "heading", "header", "class_doc", "method_doc", "desc", "label"] },
+          "file": { "type": "string" },
+          "line": { "type": ["integer", "null"] },
+          "symbol": { "type": "string" }
+        }
+      }
+    }
+  }
+}

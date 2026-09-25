@@ -37,7 +37,7 @@ import {
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
 
-export const INDEXER_VERSION = "1.13.0"; // 쿼리 컨테이너의 {CALL} 을 sql 에 call 로, 본체 없는 저장 프로시저를 db_procedure 노드로 잇는다.
+export const INDEXER_VERSION = "1.14.0"; // 업무 용어(화면 제목·머리말·설명·라벨)를 glossary 로 모아 한글 검색에 기능 후보 순위를 준다.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
 const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
@@ -2296,6 +2296,120 @@ function extractSpringBeans(text, rel) {
   return beans;
 }
 
+/*
+ * 업무 용어 — 코드명(MA00001)·영문 식별자로 된 레거시를 업무명으로 찾게 한다.
+ *
+ * 인덱스는 코드 이름만 담아 "수강신청"으로 찾으면 SQL 미리보기 4건만 걸렸고, 모델은 "Apply 겠지"
+ * 하고 영문을 추측했다(실측, eduLms). 코드명 체계에서는 그 추측이 통하지 않는다. 업무명은 소스에
+ * 글자로 남아 있다 — eduLms 에서 "수강신청"이 든 JSP 112·Java 27·XML 9개.
+ *
+ * 다만 모아서 다 보여 주면 정확도가 떨어진다. 112개 중 대부분은 다른 기능의 컬럼 이름("수강신청일")
+ * 이나 줄 끝 주석이다. 화면 제목에 든 것은 9개였고 학습자 수강신청 화면 4개가 전부 그 안에 있었다.
+ * 그래서 **어디에 나왔는지**를 함께 남긴다 — 정의하는 자리(제목·머리말·클래스 설명)와 언급하는
+ * 자리(표 머리·라벨)를 나누고, 줄 끝 주석은 양만 많아 모으지 않는다. 순위는 query-index search 가 매긴다.
+ */
+const HANGUL = /[가-힣]/;
+const MARKUP_TERM_EXT = new Set([".jsp", ".jspf", ".html", ".htm", ".xhtml", ".vue", ".asp", ".aspx", ".cshtml"]);
+const CODE_DOC_EXT = new Set([".java", ".kt", ".kts", ".cs", ".js", ".ts", ".jsx", ".tsx", ".groovy", ".scala"]);
+const TERMS_PER_FILE = 40;
+
+/** 태그·스크립틀릿·엔티티를 걷고 제목 조각으로 쪼갠다. "수강신청 | 교육시스템" → ["수강신청", "교육시스템"] */
+function termPieces(raw) {
+  const text = String(raw)
+    .replace(/<%[\s\S]*?%>/g, " ").replace(/\$\{[^}]*\}/g, " ").replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ").replace(/&[a-z]+;/gi, " ").replace(/\s+/g, " ").trim();
+  return text.split(/\s[|›>·-]\s|\s\|\s|\|/).map((part) => part.trim()).filter((part) => HANGUL.test(part) && part.length >= 2 && part.length <= 40);
+}
+
+/** 주석 블록에서 업무 설명 줄만 꺼낸다. `@param` 같은 태그 줄과 코드 조각은 버린다. */
+function docLines(block) {
+  return block.replace(/^\/\*+|\*+\/$/g, "").split(/\r?\n/)
+    .map((line) => line.replace(/^\s*\*+\s?/, "").trim())
+    .filter((line) => line && !line.startsWith("@") && HANGUL.test(line))
+    // "프로그램명 : 수강신청 관리" 같은 머리말 표지를 걷는다.
+    .map((line) => line.replace(/^(?:프로그램\s*명|프로그램\s*ID|화면\s*명|화면\s*ID|업무\s*명|기능\s*명?|설\s*명|개\s*요|내\s*용|제\s*목|Program\s*(?:Name|ID)|Screen\s*(?:Name|ID)|Description|Title|Summary|Desc)\s*[:：]\s*/i, ""))
+    .filter((line) => line.length >= 2 && line.length <= 60 && HANGUL.test(line))
+    .slice(0, 3);
+}
+
+/**
+ * @param {string} text  인코딩을 판정한 원문(주석 포함)
+ * @param {string} rel
+ * @param {Array<{ id: string, line: number }>} methods
+ * @param {Array<{ id: string, line: number }>} [classes]
+ */
+export function extractTerms(text, rel, methods, classes = []) {
+  const ext = extname(rel).toLowerCase();
+  if (!HANGUL.test(text)) return [];
+  const atLine = lineIndex(text);
+  /** @type {Array<{ term: string, kind: string, file: string, line: number, symbol?: string }>} */
+  const terms = [];
+  const push = (term, kind, offset, symbol) => terms.push({ term, kind, file: rel, line: atLine(offset), ...(symbol ? { symbol } : {}) });
+
+  if (MARKUP_TERM_EXT.has(ext)) {
+    for (const m of text.matchAll(/<title\b[^>]*>([\s\S]*?)<\/title>/gi)) for (const t of termPieces(m[1])) push(t, "title", m.index);
+    for (const m of text.matchAll(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/gi)) for (const t of termPieces(m[2])) push(t, "heading", m.index);
+    // JSP 머리말은 <%-- --%> 다. 파일 안의 /* */ 는 대개 화면 스크립트 주석이라 머리말로 올리지 않는다(아래).
+    // 맨 위의 첫 블록만 본다. 중간의 <%-- --%> 는 대개 주석 처리한 화면 조각이다(실측: '<legend>로그인</legend>').
+    // 화면 태그가 나오기 전(지시문 <%@ … %> 은 예외)의 주석만 머리말로 본다 — 줄 수로 자르면 짧은 파일에서 틀린다.
+    const head = text.match(/<%--([\s\S]*?)--%>/);
+    if (head && !/<(?![%!])/.test(text.slice(0, head.index))) {
+      for (const t of docLines(head[1].replace(/<[^>]+>/g, " "))) push(t, "header", head.index);
+    }
+    for (const m of text.matchAll(/<(th|label|legend|caption)\b[^>]*>([\s\S]*?)<\/\1>/gi)) for (const t of termPieces(m[2])) push(t, "label", m.index);
+  }
+
+  if (CODE_DOC_EXT.has(ext) || MARKUP_TERM_EXT.has(ext)) {
+    const firstDecl = [...classes].sort((a, b) => a.line - b.line)[0];
+    for (const m of text.matchAll(/\/\*[\s\S]*?\*\//g)) {
+      const lines = docLines(m[0]);
+      if (!lines.length) continue;
+      const endLine = atLine(m.index + m[0].length);
+      // 주석 바로 아래(3줄 안)에서 시작하는 메서드·클래스가 그 설명의 주인이다.
+      const owner = methods.find((item) => item.line > endLine - 1 && item.line <= endLine + 3);
+      const ownerClass = classes.find((item) => item.line > endLine - 1 && item.line <= endLine + 3);
+      const markup = MARKUP_TERM_EXT.has(ext);
+      const kind = ownerClass ? "class_doc" : owner ? "method_doc" : (!markup && (!firstDecl || endLine <= firstDecl.line)) ? "header" : null;
+      if (!kind) continue;
+      for (const t of lines) push(t, kind, m.index, (ownerClass || owner)?.id);
+    }
+  }
+
+  if (ext === ".xml") {
+    // 자체 쿼리 컨테이너의 설명 — <query><id>X</id>…<description>수강신청 등록</description></query>
+    for (const m of text.matchAll(/<(query|statement|sql)\b[^>]*>([\s\S]*?)<\/\1>/gi)) {
+      const id = m[2].match(/<id>\s*([^<]+?)\s*<\/id>/i)?.[1];
+      const desc = m[2].match(/<description>([\s\S]*?)<\/description>/i)?.[1];
+      if (desc) for (const t of termPieces(desc.replace(/<!\[CDATA\[|\]\]>/g, ""))) push(t, "desc", m.index, id);
+    }
+    // MyBatis·iBatis 문장 바로 위의 <!-- 설명 -->
+    for (const m of text.matchAll(/<!--([\s\S]*?)-->\s*<(select|insert|update|delete|procedure|statement)\b[^>]*\bid\s*=\s*["']([^"']+)["']/gi)) {
+      for (const t of termPieces(m[1])) push(t, "desc", m.index, m[3]);
+    }
+  }
+
+  if (ext === ".sql") {
+    for (const m of text.matchAll(/comment\s+on\s+(table|column)\s+([\w$."]+)\s+is\s+'((?:[^']|'')*)'/gi)) {
+      for (const t of termPieces(m[3].replace(/''/g, "'"))) push(t, m[1].toLowerCase() === "table" ? "desc" : "label", m.index, m[2].replace(/"/g, "").toUpperCase());
+    }
+  }
+
+  if (ext === ".properties" && /_ko|message|label|resource/i.test(rel)) {
+    for (const m of text.matchAll(/^[ \t]*([\w.\-]+)[ \t]*[=:][ \t]*(.+)$/gm)) {
+      const value = m[2].replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+      for (const t of termPieces(value)) push(t, "label", m.index, m[1]);
+    }
+  }
+
+  const seen = new Set();
+  return terms.filter((item) => {
+    const key = `${item.kind}\u0000${item.term}\u0000${item.symbol || ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, TERMS_PER_FILE);
+}
+
 function analyzeFile(file, root, config) {
   const buffer = readFileSync(file.full);
   const decoded = decodeSource(buffer);
@@ -2340,6 +2454,7 @@ function analyzeFile(file, root, config) {
     tables: ext === ".sql" ? extractSchema(text, file.rel) : [],
     clientRefs: extractClientRefs(text, file.rel),
     springBeans: extractSpringBeans(text, file.rel),
+    terms: extractTerms(text, file.rel, symbolFacts.methods, symbolFacts.symbols.filter((item) => ["class", "interface", "enum", "record", "object"].includes(item.type))),
   };
 }
 
@@ -3016,6 +3131,8 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
     call_graph: { _meta: { ...common, node_count: nodes.length, edge_count: uniqueEdges.length }, nodes, edges: uniqueEdges },
   };
   if (sqls.length || usages.length) output.sql_usage = { _meta: common, sqls, usages };
+  const glossary = facts.flatMap((item) => item.terms || []);
+  if (glossary.length) output.glossary = { _meta: common, entries: glossary };
   if (boundaries.length) output.transactions = { _meta: common, boundaries };
   if (communications.length) output.external_io = { _meta: common, communications };
   if (branches.length) output.env_branches = { _meta: common, profiles, branches };
@@ -3835,7 +3952,7 @@ export function buildIndex(options) {
       globalMeta.ai_enrichment = { applied_at: generatedAt, applied: 0, rejected: 0, error: error.message, patch: slash(relative(root, stalePatch)) };
     }
   }
-  const managed = new Set(["symbols", "call_graph", "sql_usage", "transactions", "external_io", "env_branches", "schema", "api_contract", "dead_code", "ui_flow", "client_index", "data_flow"]);
+  const managed = new Set(["symbols", "call_graph", "sql_usage", "transactions", "external_io", "env_branches", "schema", "api_contract", "dead_code", "ui_flow", "client_index", "data_flow", "glossary"]);
   for (const name of managed) {
     const path = join(indexDir, `${name}.json`);
     /*
