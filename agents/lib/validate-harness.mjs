@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 
 const INDEX_SCHEMAS = [
   "symbols", "call_graph", "sql_usage", "transactions", "external_io",
-  "env_branches", "schema", "api_contract", "dead_code", "client_index", "data_flow",
+  "env_branches", "schema", "api_contract", "dead_code", "client_index", "data_flow", "glossary",
 ];
 
 function readJson(path, fallback = null) {

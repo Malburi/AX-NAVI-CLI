@@ -145,6 +145,66 @@ function excerpt(value, needle) {
   return `${from > 0 ? "…" : ""}${text.slice(from, from + 120)}${from + 120 < text.length ? "…" : ""}`;
 }
 
+/*
+ * 업무 용어로 기능 후보에 순위를 매긴다(glossary.json).
+ *
+ * 단어가 나온 횟수가 아니라 **어디에 어떤 모양으로** 나왔는지로 매긴다. 실측(eduLms "수강신청"):
+ * 단어가 든 JSP 112개 중 화면 제목에 든 것은 9개였고, 학습자 수강신청 화면 4개가 전부 그 안에 있었다.
+ * 나머지 대부분은 다른 기능의 컬럼 이름("수강신청일")이었다.
+ */
+const TERM_WEIGHT = { title: 10, heading: 8, header: 8, class_doc: 6, desc: 4, method_doc: 3, label: 1 };
+const TERM_KIND_LABEL = { title: "화면 제목", heading: "화면 제목", header: "파일 머리말", class_doc: "클래스 설명", desc: "쿼리·컬럼 설명", method_doc: "메서드 설명", label: "표 머리·라벨" };
+/* 같은 파일에서 약한 신호가 수십 번 나와도 제목 하나를 넘지 못하게 종류별로 센다. */
+const TERM_KIND_CAP = { label: 3, method_doc: 3, desc: 5 };
+
+/** 그 말 자체인가(1), 여러 낱말 중 하나인가(0.8), 더 긴 말의 일부인가("수강신청기간" — 0.35) */
+function termMatch(term, q) {
+  if (term === q) return 1;
+  const tokens = term.split(/[\s|·,/()[\]<>:~\-_.]+/).filter(Boolean);
+  if (tokens.includes(q)) return 0.8;
+  return term.includes(q) ? 0.35 : 0;
+}
+
+export function rankFeatures(entries, q, { groups: groupLimit = 8, files: fileLimit = 5 } = {}) {
+  /** @type {Map<string, { score: number, reasons: Array<{ w: number, text: string }>, counts: Record<string, number> }>} */
+  const byFile = new Map();
+  let hitCount = 0;
+  for (const entry of entries) {
+    const match = termMatch(entry.term, q);
+    if (!match) continue;
+    hitCount += 1;
+    const file = byFile.get(entry.file) || { score: 0, reasons: [], counts: {} };
+    const seen = (file.counts[entry.kind] = (file.counts[entry.kind] || 0) + 1);
+    if (!TERM_KIND_CAP[entry.kind] || seen <= TERM_KIND_CAP[entry.kind]) {
+      const w = (TERM_WEIGHT[entry.kind] || 1) * match;
+      file.score += w;
+      file.reasons.push({ w, text: `${TERM_KIND_LABEL[entry.kind] || entry.kind} '${entry.term}' L${entry.line}${entry.symbol ? ` (${entry.symbol})` : ""}` });
+    }
+    byFile.set(entry.file, file);
+  }
+  /* 기능은 대개 폴더 하나에 모인다(front/course/apply/cosApply*.jsp). 폴더 단위로 묶어 순위를 매긴다. */
+  /** @type {Map<string, Array<{ file: string, score: number, reasons: string[] }>>} */
+  const byDir = new Map();
+  for (const [file, info] of byFile) {
+    /*
+     * 쿼리·SQL·메시지 파일은 한 폴더(WEB-INF/config/query)에 모든 업무가 모여 있어 폴더로 묶으면
+     * 서로 다른 업무가 한 덩어리가 된다(실측: "수료" 1위가 query 폴더 전체). 파일 이름에 업무가
+     * 드러나므로(query-lms-front-course-ora.xml) 파일 하나를 한 묶음으로 본다.
+     */
+    const dir = /\.(xml|sql|properties)$/i.test(file) || !file.includes("/") ? file : file.slice(0, file.lastIndexOf("/"));
+    const list = byDir.get(dir) || [];
+    list.push({ file, score: info.score, reasons: info.reasons.sort((a, b) => b.w - a.w).slice(0, 3).map((r) => r.text) });
+    byDir.set(dir, list);
+  }
+  const groups = [...byDir].map(([dir, files]) => {
+    files.sort((a, b) => b.score - a.score);
+    // 폴더 점수는 상위 파일 몇 개만 더한다 — 약한 언급이 수십 개인 폴더가 제목 하나 있는 폴더를 이기지 않게.
+    const score = files.slice(0, 5).reduce((sum, f) => sum + f.score, 0);
+    return { dir, score: Math.round(score * 10) / 10, file_count: files.length, files: files.slice(0, fileLimit).map((f) => ({ ...f, score: Math.round(f.score * 10) / 10 })) };
+  }).sort((a, b) => b.score - a.score);
+  return { term_hits: hitCount, file_count: byFile.size, group_count: groups.length, groups: groups.slice(0, groupLimit), truncated_groups: Math.max(0, groups.length - groupLimit) };
+}
+
 const COMMANDS = {
   /* 심볼 위치 조회 — "이 클래스·메서드 어디 있나" */
   symbol({ root, indexDir, name, file, limit }) {
@@ -308,8 +368,22 @@ const COMMANDS = {
       }
     }
 
+    /*
+     * 한글 업무 용어면 기능 후보 순위를 **맨 앞에** 둔다. 결과는 중간에서 잘려 전달되기도 해서
+     * 뒤에 두면 가장 쓸모 있는 부분을 먼저 잃는다. 인덱스가 옛 판이라 glossary 가 없으면 건너뛴다.
+     */
+    let features = null;
+    if (/[가-힣]/.test(needle) && !kind) {
+      try {
+        features = rankFeatures(loadIndex(root, "glossary", indexDir).entries || [], needle);
+      } catch (error) {
+        if (error.missingIndex) missing.push("glossary");
+      }
+    }
+
     return {
       query: { q: needle, kind: kind || null },
+      ...(features ? { features, features_note: "업무 용어가 제목·머리말·설명에 나온 위치로 매긴 기능 후보다. 상위 폴더부터 읽어 확인한다." } : {}),
       ...cap(hits, limit),
       ...(missing.length ? { missing_indexes: missing } : {}),
       note: "코드 식별자로 좁히려면 symbol·callers·sql 명령을 쓴다.",

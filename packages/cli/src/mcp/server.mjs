@@ -158,7 +158,9 @@ const TOOLS = [
       "AX-NAVI 결정론적 인덱스에 질의한다. 인덱스 JSON을 직접 열지 말고 이 도구를 써라 " +
       "(대형 레거시에서 sql_usage.json은 143MB까지 커진다). " +
       "명령: summary, search, symbol, callers, callees, trace, sql, table, endpoint, transaction, schema, dead. " +
-      "업무 용어로 찾을 때는 search 를 먼저 쓴다 — 나머지 명령은 코드 식별자·파일명으로만 걸려서 한글 용어가 안 맞는다(실측: symbol '로그인' 0건, search '로그인' 384건).",
+      "업무 용어로 찾을 때는 search 를 먼저 쓴다 — 나머지 명령은 코드 식별자·파일명으로만 걸려서 한글 용어가 안 맞는다(실측: symbol '로그인' 0건, search '로그인' 384건). " +
+      "한글 질의의 search 결과 맨 앞 features 는 용어가 화면 제목·파일 머리말·설명에 나온 위치로 매긴 기능 후보 순위다 — " +
+      "코드명(MA00001)으로 된 시스템에서도 업무명으로 찾게 해 준다. 영문 키워드를 추측하기 전에 features 상위 폴더부터 확인한다.",
     inputSchema: {
       type: "object",
       required: ["command"],
