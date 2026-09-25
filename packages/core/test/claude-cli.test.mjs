@@ -350,3 +350,23 @@ test("위임 실행의 파이썬은 UTF-8 모드로 돈다 — 사용자가 정�
   assert.equal(delegatedEnv({}, {})["PYTHONUTF8"], "1");
   assert.equal(delegatedEnv({ PYTHONUTF8: "0" }, {})["PYTHONUTF8"], "0");
 });
+
+/*
+ * 실측(SDK harness-init, 비대화형): 답을 못 받은 질문이 "AskUserQuestion — 이 실행에서 허용되지 않은
+ * 도구다" 로 찍혔다. 질문은 막힌 것이 아니라 답을 못 받은 것이다.
+ */
+test("답을 못 받은 질문은 권한 거부와 따로, 사실대로 알린다", () => {
+  const events = translateEvent({
+    type: "result", subtype: "success", is_error: false, usage: {},
+    permission_denials: [{ tool_name: "AskUserQuestion" }, { tool_name: "Edit" }, { tool_name: "Edit" }],
+  });
+  const results = /** @type {any[]} */ (events.filter((e) => e.type === "tool_result"));
+  const unanswered = results.find((e) => e.toolName === "답 없음");
+  const denied = results.find((e) => e.toolName === "권한 거부");
+  assert.match(unanswered.content, /질문 1건에 답을 받지 못했다/);
+  assert.match(denied.content, /Edit ×2/);
+  assert.doesNotMatch(denied.content, /AskUserQuestion/, "질문을 권한 거부에 섞었다");
+  const onlyQuestion = translateEvent({ type: "result", subtype: "success", is_error: false, usage: {}, permission_denials: [{ tool_name: "AskUserQuestion" }] });
+  assert.ok(!onlyQuestion.some((e) => /** @type {any} */ (e).toolName === "권한 거부"), "질문만 막혔는데 권한 거부를 찍었다");
+});
+
