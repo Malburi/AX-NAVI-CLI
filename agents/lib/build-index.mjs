@@ -37,7 +37,7 @@ import {
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
 
-export const INDEXER_VERSION = "1.14.0"; // 업무 용어(화면 제목·머리말·설명·라벨)를 glossary 로 모아 한글 검색에 기능 후보 순위를 준다.
+export const INDEXER_VERSION = "1.15.0"; // 업무 용어 수집을 C#(///·Designer·resx)·ASP·ASP.NET·Razor·Python·Nexacro·Swagger 표준 형식으로 넓힌다.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
 const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
@@ -2309,8 +2309,10 @@ function extractSpringBeans(text, rel) {
  * 자리(표 머리·라벨)를 나누고, 줄 끝 주석은 양만 많아 모으지 않는다. 순위는 query-index search 가 매긴다.
  */
 const HANGUL = /[가-힣]/;
-const MARKUP_TERM_EXT = new Set([".jsp", ".jspf", ".html", ".htm", ".xhtml", ".vue", ".asp", ".aspx", ".cshtml"]);
-const CODE_DOC_EXT = new Set([".java", ".kt", ".kts", ".cs", ".js", ".ts", ".jsx", ".tsx", ".groovy", ".scala"]);
+const MARKUP_TERM_EXT = new Set([".jsp", ".jspf", ".html", ".htm", ".xhtml", ".vue", ".asp", ".aspx", ".ascx", ".master", ".cshtml", ".vbhtml", ".razor"]);
+const CODE_DOC_EXT = new Set([".java", ".kt", ".kts", ".cs", ".js", ".ts", ".jsx", ".tsx", ".groovy", ".scala", ".xjs"]);
+/* 속성값 하나를 꺼낸다 — Title="…" / text='…' */
+const attrValue = (tag, name) => tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"))?.slice(1).find((v) => v !== undefined);
 const TERMS_PER_FILE = 40;
 
 /** 태그·스크립틀릿·엔티티를 걷고 제목 조각으로 쪼갠다. "수강신청 | 교육시스템" → ["수강신청", "교육시스템"] */
@@ -2345,33 +2347,133 @@ export function extractTerms(text, rel, methods, classes = []) {
   /** @type {Array<{ term: string, kind: string, file: string, line: number, symbol?: string }>} */
   const terms = [];
   const push = (term, kind, offset, symbol) => terms.push({ term, kind, file: rel, line: atLine(offset), ...(symbol ? { symbol } : {}) });
+  const pushPieces = (raw, kind, offset, symbol) => { for (const t of termPieces(raw)) push(t, kind, offset, symbol); };
+  const markup = MARKUP_TERM_EXT.has(ext);
+  const firstDecl = [...classes].sort((a, b) => a.line - b.line)[0];
+  /*
+   * 문서 주석의 주인 — 주석이 끝난 줄 바로 아래(3줄 안)에서 시작하는 클래스·메서드.
+   * 주인이 없고 첫 선언보다 위면 파일 머리말이다. 화면 파일 안의 주석은 대개 스크립트 주석이라 머리말로 올리지 않는다.
+   */
+  const attachDoc = (lines, offset, endLine, { allowHeader = !markup } = {}) => {
+    if (!lines.length) return;
+    const owner = methods.find((item) => item.line > endLine - 1 && item.line <= endLine + 3);
+    const ownerClass = classes.find((item) => item.line > endLine - 1 && item.line <= endLine + 3);
+    const kind = ownerClass ? "class_doc" : owner ? "method_doc" : (allowHeader && (!firstDecl || endLine <= firstDecl.line)) ? "header" : null;
+    if (kind) for (const t of lines) push(t, kind, offset, (ownerClass || owner)?.id);
+  };
+  /* 화면 태그가 나오기 전(지시문 <%@ … %>·<!DOCTYPE> 은 예외)인가 — 파일 머리말 판정. 줄 수로 자르면 짧은 파일에서 틀린다. */
+  const beforeMarkup = (offset) => !/<(?![%!@])/.test(text.slice(0, offset));
 
-  if (MARKUP_TERM_EXT.has(ext)) {
-    for (const m of text.matchAll(/<title\b[^>]*>([\s\S]*?)<\/title>/gi)) for (const t of termPieces(m[1])) push(t, "title", m.index);
-    for (const m of text.matchAll(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/gi)) for (const t of termPieces(m[2])) push(t, "heading", m.index);
-    // JSP 머리말은 <%-- --%> 다. 파일 안의 /* */ 는 대개 화면 스크립트 주석이라 머리말로 올리지 않는다(아래).
-    // 맨 위의 첫 블록만 본다. 중간의 <%-- --%> 는 대개 주석 처리한 화면 조각이다(실측: '<legend>로그인</legend>').
-    // 화면 태그가 나오기 전(지시문 <%@ … %> 은 예외)의 주석만 머리말로 본다 — 줄 수로 자르면 짧은 파일에서 틀린다.
-    const head = text.match(/<%--([\s\S]*?)--%>/);
-    if (head && !/<(?![%!])/.test(text.slice(0, head.index))) {
-      for (const t of docLines(head[1].replace(/<[^>]+>/g, " "))) push(t, "header", head.index);
+  if (markup) {
+    for (const m of text.matchAll(/<title\b[^>]*>([\s\S]*?)<\/title>/gi)) pushPieces(m[1], "title", m.index);
+    for (const m of text.matchAll(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/gi)) pushPieces(m[2], "heading", m.index);
+    /*
+     * 머리말은 맨 위의 첫 주석 블록 하나다 — JSP·ASP.NET <%-- --%>, HTML <!-- -->.
+     * 중간의 것은 대개 주석 처리한 화면 조각이다(실측: '<legend>로그인</legend>').
+     */
+    const head = text.match(/<%--([\s\S]*?)--%>|<!--([\s\S]*?)-->/);
+    if (head && beforeMarkup(head.index)) {
+      for (const t of docLines((head[1] ?? head[2] ?? "").replace(/<[^>]+>/g, " "))) push(t, "header", head.index);
     }
-    for (const m of text.matchAll(/<(th|label|legend|caption)\b[^>]*>([\s\S]*?)<\/\1>/gi)) for (const t of termPieces(m[2])) push(t, "label", m.index);
+    // ASP 클래식 — 맨 위 <% … %> 안의 VBScript ' 주석 머리말
+    const aspHead = ext === ".asp" ? text.match(/<%(?!@)([\s\S]*?)%>/) : null;
+    if (aspHead && beforeMarkup(aspHead.index)) {
+      const lines = aspHead[1].split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith("'")).map((l) => l.replace(/^'+\s*/, ""));
+      for (const t of docLines(lines.join("\n"))) push(t, "header", aspHead.index);
+    }
+    // ASP.NET WebForms — <%@ Page Title="수강신청" %>
+    for (const m of text.matchAll(/<%@\s*(?:Page|Control|Master)\b[^%]*%>/gi)) {
+      const title = attrValue(m[0], "Title");
+      if (title) pushPieces(title, "title", m.index);
+    }
+    // Razor — ViewData["Title"] = "…" / ViewBag.Title = "…" / <PageTitle>…</PageTitle>
+    for (const m of text.matchAll(/(?:ViewData\s*\[\s*"Title"\s*\]|ViewBag\.Title)\s*=\s*"([^"]*)"/g)) pushPieces(m[1], "title", m.index);
+    for (const m of text.matchAll(/<PageTitle>([\s\S]*?)<\/PageTitle>/g)) pushPieces(m[1], "title", m.index);
+    for (const m of text.matchAll(/<(th|label|legend|caption)\b[^>]*>([\s\S]*?)<\/\1>/gi)) pushPieces(m[2], "label", m.index);
+    // ASP.NET 서버 컨트롤 — <asp:Label Text="…"> / HeaderText="…"
+    for (const m of text.matchAll(/<asp:\w+\b[^>]*>/gi)) {
+      for (const name of ["Text", "HeaderText", "ToolTip"]) {
+        const value = attrValue(m[0], name);
+        if (value) pushPieces(value, "label", m.index);
+      }
+    }
   }
 
-  if (CODE_DOC_EXT.has(ext) || MARKUP_TERM_EXT.has(ext)) {
-    const firstDecl = [...classes].sort((a, b) => a.line - b.line)[0];
+  if (CODE_DOC_EXT.has(ext) || markup) {
     for (const m of text.matchAll(/\/\*[\s\S]*?\*\//g)) {
-      const lines = docLines(m[0]);
-      if (!lines.length) continue;
-      const endLine = atLine(m.index + m[0].length);
-      // 주석 바로 아래(3줄 안)에서 시작하는 메서드·클래스가 그 설명의 주인이다.
-      const owner = methods.find((item) => item.line > endLine - 1 && item.line <= endLine + 3);
-      const ownerClass = classes.find((item) => item.line > endLine - 1 && item.line <= endLine + 3);
-      const markup = MARKUP_TERM_EXT.has(ext);
-      const kind = ownerClass ? "class_doc" : owner ? "method_doc" : (!markup && (!firstDecl || endLine <= firstDecl.line)) ? "header" : null;
-      if (!kind) continue;
-      for (const t of lines) push(t, kind, m.index, (ownerClass || owner)?.id);
+      attachDoc(docLines(m[0]), m.index, atLine(m.index + m[0].length));
+    }
+  }
+
+  if (ext === ".cs") {
+    /* C# XML 문서 주석 — 이어진 /// 줄. <summary> 안을 쓴다(없으면 태그를 걷은 전체). */
+    for (const m of text.matchAll(/(?:^[ \t]*\/\/\/.*(?:\r?\n|$))+/gm)) {
+      const body = m[0].split(/\r?\n/).map((l) => l.replace(/^\s*\/\/\/\s?/, "")).join("\n");
+      const summary = body.match(/<summary>([\s\S]*?)<\/summary>/i)?.[1] ?? body;
+      attachDoc(docLines(summary.replace(/<[^>]+>/g, " ")), m.index, atLine(m.index + m[0].trimEnd().length));
+    }
+    /* 파일 맨 위의 // 머리말(using·namespace 전) */
+    const top = text.match(/^(?:﻿)?((?:[ \t]*\/\/(?!\/).*\r?\n)+)/);
+    if (top) for (const t of docLines(top[1].replace(/^\s*\/\/\s?/gm, ""))) push(t, "header", 0);
+    /* [Display(Name = "…")] · [DisplayName("…")] · [Description("…")] */
+    for (const m of text.matchAll(/\[\s*(?:Display\s*\([^\]]*?\bName\s*=\s*|DisplayName\s*\(\s*|Description\s*\(\s*)"([^"]*)"/g)) pushPieces(m[1], "label", m.index);
+    /* WinForms 디자이너 — this.Text 는 창 제목, 컨트롤·열의 Text/HeaderText 는 라벨 */
+    if (/\.Designer\.cs$/i.test(rel)) {
+      for (const m of text.matchAll(/\bthis\.Text\s*=\s*"([^"]*)"/g)) pushPieces(m[1], "title", m.index);
+      for (const m of text.matchAll(/\bthis\.\w+\.(?:Text|HeaderText|Caption)\s*=\s*"([^"]*)"/g)) pushPieces(m[1], "label", m.index);
+    }
+  }
+
+  if (ext === ".resx") {
+    /* 리소스 문자열. 폼의 $this.Text 는 창 제목이다. */
+    for (const m of text.matchAll(/<data\s+name\s*=\s*"([^"]+)"[^>]*>\s*<value>([\s\S]*?)<\/value>/gi)) {
+      pushPieces(m[2], /^\$this\.Text$/i.test(m[1]) ? "title" : "label", m.index, m[1]);
+    }
+  }
+
+  if (ext === ".py") {
+    /* 모듈 문서 문자열(파일 첫 문장) → 머리말. 그 위의 # 주석(#!·인코딩 선언 제외)도 머리말. */
+    const moduleDoc = text.match(/^(?:﻿)?(?:[ \t]*(?:#.*)?\r?\n)*[ \t]*[rRuU]?("""|''')([\s\S]*?)\1/);
+    if (moduleDoc) for (const t of docLines(moduleDoc[2])) push(t, "header", moduleDoc.index);
+    const hashTop = text.match(/^(?:﻿)?((?:[ \t]*#.*\r?\n)+)/);
+    if (hashTop) {
+      const lines = hashTop[1].split(/\r?\n/).filter((l) => !/^\s*#!|coding[:=]/.test(l)).map((l) => l.replace(/^\s*#+\s?/, "")).join("\n");
+      for (const t of docLines(lines)) push(t, "header", 0);
+    }
+    /* class·def 바로 아래의 문서 문자열 — 주인은 그 줄의 선언이다. */
+    for (const m of text.matchAll(/^[ \t]*(?:async[ \t]+)?(class|def)[ \t]+(\w+)[^\n]*:[ \t]*\r?\n[ \t]*[rRuU]?("""|''')([\s\S]*?)\3/gm)) {
+      const declLine = atLine(m.index + m[0].indexOf(m[1]));
+      const pool = m[1] === "class" ? classes : methods;
+      const owner = pool.find((item) => item.line === declLine) || pool.find((item) => Math.abs(item.line - declLine) <= 1);
+      for (const t of docLines(m[4])) push(t, m[1] === "class" ? "class_doc" : "method_doc", m.index, owner?.id);
+    }
+    /* Django verbose_name · FastAPI/Flask summary·description */
+    for (const m of text.matchAll(/\bverbose_name(?:_plural)?\s*=\s*_?\(?\s*[rRuU]?["']([^"']+)["']/g)) pushPieces(m[1], "label", m.index);
+    for (const m of text.matchAll(/\b(summary|description)\s*=\s*[rRuU]?["']([^"']+)["']/g)) pushPieces(m[2], "desc", m.index);
+  }
+
+  if (ext === ".java" || ext === ".kt") {
+    /* Swagger·SpringDoc — @Tag(name/description) 는 클래스, @Operation(summary)·@ApiOperation(value) 는 메서드 설명 */
+    for (const m of text.matchAll(/@(Tag|Api|Operation|ApiOperation)\s*\(([^)]*)\)/g)) {
+      const args = m[2];
+      const value = attrValue(args, m[1] === "Operation" ? "summary" : m[1] === "ApiOperation" ? "value" : m[1] === "Api" ? "tags" : "name")
+        ?? args.match(/^\s*"([^"]*)"/)?.[1];
+      if (!value) continue;
+      const line = atLine(m.index);
+      const owner = (m[1] === "Tag" || m[1] === "Api" ? classes : methods).find((item) => item.line >= line && item.line <= line + 4);
+      pushPieces(value, "desc", m.index, owner?.id);
+    }
+  }
+
+  if (ext === ".xfdl" || (ext === ".xml" && /<Form\b[^>]*\btitletext\s*=/i.test(text))) {
+    /* Nexacro·XPlatform 화면 — <Form titletext="…"> 는 화면 제목, Static·Button·Grid 머리의 text 는 라벨 */
+    for (const m of text.matchAll(/<Form\b[^>]*>/gi)) {
+      const title = attrValue(m[0], "titletext");
+      if (title) pushPieces(title, "title", m.index);
+    }
+    for (const m of text.matchAll(/<(Static|Button|CheckBox|Radio|GroupBox|Cell)\b[^>]*>/gi)) {
+      const value = attrValue(m[0], "text");
+      if (value) pushPieces(value, "label", m.index);
     }
   }
 
