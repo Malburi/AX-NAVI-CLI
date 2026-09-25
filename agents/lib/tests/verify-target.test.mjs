@@ -64,6 +64,29 @@ export async function test(register, assert) {
     }
   });
 
+  /* 실측: eduLms(Struts)는 build.xml 뿐이라 검증 명령이 0개였다. Python 은 테스트를 한 번도 안 돌렸다. */
+  register("detect는 Ant 타깃·pytest 설정·go.mod 를 잡는다", () => {
+    const roots = [];
+    const make = (files) => {
+      const root = mkdtempSync(join(tmpdir(), "vt-more-"));
+      roots.push(root);
+      for (const [rel, body] of Object.entries(files)) write(root, rel, body);
+      return JSON.parse(runCli(["detect", "--root", root]).stdout).detected.map((c) => c.cmd);
+    };
+    try {
+      assert.ok(make({ "build.xml": '<project><target name="compile"/><target name="test"/></project>' }).includes("ant test"), "Ant test 타깃");
+      assert.ok(make({ "build.xml": '<project default="war"><target name="compile"/></project>' }).includes("ant compile"), "Ant test 없으면 compile");
+      assert.ok(make({ "build.xml": "<project/>" }).includes("ant"), "Ant 타깃이 없으면 기본 타깃");
+      const py = make({ "pyproject.toml": "[tool.pytest.ini_options]\naddopts = '-q'\n" });
+      assert.ok(py.some((cmd) => / -m pytest -q$/.test(cmd)), JSON.stringify(py));
+      assert.ok(make({ "tests/test_order.py": "def test_x():\n    assert True\n" }).some((cmd) => /pytest/.test(cmd)), "tests/test_*.py 만 있어도 pytest");
+      const go = make({ "go.mod": "module example.com/x\n" });
+      assert.ok(go.includes("go vet ./...") && go.includes("go test ./..."), JSON.stringify(go));
+    } finally {
+      for (const root of roots) rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("detect는 검증 명령이 없으면 count 0과 안내 note를 준다", () => {
     const root = mkdtempSync(join(tmpdir(), "vt-empty-"));
     try {
