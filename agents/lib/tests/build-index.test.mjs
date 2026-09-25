@@ -1455,6 +1455,97 @@ public class ApplyService {
     }
   });
 
+  /*
+   * 스택마다 업무명이 적히는 자리가 다르다. 실제 샘플이 없어 각 스택의 표준 형식으로 고정한다 —
+   * 현장 변형(회사별 머리말 양식 등)은 실제 소스를 받으면 이 시험에 더한다.
+   */
+  register("업무 용어 수집은 스택별 정의 자리를 제목·설명으로 잡는다 (C#·WinForms·resx·ASP·ASP.NET·Razor·Python·Nexacro·Swagger)", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-terms-"));
+    try {
+      write(root, "Svc/ApplyService.cs", `// 프로그램명 : 수강신청 서비스 모듈
+using System;
+namespace Edu {
+  /// <summary>
+  /// 수강신청 처리
+  /// </summary>
+  public class ApplyService {
+    /// <summary>수강신청 저장</summary>
+    public void Save() {}
+    [Display(Name = "신청일자")]
+    public DateTime ApplyDate { get; set; }
+  }
+}
+`);
+      write(root, "Forms/FrmApply.Designer.cs", `namespace Edu {
+  partial class FrmApply {
+    private void InitializeComponent() {
+      this.lblName.Text = "신청자명";
+      this.Text = "수강신청 등록";
+    }
+  }
+}
+`);
+      write(root, "Forms/FrmApply.resx", `<root><data name="$this.Text" xml:space="preserve"><value>수강신청 등록</value></data><data name="lblMemo.Text"><value>비고란</value></data></root>
+`);
+      write(root, "web/apply.asp", `<%
+' 프로그램명 : 수강신청 목록
+Dim rs
+%>
+<html><body><h2>수강신청 목록</h2></body></html>
+`);
+      write(root, "web/Apply.aspx", `<%@ Page Title="수강신청 조회" Language="C#" %>
+<asp:Label ID="lblTerm" runat="server" Text="신청기간" />
+`);
+      write(root, "Views/Apply/Index.cshtml", `@{ ViewData["Title"] = "수강신청 현황"; }
+<h3>목록</h3>
+`);
+      write(root, "app/apply.py", `"""수강신청 모듈"""
+class ApplyView:
+    """수강신청 화면"""
+    def post(self):
+        """수강신청 저장"""
+        pass
+name = models.CharField(verbose_name="신청자 이름")
+`);
+      write(root, "nx/MA00001.xfdl", `<FDL version="2.0"><Form id="MA00001" titletext="수강신청 관리"><Layouts><Layout><Static id="st1" text="신청번호"/></Layout></Layouts></Form></FDL>
+`);
+      write(root, "src/app/ApplyController.java", `package app;
+@Tag(name = "수강신청 API")
+public class ApplyController {
+  @Operation(summary = "수강신청 등록")
+  public void create() {}
+}
+`);
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const entries = json(root, "glossary.json").entries;
+      const has = (file, kind, term) => assert.ok(entries.some((e) => e.file === file && e.kind === kind && e.term === term), `${file} ${kind} '${term}' 없음: ${JSON.stringify(entries.filter((e) => e.file === file))}`);
+      has("Svc/ApplyService.cs", "header", "수강신청 서비스 모듈");
+      has("Svc/ApplyService.cs", "class_doc", "수강신청 처리");
+      has("Svc/ApplyService.cs", "method_doc", "수강신청 저장");
+      has("Svc/ApplyService.cs", "label", "신청일자");
+      has("Forms/FrmApply.Designer.cs", "title", "수강신청 등록");
+      has("Forms/FrmApply.Designer.cs", "label", "신청자명");
+      has("Forms/FrmApply.resx", "title", "수강신청 등록");
+      has("Forms/FrmApply.resx", "label", "비고란");
+      has("web/apply.asp", "header", "수강신청 목록");
+      has("web/Apply.aspx", "title", "수강신청 조회");
+      has("web/Apply.aspx", "label", "신청기간");
+      has("Views/Apply/Index.cshtml", "title", "수강신청 현황");
+      has("app/apply.py", "header", "수강신청 모듈");
+      has("app/apply.py", "class_doc", "수강신청 화면");
+      has("app/apply.py", "method_doc", "수강신청 저장");
+      has("app/apply.py", "label", "신청자 이름");
+      has("nx/MA00001.xfdl", "title", "수강신청 관리");
+      has("nx/MA00001.xfdl", "label", "신청번호");
+      has("src/app/ApplyController.java", "desc", "수강신청 API");
+      has("src/app/ApplyController.java", "desc", "수강신청 등록");
+      const classDoc = entries.find((e) => e.file === "Svc/ApplyService.cs" && e.kind === "class_doc");
+      assert.ok(classDoc?.symbol?.endsWith("ApplyService"), `C# 클래스 설명의 주인: ${classDoc?.symbol}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   /* 실측: "인덱스갱신해줘" 뒤에 Standard 로 만든 하네스의 인덱스가 Auto 재산정으로 Full 이 됐다. */
   register("갱신(incremental)은 Tier 를 지정하지 않으면 기존 Tier 를 유지한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-tier-"));
