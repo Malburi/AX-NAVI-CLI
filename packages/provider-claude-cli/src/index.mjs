@@ -358,19 +358,37 @@ export function translateEvent(msg) {
        */
       /** @type {Map<string, number>} */
       const tally = new Map();
+      let unanswered = 0;
       for (const d of msg.permission_denials) {
         const name = String(d.tool_name ?? d.tool ?? "?").replace(/^mcp__axnavi__/, "");
+        /*
+         * 질문이 거부로 잡히는 것은 답을 못 받은 경우다(답할 사람이 없거나 건너뜀).
+         * 예전에는 이것까지 "허용되지 않은 도구"로 적어 사실과 달랐다(실측: 비대화형 실행 끝 문구).
+         */
+        if (name === "AskUserQuestion") { unanswered += 1; continue; }
         tally.set(name, (tally.get(name) ?? 0) + 1);
       }
+      if (unanswered) {
+        out.push({
+          type: "tool_result",
+          toolUseId: "(질문)",
+          toolName: "답 없음",
+          content: `질문 ${unanswered}건에 답을 받지 못했다 — 그 질문으로 정할 일은 확정되지 않았다.`,
+          isError: true,
+        });
+      }
       const names = [...tally].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name));
-      out.push({
-        type: "tool_result",
-        toolUseId: "(권한)",
-        // 도구 이름 자리에 무엇이 막혔는지를 넣는다 — "(위임)" 은 읽는 사람에게 아무 뜻도 없다.
-        toolName: "권한 거부",
-        content: `${names.join(", ")} — 이 실행에서 허용되지 않은 도구다. 그만큼 결과가 부실할 수 있다.`,
-        isError: true,
-      });
+      if (names.length) {
+        out.push({
+          type: "tool_result",
+          toolUseId: "(권한)",
+          // 도구 이름 자리에 무엇이 막혔는지를 넣는다 — "(위임)" 은 읽는 사람에게 아무 뜻도 없다.
+          toolName: "권한 거부",
+          // 역할에 없는 도구일 수도, 사람이 거부했을 수도 있다. 어느 쪽인지 여기서는 모르므로 둘 다 적는다.
+          content: `${names.join(", ")} — 거부됐다(역할에 없는 도구이거나 승인되지 않았다). 그만큼 결과가 부실할 수 있다.`,
+          isError: true,
+        });
+      }
     }
 
     if (msg.is_error || msg.subtype !== "success") {
