@@ -3784,7 +3784,15 @@ function validateOutput(name, value) {
 
 export function buildIndex(options) {
   const root = resolve(options.root);
-  const normalized = { ...options, root, requestedTier: options.tier || "Auto" };
+  /*
+   * 갱신(incremental)은 사용자가 고른 Tier 를 바꾸지 않는다. 실측: "인덱스갱신해줘" 뒤에 Standard 로 만든
+   * 하네스의 인덱스가 Auto 재산정으로 Full 이 됐다. 지정이 없으면 기존 _meta 의 Tier 를 쓴다.
+   */
+  const unspecified = !options.tier || options.tier === "Auto"; // 명령행 기본값이 "Auto" 다
+  const keptTier = unspecified && options.mode === "incremental"
+    ? readJson(join(resolveIndexDir(root, options.indexDir), "_meta.json"), {})?.tier
+    : null;
+  const normalized = { ...options, root, requestedTier: (unspecified ? keptTier : options.tier) || "Auto" };
   const existingPatchPath = join(resolveIndexDir(root, options.indexDir), "_ai_patch.json");
   const preservePatch = options.mode === "incremental" && existsSync(existingPatchPath);
   const config = loadConfig(root, options.config);
