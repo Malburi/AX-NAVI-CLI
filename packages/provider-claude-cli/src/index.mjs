@@ -621,6 +621,13 @@ export function delegatedEnv(base, options) {
      * 값은 claude 가 오류에서 직접 안내한 것이다(0 = 끔). 사용자가 정했으면 따른다.
      */
     ...(base["CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT"] ? {} : { CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: "0" }),
+    /*
+     * 파이썬을 UTF-8 모드로 돌린다. 윈도우 기본(cp949)으로는 한글·기호가 오가는 자리에서 깨진다(실측):
+     *   - validator_checks.py 가 node 출력을 읽다 UnicodeDecodeError(_readerthread)
+     *   - 모델이 쓴 python -c "print(...)" 가 '—' 를 찍다 UnicodeEncodeError
+     * 입출력·open()·하위 명령 모두 UTF-8 이 된다. 사용자가 정했으면 따른다.
+     */
+    ...(base["PYTHONUTF8"] !== undefined ? {} : { PYTHONUTF8: "1" }),
     ...(options.pluginDir ? { CLAUDE_PLUGIN_ROOT: options.pluginDir } : {}),
     ...options.env,
   };
