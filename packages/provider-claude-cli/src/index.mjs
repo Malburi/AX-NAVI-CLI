@@ -445,11 +445,12 @@ export class ClaudeCliProvider {
      * Edit 를 불렀다가 "No such tool available: Edit" 를 받고 되돌아갔다.
      * 없다는 사실뿐 아니라 대신 무엇을 할지까지 적어 준다.
      */
-    const payload = [
+    const preamble = [
       toolBriefing(spec.tools, spec.allowDelegation === true),
       spec.system ? `<역할 지침>\n${spec.system}\n</역할 지침>` : "",
-      prompt,
     ].filter(Boolean).join("\n\n");
+    const payload = delegatedPayload(preamble, prompt, spec.resumeFrom);
+    let compacted = false;
 
     const args = buildDelegatedArgs(spec, this.options, pluginMuteSettings());
 
@@ -504,6 +505,11 @@ export class ClaudeCliProvider {
       try {
         const msg = JSON.parse(text);
         background.observe(msg);
+        if (msg.type === "system" && msg.subtype === "compact_boundary") compacted = true;
+        if (msg.type === "result" && typeof msg.session_id === "string") {
+          if (msg.is_error || compacted) sentPreamble.delete(msg.session_id);
+          else sentPreamble.set(msg.session_id, preamble);
+        }
         pending.push(...translateEvent(msg));
         wake();
       } catch {
@@ -734,6 +740,28 @@ function pluginMuteSettings() {
  */
 const FOREGROUND_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "foreground-agent-hook.mjs");
 const FOREGROUND_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${FOREGROUND_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
+
+/*
+ * 이어 가는 턴에는 이미 보낸 도구 안내·역할 지침을 다시 붙이지 않는다.
+ *
+ * 실측: 한 세션에서 턴마다 3KB가 다시 실려 대화 기록에 같은 덩어리가 16번 쌓였고,
+ * 기록을 연 화면에도 매 턴 그대로 찍혔다. 도구나 역할이 바뀐 턴(스킬 실행 등)은
+ * 안내가 달라지므로 다시 보낸다. 대화가 압축됐거나 턴이 실패했으면 기록을 지워
+ * 다음 턴에 다시 보낸다 — 압축 요약에서 안내가 사라질 수 있기 때문이다.
+ */
+/** @type {Map<string, string>} 세션 id → 마지막으로 전한 안내 */
+const sentPreamble = new Map();
+
+/**
+ * @param {string} preamble
+ * @param {string} prompt
+ * @param {string | undefined} resumeFrom
+ * @param {Map<string, string>} [sent]
+ */
+export function delegatedPayload(preamble, prompt, resumeFrom, sent = sentPreamble) {
+  const known = Boolean(resumeFrom) && sent.get(/** @type {string} */ (resumeFrom)) === preamble;
+  return [known ? "" : preamble, prompt].filter(Boolean).join("\n\n");
+}
 
 /**
  * 위임 실행에 얹는 설정. 순수 함수로 꺼내 테스트가 모양을 고정한다.

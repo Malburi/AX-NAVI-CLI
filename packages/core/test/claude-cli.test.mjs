@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BACKGROUND_WAIT_CEILING_MS, buildDelegatedArgs, createBackgroundWatch, delegatedEnv, delegatedSettings, flattenToolContent, toDisallowedTools, toolBriefing, translateEvent } from "../../provider-claude-cli/src/index.mjs";
+import { BACKGROUND_WAIT_CEILING_MS, buildDelegatedArgs, createBackgroundWatch, delegatedEnv, delegatedPayload, delegatedSettings, flattenToolContent, toDisallowedTools, toolBriefing, translateEvent } from "../../provider-claude-cli/src/index.mjs";
 
 /** @param {string[]} names */
 const tools = (names) =>
@@ -329,4 +329,15 @@ test("포그라운드 훅은 뒤에서 돌리려는 호출만 바꾸고 나머�
 
   assert.equal(run({ tool_name: "Agent", tool_input: { prompt: "p" } }), "", "포그라운드 호출까지 건드렸다");
   assert.equal(spawnSync(process.execPath, [script], { input: "깨진 입력", encoding: "utf8" }).stdout, "", "입력이 깨지면 조용히 비켜야 한다");
+});
+
+/*
+ * 실측: 이어 가는 턴마다 도구 안내·역할 지침 3KB가 다시 실려 같은 덩어리가 16번 쌓였다.
+ */
+test("이어 가는 턴에는 이미 전한 안내를 다시 붙이지 않는다 — 바뀐 안내는 보낸다", () => {
+  const sent = new Map([["s1", "안내A"]]);
+  assert.equal(delegatedPayload("안내A", "질문", undefined, sent), "안내A\n\n질문", "새 대화에는 안내가 필요하다");
+  assert.equal(delegatedPayload("안내A", "질문", "s1", sent), "질문", "같은 안내를 다시 붙였다");
+  assert.equal(delegatedPayload("안내B", "질문", "s1", sent), "안내B\n\n질문", "도구·역할이 바뀐 턴인데 안내를 뺐다");
+  assert.equal(delegatedPayload("안내A", "질문", "모르는세션", sent), "안내A\n\n질문", "처음 보는 세션인데 안내를 뺐다");
 });
