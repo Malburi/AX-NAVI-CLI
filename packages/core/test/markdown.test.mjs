@@ -122,6 +122,17 @@ test("한 줄에 여러 서식이 섞여도 각각 걸린다", () => {
   assert.equal(plain(out), "굵게 그리고 코드 그리고 지움");
 });
 
+/*
+ * 실측(/find 수강신청): 모델이 코드를 굵게 감쌌다 — `**`doViewResultApply`(379행)**`.
+ * 조각마다 강조를 걸어서 여는 별과 닫는 별이 갈라져 별표째 보였다.
+ */
+test("코드를 감싼 굵게도 걸리고, 코드 안의 별은 글자로 남는다", () => {
+  const out = inline("- 핵심 **`doViewResultApply`(379행)** — 확정 처리", ui);
+  assert.equal(plain(out), "- 핵심 doViewResultApply(379행) — 확정 처리");
+  assert.ok(out.includes(`${ESC}[1m`) && out.includes(`${ESC}[36m`));
+  assert.equal(plain(inline("`a**b**c` 는 코드", ui)), "a**b**c 는 코드", "코드 안의 별을 서식으로 먹었다");
+});
+
 /* ---------- 표 ---------- */
 
 /** 표 전체를 한 번에 넣고 나온 줄들을 받는다. */

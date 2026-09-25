@@ -187,9 +187,18 @@ export function inline(text, ui) {
    */
   if (parts.length % 2 === 0) return emphasize(text, ui);
 
-  return parts
-    .map((segment, i) => (i % 2 === 1 ? ui.cyan(segment) : emphasize(segment, ui)))
+  /*
+   * 코드 조각은 자리표시로 비워 두고 줄 전체에 강조를 건 뒤 되돌린다.
+   * 조각마다 따로 강조를 걸면 코드를 감싼 굵게(`**`doViewResultApply`(379행)**`)의
+   * 여는 별과 닫는 별이 다른 조각에 떨어져 별표째 보였다(실측). 자리표시 안에는
+   * 별·밑줄·물결이 없으므로 코드 안의 `**` 는 여전히 글자로 남는다.
+   */
+  /** @type {string[]} */
+  const codes = [];
+  const masked = parts
+    .map((segment, i) => (i % 2 === 1 ? `${codes.push(segment) - 1}` : segment))
     .join("");
+  return emphasize(masked, ui).replace(/(\d+)/g, (_, i) => ui.cyan(codes[Number(i)] ?? ""));
 }
 
 /**
