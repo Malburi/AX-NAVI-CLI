@@ -79,7 +79,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
   const agentNames = agents.map((a) => a.name);
   const skillByName = new Map(skills.map((s) => [s.name, s]));
   // AX-NAVI 본인. 라우팅에 안 걸리는 모든 입력을 받는다.
-  const navi = createNaviPersona({ agents, skills });
+  const navi = createNaviPersona({ agents, skills, pluginRoot: REPO_ROOT });
 
   const providerInfo = selectProvider({ cwd: paths.root });
   process.stdout.write(block(statusLines(paths, state, providerInfo)));
