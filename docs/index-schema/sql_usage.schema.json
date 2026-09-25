@@ -14,7 +14,7 @@
           "id": { "type": "string" },
           "file": { "type": "string" },
           "line": { "type": ["integer", "null"] },
-          "type": { "type": "string", "enum": ["select", "insert", "update", "delete", "merge", "ddl"] },
+          "type": { "type": "string", "enum": ["select", "insert", "update", "delete", "merge", "ddl", "call"] },
           "tables": { "type": "array", "items": { "type": "string" } },
           "columns_selected": { "type": "array", "items": { "type": "string" } },
           "columns_where": { "type": "array", "items": { "type": "string" } },

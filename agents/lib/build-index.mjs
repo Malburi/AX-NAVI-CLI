@@ -37,7 +37,7 @@ import {
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
 
-export const INDEXER_VERSION = "1.12.0"; // Oracle PL/SQL 심볼·호출·정적 SQL, Java→프로시저 호출, 본문 사용처를 감싸는 메서드로.
+export const INDEXER_VERSION = "1.13.0"; // 쿼리 컨테이너의 {CALL} 을 sql 에 call 로, 본체 없는 저장 프로시저를 db_procedure 노드로 잇는다.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
 const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
@@ -1182,7 +1182,7 @@ const PROCEDURE_CALL_TEXT = new RegExp(String.raw`^\s*(?:\{\s*(?:\?\s*=\s*)?call
 
 function procedureTarget(raw) {
   const parts = String(raw).replace(/"/g, "").split(".").map((part) => part.trim().toUpperCase()).filter(Boolean);
-  return { name: parts.at(-1), qualifier: parts.length > 1 ? parts.at(-2) : "" };
+  return { name: parts.at(-1), qualifier: parts.length > 1 ? parts.at(-2) : "", procedure: true };
 }
 
 /*
@@ -1922,10 +1922,17 @@ function extractSql(text, clean, rel, methods) {
     const rawValue = block[2].match(/<value>([\s\S]*?)<\/value>/i)?.[1];
     if (!id || !rawValue) continue;
     const statement = rawValue.replace(/<!\[CDATA\[/g, "").replace(/\]\]>/g, "").trim();
-    const type = sqlStatementType(statement);
+    /*
+     * 저장 프로시저 호출 `{CALL PR_X(?, ?)}`. 문장 모양 검사에 안 걸려 통째로 빠졌다 — 실측(eduLms)
+     * CALL 70건이 전부 누락돼 수강신청 등록(PR_LS_APPLY_FRONT_PROC)이 sql·call_graph 어디에도 없었다.
+     * MyBatis 매퍼처럼 sql_usage 에 procedure 를 달아 남기면, 이 id 를 쓰는 메서드 → 프로시저 엣지는
+     * aggregate 가 이어 준다.
+     */
+    const procedure = callableTarget(statement);
+    const type = sqlStatementType(statement) || (procedure ? "call" : null);
     if (!type) continue;
     const line = atLine(block.index);
-    sqls.push({ id, file: rel, line, type, tables: [...new Set(sqlTables(statement))], text_preview: statement.replace(/\s+/g, " ").trim().slice(0, 240), origin: "deterministic-indexer", confidence: "HIGH" });
+    sqls.push({ id, file: rel, line, type, tables: [...new Set(sqlTables(statement))], text_preview: statement.replace(/\s+/g, " ").trim().slice(0, 240), ...(procedure ? { procedure } : {}), origin: "deterministic-indexer", confidence: "HIGH" });
     relations.push(...extractSqlRelations(statement, { sql_id: id, file: rel, line }));
   }
   const annotation = /@(Query|Select|Insert|Update|Delete)\s*\(\s*(["'])([\s\S]*?)\2\s*\)/gi;
@@ -2746,6 +2753,8 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
     if (candidates.length === 1) edges.push({ from: `trigger:${binding.trigger}`, to: candidates[0].id, type: binding.type, file: binding.file, line: binding.line, workspace: binding.workspace, origin: "deterministic-indexer", confidence: "HIGH" });
     else unresolved.push({ kind: "unresolved_trigger", trigger: binding.trigger, handler_name: binding.handler_name, candidates: candidates.map((item) => item.id), file: binding.file, line: binding.line, workspace: binding.workspace });
   }
+  /** 본체 소스가 없는 저장 프로시저. 호출 엣지의 대상으로만 쓰인다. @type {Map<string, any>} */
+  const dbProcedures = new Map();
   for (const call of callSites) {
     let candidates = nodeBySimple.get(call.name) || [];
     /* 한정자 없는 화면 스크립트 호출만 좁힌다 — `opener.fnX()`·`parent.fnX()`는 정당하게 다른 화면을 가리킨다. */
@@ -2830,12 +2839,24 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
         }
       }
     }
+    /*
+     * 저장 프로시저 본체가 이 저장소에 없으면(DB 에만 있음) 후보가 0개라 연결이 조용히 버려졌다.
+     * 실측(eduLms): 수강신청 등록 PR_LS_APPLY_FRONT_PROC 를 부르는 메서드 10곳이 call_graph 에 없어
+     * 영향도 분석이 프로시저를 거치는 변경을 볼 수 없었다. 외부 DB 프로시저 노드로 남겨 잇는다.
+     */
+    if (!candidates.length && call.procedure) {
+      const id = `db:${call.qualifier ? `${call.qualifier}.` : ""}${call.name}`;
+      if (!dbProcedures.has(id)) dbProcedures.set(id, { id, type: "db_procedure", name: call.name, file: call.file, line: call.line, source: "external", workspace: call.workspace, origin: "deterministic-indexer", confidence: "MEDIUM" });
+      edges.push({ from: call.caller, to: id, type: "call", file: call.file, line: call.line, workspace: call.workspace, origin: "deterministic-indexer", confidence: "MEDIUM" });
+      continue;
+    }
     if (candidates.length === 1 && candidates[0].id !== call.caller) {
       edges.push({ from: call.caller, to: candidates[0].id, type: "call", file: call.file, line: call.line, workspace: call.workspace, origin: "deterministic-indexer", confidence: call.qualifier ? "HIGH" : "MEDIUM" });
     } else if (candidates.length > 1) {
       unresolved.push({ kind: "ambiguous_call", caller: call.caller, expression: `${call.qualifier ? `${call.qualifier}.` : ""}${call.name}(...)`, candidates: candidates.map((item) => item.id), file: call.file, line: call.line, workspace: call.workspace });
     }
   }
+  nodes.push(...dbProcedures.values());
   for (const injection of injects) {
     const candidates = nodeBySimple.get(injection.targetName) || [];
     if (candidates.length === 1) edges.push({ from: injection.owner, to: candidates[0].id, type: "inject", file: injection.file, line: injection.line, workspace: injection.workspace, origin: "deterministic-indexer", confidence: "HIGH" });
