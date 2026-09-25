@@ -1414,6 +1414,47 @@ public class OrderDao {
     }
   });
 
+  /*
+   * 실측(eduLms): <query><value>{CALL PR_X(?)}</value></query> 70건이 문장 모양 검사에 걸리지 않아
+   * sql·call_graph 어디에도 없었다. 프로시저 본체가 DB 에만 있으면 호출 엣지도 조용히 버려졌다.
+   */
+  register("쿼리 컨테이너의 프로시저 호출을 sql 에 call 로 남기고, 본체 없는 프로시저로 가는 엣지를 잇는다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-call-"));
+    try {
+      write(root, "WEB-INF/config/query/q-ora.xml", `<queries>
+<query>
+  <id>COS_APPLY_PROC_I01</id>
+  <value><![CDATA[
+    {CALL PR_LS_APPLY_FRONT_PROC(?, ?, ?)}
+  ]]></value>
+</query>
+<query><id>COS_LIST_S01</id><value>SELECT * FROM TB_LS_CRS</value></query>
+</queries>
+`);
+      write(root, "src/app/ApplyService.java", `package app;
+public class ApplyService {
+  public void doApply() {
+    String queryId = "COS_APPLY_PROC_I01";
+    dao.execute(queryId);
+  }
+}
+`);
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const sql = json(root, "sql_usage.json");
+      const call = sql.sqls.find((item) => item.id === "COS_APPLY_PROC_I01");
+      assert.equal(call?.type, "call", JSON.stringify(sql.sqls));
+      assert.equal(call?.procedure, "PR_LS_APPLY_FRONT_PROC");
+      assert.ok(sql.usages.some((item) => item.sql_id === "COS_APPLY_PROC_I01" && item.method === "app.ApplyService.doApply"), "사용처를 잃었다");
+      const graph = json(root, "call_graph.json");
+      const node = graph.nodes.find((item) => item.id === "db:PR_LS_APPLY_FRONT_PROC");
+      assert.equal(node?.type, "db_procedure", JSON.stringify(graph.nodes.map((n) => n.id)));
+      assert.equal(node?.source, "external");
+      assert.ok(graph.edges.some((item) => item.from === "app.ApplyService.doApply" && item.to === "db:PR_LS_APPLY_FRONT_PROC"), JSON.stringify(graph.edges));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("Java 호출 해석: 지역 변수 타입·외부 인터페이스 구현·정적 호출·생성자·상속 메서드", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-resolve-"));
     try {
