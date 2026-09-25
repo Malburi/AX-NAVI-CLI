@@ -68,6 +68,22 @@ test("이번 턴에 쓰인 산출물은 안 잡는다", () => {
   });
 });
 
+/*
+ * 실측: server 에서 돈 pair-init 이 옆 저장소의 `xu25-client/_workspace/reports/api_drift_report.md` 를
+ * 이번 턴에 썼는데, server 기준으로만 붙여 "쓰이지 않았다"고 잘못 경고했다.
+ */
+test("옆 저장소 이름으로 시작하는 상대경로는 부모 폴더 기준으로도 본다", () => {
+  withTemp((parent) => {
+    const server = join(parent, "xu25-server");
+    const client = join(parent, "xu25-client");
+    mkdirSync(server, { recursive: true });
+    const since = Date.now() - 1000;
+    makeReport(client, "api_drift_report.md");
+    const answer = "상세: xu25-client/_workspace/reports/api_drift_report.md";
+    assert.deepEqual(unwrittenClaims(answer, [server], since), [], "옆 저장소에 쓴 산출물을 못 찾았다");
+  });
+});
+
 test("아예 없는 파일도 잡는다", () => {
   withTemp((root) => {
     const answer = `리포트: ${join(root, "_workspace", "reports", "없는파일.md")}`;
