@@ -820,7 +820,13 @@ let mutePath;
 export function toolBriefing(tools, allowDelegation = false, opts = {}) {
   const names = tools.map((t) => t.name);
   if (!names.length) return "";
-  const lines = [`<쓸 수 있는 도구>`, names.join(", ")];
+  /*
+   * 작업 목록은 claude 의 내장 도구 넷(TaskCreate·TaskGet·TaskList·TaskUpdate)으로 한다. 우리 목록에는
+   * TaskUpdate 하나뿐이라 그대로 보여 주면 모델이 "TaskCreate 가 없는 런타임"이라며 파일 체크리스트로
+   * 대신했다(실측, harness-init Phase 1). 실제 세션에는 넷 다 열려 있다(SDK init 도구 목록으로 확인).
+   */
+  const shown = names.flatMap((n) => (n === "TaskUpdate" ? ["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"] : [n]));
+  const lines = [`<쓸 수 있는 도구>`, shown.join(", ")];
   /*
    * 위임 도구는 우리 Gateway 의 목록에 없다. Gateway 가 실행하는 도구가 아니라
    * claude 자신이 가진 것이기 때문이다. 그런데 이 안내문을 Gateway 목록만으로

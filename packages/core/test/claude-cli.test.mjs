@@ -370,3 +370,11 @@ test("답을 못 받은 질문은 권한 거부와 따로, 사실대로 알린�
   assert.ok(!onlyQuestion.some((e) => /** @type {any} */ (e).toolName === "권한 거부"), "질문만 막혔는데 권한 거부를 찍었다");
 });
 
+/*
+ * 실측(harness-init Phase 1): 안내문에 TaskUpdate 만 있어 모델이 "TaskCreate 가 없는 런타임"이라며
+ * 파일 체크리스트로 대신했다. 세션에는 TaskCreate·TaskGet·TaskList·TaskUpdate 가 다 열려 있었다.
+ */
+test("도구 안내는 작업 목록 도구 넷을 모두 보여 준다", () => {
+  const text = toolBriefing([{ name: "Read" }, { name: "TaskUpdate" }], true);
+  for (const name of ["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"]) assert.match(text, new RegExp(name));
+});
