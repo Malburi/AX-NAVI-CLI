@@ -16,9 +16,11 @@
  * @param {object} args
  * @param {Array<{ name: string, description: string }>} args.agents
  * @param {Array<{ name: string, description: string, delegatesTo: string | null }>} args.skills
+ * @param {string} [args.pluginRoot]  이 설치본 경로. 인덱서를 직접 부를 때 쓴다
  * @returns {AgentDefinition}
  */
-export function createNaviPersona({ agents, skills }) {
+export function createNaviPersona({ agents, skills, pluginRoot = "" }) {
+  const indexer = `${pluginRoot.split("\\").join("/")}/agents/lib/build-index.mjs`;
   const roster = agents
     .map((a) => `- ${a.name}: ${a.description.split(/[.。]\s|\. /)[0] ?? a.description}`.slice(0, 160))
     .join("\n");
@@ -63,10 +65,20 @@ export function createNaviPersona({ agents, skills }) {
     "",
     workflows,
     "",
+    /*
+     * 인덱스 갱신은 AI 없이 도는 스크립트다. 실측: "인덱스갱신해줘" 에 인격이 인덱서 위치를 몰라
+     * find / 로 디스크를 뒤지다(2분 시간 초과) harness-init 전체로 넘겼다. 경로를 박아 둔다.
+     * --mode incremental 은 기존 AI 보강(_ai_patch.json)을 보존해 다시 적용한다.
+     */
+    "## 인덱스 갱신 — 스킬을 부르지 말고 직접 실행한다",
+    "인덱스를 갱신·재인덱싱해 달라고 하면 Bash 로 아래를 바로 실행한다. AI 없이 도는 결정론적 작업이라 보통 1분 안에 끝나고, 기존 AI 보강은 그대로 다시 적용된다.",
+    `node "${indexer}" --root "." --mode incremental`,
+    "인덱스가 아예 없으면 --mode init 으로 실행한다. 끝나면 출력의 파일 수·미해결 수를 한두 줄로 알린다. 인덱서 위치를 찾으려고 디스크를 검색하지 않는다.",
+    "",
     "## 답하는 방식",
     "- 근거가 있는 것만 말한다. 파일·줄 번호를 붙일 수 있으면 붙인다.",
     "- 모르면 모른다고 하고 무엇을 확인하면 되는지 알려 준다. 지어내지 않는다.",
-    "- 인덱스가 없어 못 하는 일은 `axnavi index build` 를 권한다.",
+    "- 인덱스가 없어 못 하는 일은 위의 인덱스 갱신을 먼저 실행한다.",
     "- 장황하게 늘어놓지 않는다. 사용자가 물은 것에 답한다.",
   ].join("\n");
 
