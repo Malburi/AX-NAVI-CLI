@@ -1455,6 +1455,22 @@ public class ApplyService {
     }
   });
 
+  /* 실측: "인덱스갱신해줘" 뒤에 Standard 로 만든 하네스의 인덱스가 Auto 재산정으로 Full 이 됐다. */
+  register("갱신(incremental)은 Tier 를 지정하지 않으면 기존 Tier 를 유지한다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-tier-"));
+    try {
+      write(root, "src/A.java", "package a;\npublic class A {\n  public void run() {}\n}\n");
+      buildIndex({ root, mode: "init", tier: "Full", config: null });
+      assert.equal(json(root, "_meta.json").tier, "Full");
+      buildIndex({ root, mode: "incremental", tier: "Auto", config: null });
+      assert.equal(json(root, "_meta.json").tier, "Full", "갱신이 사용자가 고른 Tier 를 바꿨다");
+      buildIndex({ root, mode: "incremental", tier: "Standard", config: null });
+      assert.equal(json(root, "_meta.json").tier, "Standard", "명시한 Tier 를 무시했다");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("Java 호출 해석: 지역 변수 타입·외부 인터페이스 구현·정적 호출·생성자·상속 메서드", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-resolve-"));
     try {
