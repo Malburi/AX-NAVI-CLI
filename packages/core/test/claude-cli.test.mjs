@@ -341,3 +341,12 @@ test("이어 가는 턴에는 이미 전한 안내를 다시 붙이지 않는다
   assert.equal(delegatedPayload("안내B", "질문", "s1", sent), "안내B\n\n질문", "도구·역할이 바뀐 턴인데 안내를 뺐다");
   assert.equal(delegatedPayload("안내A", "질문", "모르는세션", sent), "안내A\n\n질문", "처음 보는 세션인데 안내를 뺐다");
 });
+
+/*
+ * 실측(윈도우 cp949): validator_checks.py 가 node 출력을 읽다 UnicodeDecodeError,
+ * 모델의 python -c "print(...)" 가 '—' 를 찍다 UnicodeEncodeError.
+ */
+test("위임 실행의 파이썬은 UTF-8 모드로 돈다 — 사용자가 정한 값은 따른다", () => {
+  assert.equal(delegatedEnv({}, {})["PYTHONUTF8"], "1");
+  assert.equal(delegatedEnv({ PYTHONUTF8: "0" }, {})["PYTHONUTF8"], "0");
+});
