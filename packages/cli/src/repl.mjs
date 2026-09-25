@@ -385,10 +385,13 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
       if (key?.name === "tab" && !menu?.isOpen() && (key.shift || !rl.line)) {
         cycleMode();
         applyPrompt();
-        const mode = modeOf(sessionMode());
-        const note = mode.caveat ? ui.dim(`  (${mode.caveat})`) : "";
-        process.stdout.write(`${NL}  ${ui.yellow(mode.label)}  ${ui.dim(mode.hint)}${note}${NL}`);
-        rl.prompt();
+        /*
+         * 같은 자리에서 다시 그린다. 예전에는 안내 한 줄을 찍고 새 줄에 프롬프트를 그려서
+         * 누를 때마다 두 줄씩 쌓였다(실측). prompt(true) 는 친 글과 커서를 그대로 두고
+         * 프롬프트 줄만 다시 그린다 — 입력이 여러 줄로 접혀 있어도 그 줄들을 지우고 다시 쓴다.
+         * 모드 이름은 프롬프트의 (계획)·(빠름) 표시로 보이고, 설명은 /mode 가 보여 준다.
+         */
+        rl.prompt(true);
       }
     });
   }
