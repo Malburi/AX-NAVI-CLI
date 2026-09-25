@@ -14,7 +14,7 @@
  * 못 지킨 약속을 조용히 넘기지 않는 것이 요점이지, 막는 것이 아니다.
  */
 import { statSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 /*
  * 답 본문에서 산출물 경로를 뽑는다.
@@ -47,7 +47,13 @@ export function unwrittenClaims(answer, roots, since) {
      * 상대경로는 어느 저장소 것인지 모른다. 루트마다 붙여 보고 **하나라도** 이번 턴에
      * 쓰였으면 지킨 것으로 본다. 애매할 때 경고하지 않는 쪽을 고른다.
      */
-    const candidates = isAbsolute(raw) ? [raw] : roots.map((r) => resolve(r, raw.replace(/^[\\/]+/, "")));
+    /*
+     * 부모 폴더 기준도 본다. 나란히 놓인 두 저장소에서는 옆 저장소 이름부터 적는다 —
+     * 실측: server 에서 돈 pair-init 이 `xu25-client/_workspace/reports/api_drift_report.md` 를
+     * 이번 턴에 두 번 썼는데, server 기준으로만 붙여 "쓰이지 않았다"고 잘못 경고했다.
+     */
+    const rel = raw.replace(/^[\\/]+/, "");
+    const candidates = isAbsolute(raw) ? [raw] : roots.flatMap((r) => [resolve(r, rel), resolve(dirname(r), rel)]);
     const kept = candidates.some((path) => {
       try {
         return statSync(path).mtimeMs >= since;
