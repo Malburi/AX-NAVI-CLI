@@ -151,6 +151,7 @@ export class AgentSdkProvider {
         ...(this.options.cwd ? { cwd: this.options.cwd } : {}),
         ...(spec.resumeFrom ? { resume: spec.resumeFrom } : {}),
         systemPrompt: { type: "preset", preset: "claude_code", append: preamble },
+        permissionMode: spec.permissionMode === "auto" ? "auto" : "default",
         // 내장 AskUserQuestion 은 살린다 — canUseTool 이 받아 우리 화면에 그린다.
         disallowedTools: toDisallowedTools(spec.tools, allowDelegation).filter((n) => n !== "AskUserQuestion"),
         ...(allowDelegation && this.options.pluginDir ? { plugins: [{ type: "local", path: this.options.pluginDir }] } : {}),

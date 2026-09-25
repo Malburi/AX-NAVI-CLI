@@ -107,8 +107,21 @@ test("원본 정의를 고치지 않는다 — 같은 정의가 다음 턴에도
   assert.equal(WRITER.systemPrompt, "너는 writer 다.", "원본 지침이 오염됐다");
 });
 
-test("기본 모드는 아무것도 바꾸지 않는다", () => {
-  assert.equal(applyMode(WRITER, DEFAULT_MODE), WRITER);
+/*
+ * 기본은 자동 모드다. 실측: SDK 기본 권한 모드에서는 python -c 같은 명령마다 승인 창이 떴고,
+ * 자동 모드에서는 분류기가 판단해 묻지 않았다. 권한 판단 말고는 아무것도 바꾸지 않는다.
+ */
+test("기본(자동) 모드는 권한 판단만 자동으로 두고 도구·지침은 바꾸지 않는다", () => {
+  const out = applyMode(WRITER, DEFAULT_MODE);
+  assert.equal(DEFAULT_MODE, "auto");
+  assert.equal(out.permissionMode, "auto");
+  assert.equal(out.systemPrompt, WRITER.systemPrompt);
+  assert.deepEqual(out.role, WRITER.role);
+});
+
+test("매번 묻기는 Claude Code 기본 권한 모드로 돌린다", () => {
+  assert.equal(applyMode(WRITER, "default").permissionMode, "default");
+  assert.equal(applyMode(WRITER, "plan").permissionMode, "auto", "계획 모드는 권한 판단이 아니라 쓰기 도구로 막는다");
 });
 
 /*

@@ -23,7 +23,14 @@ const NEWLINE = String.fromCharCode(10);
 
 /** @type {readonly Mode[]} */
 export const MODES = [
-  { id: "default", label: "기본", hint: "에이전트가 선언한 도구 그대로" },
+  /*
+   * 권한은 Claude Code 자동 모드(분류기)가 판단한다 — 안전한 명령은 묻지 않는다.
+   * 실측: 기본 권한 모드에서는 python -c 같은 명령마다 승인 창이 떴고, 자동 모드에서는 분류기가
+   * 판단해 묻지 않았다(거부 0). 평소 Claude Code 를 자동 모드로 쓰는 사람에게는 이쪽이 같은 경험이다.
+   * Agent SDK 연결에서만 효과가 있다(permissionMode). 다른 연결은 매번 묻기와 같다.
+   */
+  { id: "auto", label: "자동", hint: "안전한 작업은 분류기가 판단해 묻지 않습니다" },
+  { id: "default", label: "매번 묻기", hint: "Claude Code 가 승인이 필요하다고 본 작업을 모두 묻습니다" },
   /*
    * 계획 모드의 강제는 절반이다. Write·Edit 은 도구 목록에서 빠지지만,
    * Bash 는 `echo > file` 처럼 쓸 수 있고 그걸 런타임이 가려낼 수 없다.
@@ -39,7 +46,7 @@ export const MODES = [
   { id: "trust", label: "전부승인", hint: "이번 세션의 도구 사용을 묻지 않고 허용합니다 — 감사 기록은 남습니다", caveat: "되돌리기 어려운 명령도 묻지 않습니다", explicitOnly: true },
 ];
 
-export const DEFAULT_MODE = "default";
+export const DEFAULT_MODE = "auto";
 
 /**
  * @param {string} id
@@ -98,6 +105,9 @@ const PLAN_POLICY = [
  * @returns {import("@ax-navi/core").AgentDefinition}
  */
 export function applyMode(agent, modeId) {
+  /* 권한 판단 방식. 매번 묻기만 Claude Code 기본 모드이고, 나머지 모드는 자동 판단 위에 얹는다. */
+  const permissionMode = modeId === "default" ? "default" : "auto";
+  agent = { ...agent, permissionMode };
   if (modeId === "plan") {
     /*
      * 쓰기 도구를 뺀다. 그게 전부다.

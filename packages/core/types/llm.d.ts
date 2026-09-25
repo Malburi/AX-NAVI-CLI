@@ -54,6 +54,8 @@ export interface SessionSpec {
    * ownsAgentLoop Provider만 이 요청을 실제로 들어줄 수 있다.
    */
   readonly allowDelegation?: boolean;
+  /** 권한 판단 방식. "auto" 면 Claude Code 자동 모드(분류기)가 판단한다. Agent SDK 연결만 쓴다. */
+  readonly permissionMode?: "default" | "auto";
   /*
    * 이어갈 이전 대화의 Provider 쪽 식별자.
    *
