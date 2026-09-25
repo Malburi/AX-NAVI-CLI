@@ -24,6 +24,11 @@ import { noAnswerText } from "./answers.mjs";
 const ELICIT_ADDR = process.env["AXNAVI_ELICIT_ADDR"] ?? "";
 const PROJECT_ROOT = process.env["AXNAVI_PROJECT_ROOT"] ?? process.cwd();
 const INDEX_DIR = process.env["AXNAVI_INDEX_DIR"] ?? "";
+/*
+ * 내놓을 도구를 좁힌다(쉼표 구분). Claude Code 대화 화면을 띄우는 실행기(launcher)는 질문·승인·스킬을
+ * Claude Code 에 맡기므로 QueryIndex 만 쓴다. 비어 있으면 전부 내놓는다(기존 axnavi 화면).
+ */
+const ONLY_TOOLS = (process.env["AXNAVI_MCP_TOOLS"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
 /* ---------- CLI 로 질문 넘기기 ---------- */
 
@@ -282,7 +287,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
   }
 
   if (req.method === "tools/list") {
-    send({ jsonrpc: "2.0", id: req.id, result: { tools: TOOLS } });
+    const tools = ONLY_TOOLS.length ? TOOLS.filter((t) => ONLY_TOOLS.includes(t.name)) : TOOLS;
+    send({ jsonrpc: "2.0", id: req.id, result: { tools } });
     return;
   }
 
