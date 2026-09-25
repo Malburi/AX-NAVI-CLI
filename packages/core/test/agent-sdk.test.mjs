@@ -51,10 +51,12 @@ test("MCP 는 인덱스 조회와 스킬 요청만 내놓는다 — 질문·승�
   const dir = mkdtempSync(join(tmpdir(), "ax-mcp-"));
   try {
     const path = join(dir, "mcp.json");
-    writeFileSync(path, JSON.stringify({ mcpServers: { axnavi: { command: "node", args: ["s.mjs"], env: { AXNAVI_ELICIT_ADDR: "x" } } } }));
-    const servers = /** @type {any} */ (sdkMcpServers(path));
+    // 브리지 설정 파일에는 env 가 없다. 연결 주소는 bridge.env 로 따로 온다(실측: 이걸 빠뜨려 "응답이 없다").
+    writeFileSync(path, JSON.stringify({ mcpServers: { axnavi: { command: "node", args: ["s.mjs"] } } }));
+    const servers = /** @type {any} */ (sdkMcpServers(path, { AXNAVI_ELICIT_ADDR: "x", AXNAVI_PROJECT_ROOT: "C:/p" }));
     assert.equal(servers.axnavi.env.AXNAVI_MCP_TOOLS, "QueryIndex,Skill");
-    assert.equal(servers.axnavi.env.AXNAVI_ELICIT_ADDR, "x", "스킬 요청 통로를 지웠다");
+    assert.equal(servers.axnavi.env.AXNAVI_ELICIT_ADDR, "x", "스킬 요청 통로를 빠뜨렸다");
+    assert.equal(servers.axnavi.env.AXNAVI_PROJECT_ROOT, "C:/p", "프로젝트 경로를 빠뜨렸다");
     assert.deepEqual(sdkMcpServers(join(dir, "없음.json")), {});
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -65,4 +67,37 @@ test("SDK 경로의 도구 안내는 내장 질문 도구를 없다고 말하지
   const tools = [{ name: "Read" }, { name: "AskUserQuestion" }];
   assert.match(toolBriefing(tools, false), /mcp__axnavi__AskUserQuestion/, "기존 경로는 그대로다");
   assert.doesNotMatch(toolBriefing(tools, false, { nativeAsk: true }), /AskUserQuestion 은 이 실행에 없다/);
+});
+
+/*
+ * 약속 시험 — 진짜 브리지 + SDK 가 만든 서버 설정으로 MCP 서버를 띄워 스킬 요청이 화면 쪽에 닿는지 본다.
+ * 실측 결함: 브리지의 환경변수 묶음을 빠뜨려 "인덱스갱신해줘" 의 harness-init 요청이 "응답이 없다" 로 끝났다.
+ */
+test("SDK 가 띄우는 MCP 서버의 스킬 요청이 axnavi 화면 쪽에 닿는다", async () => {
+  const { spawn } = await import("node:child_process");
+  const { startMcpBridge } = await import("../../cli/src/mcp/bridge.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "ax-bridge-"));
+  /** @type {string[]} */
+  const got = [];
+  const bridge = await startMcpBridge({
+    paths: /** @type {any} */ ({ root: dir, indexDir: join(dir, "_workspace", "index") }),
+    elicitor: { ask: async () => [] },
+    onSkill: (name) => { got.push(name); return "시작한다."; },
+  });
+  try {
+    const server = /** @type {any} */ (sdkMcpServers(bridge.configPath, bridge.env)).axnavi;
+    const child = spawn(server.command, server.args, { env: { ...process.env, ...server.env }, stdio: ["pipe", "pipe", "inherit"] });
+    let out = "";
+    child.stdout.on("data", (c) => { out += c.toString(); });
+    const send = (/** @type {object} */ msg) => child.stdin.write(`${JSON.stringify(msg)}\n`);
+    send({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "Skill", arguments: { name: "harness-init", request: "인덱스 갱신" } } });
+    for (let i = 0; i < 100 && !out.includes('"id":2'); i += 1) await new Promise((r) => setTimeout(r, 50));
+    child.kill();
+    assert.deepEqual(got, ["harness-init"], `스킬 요청이 화면 쪽에 닿지 않았다: ${out}`);
+    assert.match(out, /시작한다/);
+  } finally {
+    await bridge.dispose();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

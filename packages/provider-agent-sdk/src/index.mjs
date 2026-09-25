@@ -80,15 +80,20 @@ export async function foregroundAgents(input) {
 /**
  * MCP 브리지 설정에서 우리 서버를 꺼내, 이 경로에 필요한 도구만 내놓게 좁힌다.
  * 질문·승인은 canUseTool 이 받으므로 브리지의 AskUserQuestion·Approve 는 쓰지 않는다.
+ *
+ * 브리지는 화면 쪽 연결 주소(AXNAVI_ELICIT_ADDR)·프로젝트 경로를 설정 파일이 아니라 환경변수 묶음으로
+ * 따로 준다. 예전 연결은 그것을 claude 프로세스 환경에 넣어 MCP 서버가 물려받았는데, 여기서는 빠뜨려서
+ * 스킬 요청이 화면에 닿지 못하고 "응답이 없다" 로 끝났다(실측: "인덱스갱신해줘" → harness-init 접수 실패).
  * @param {string | undefined} configPath
+ * @param {Record<string, string>} [env]  브리지의 환경변수 묶음
  */
-export function sdkMcpServers(configPath) {
+export function sdkMcpServers(configPath, env = {}) {
   if (!configPath) return {};
   try {
     const servers = JSON.parse(readFileSync(configPath, "utf8"))?.mcpServers ?? {};
     return Object.fromEntries(Object.entries(servers).map(([name, s]) => [
       name,
-      { ...s, env: { ...(s.env ?? {}), AXNAVI_MCP_TOOLS: "QueryIndex,Skill" } },
+      { ...s, env: { ...(s.env ?? {}), ...env, AXNAVI_MCP_TOOLS: "QueryIndex,Skill" } },
     ]));
   } catch {
     return {};
@@ -97,7 +102,7 @@ export function sdkMcpServers(configPath) {
 
 export class AgentSdkProvider {
   /**
-   * @param {{ cwd?: string, pluginDir?: string, mcpConfigPath?: string, settings?: string, host: Host }} options
+   * @param {{ cwd?: string, pluginDir?: string, mcpConfigPath?: string, mcpEnv?: Record<string, string>, settings?: string, host: Host }} options
    */
   constructor(options) {
     this.id = "agent-sdk";
@@ -157,7 +162,7 @@ export class AgentSdkProvider {
         // 내장 AskUserQuestion 은 살린다 — canUseTool 이 받아 우리 화면에 그린다.
         disallowedTools: toDisallowedTools(spec.tools, allowDelegation).filter((n) => n !== "AskUserQuestion"),
         ...(allowDelegation && this.options.pluginDir ? { plugins: [{ type: "local", path: this.options.pluginDir }] } : {}),
-        mcpServers: sdkMcpServers(this.options.mcpConfigPath),
+        mcpServers: sdkMcpServers(this.options.mcpConfigPath, this.options.mcpEnv),
         strictMcpConfig: true,
         canUseTool,
         hooks: { PreToolUse: [{ matcher: "Agent", hooks: [foregroundAgents] }] },

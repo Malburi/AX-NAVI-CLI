@@ -120,7 +120,7 @@ function AGENT_SDK(host, cwd, mcp) {
       pluginDir: REPO_ROOT,
       settings,
       ...(cwd ? { cwd } : {}),
-      ...(mcp ? { mcpConfigPath: mcp.configPath } : {}),
+      ...(mcp ? { mcpConfigPath: mcp.configPath, mcpEnv: mcp.env } : {}),
     }),
     short: "agent-sdk · 구독 인증",
     note: "agent-sdk · 구독 인증 · 질문·승인은 axnavi 화면이 직접 받습니다",
