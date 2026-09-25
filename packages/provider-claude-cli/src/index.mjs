@@ -37,7 +37,7 @@ const NEWLINE = String.fromCharCode(10);
 /** @typedef {import("@ax-navi/core").ProviderCapabilities} ProviderCapabilities */
 
 /** 등급 → `--model` 인자. claude가 별칭을 받아 실제 id로 푼다(실측: sonnet → claude-sonnet-5). */
-const MODEL_BY_TIER = { fast: "haiku", standard: "sonnet", deep: "opus" };
+export const MODEL_BY_TIER = { fast: "haiku", standard: "sonnet", deep: "opus" };
 
 /** claude Code 내장 도구 중 소스를 고치는 것들. 역할이 허용하지 않으면 전부 끈다. */
 const MUTATING = ["Edit", "MultiEdit", "NotebookEdit", "Write"];
@@ -789,9 +789,10 @@ let mutePath;
  *
  * @param {readonly { name: string }[]} tools
  * @param {boolean} [allowDelegation]  서브에이전트를 띄울 수 있는 실행인가
+ * @param {{ nativeAsk?: boolean }} [opts]  nativeAsk — 내장 AskUserQuestion 을 호스트가 직접 받는 실행(Agent SDK)
  * @returns {string}
  */
-export function toolBriefing(tools, allowDelegation = false) {
+export function toolBriefing(tools, allowDelegation = false, opts = {}) {
   const names = tools.map((t) => t.name);
   if (!names.length) return "";
   const lines = [`<쓸 수 있는 도구>`, names.join(", ")];
@@ -816,7 +817,7 @@ export function toolBriefing(tools, allowDelegation = false) {
     lines.push("Edit·MultiEdit 은 이 실행에 없다(서브에이전트도 마찬가지). 파일을 고치려면 Read 로 읽고 Write 로 전체를 다시 써라.");
   }
   /* 스킬 본문은 "AskUserQuestion 으로 묻는다"고 적혀 있다. 그 이름의 내장 도구는 꺼 두었으니 실제 이름을 알려 준다. */
-  if (names.includes("AskUserQuestion")) {
+  if (names.includes("AskUserQuestion") && !opts.nativeAsk) {
     lines.push("사용자에게 묻는 것은 mcp__axnavi__AskUserQuestion 이다. 내장 AskUserQuestion 은 이 실행에 없다.");
   }
   lines.push(`</쓸 수 있는 도구>`);

@@ -10,16 +10,18 @@
  */
 import { AnthropicProvider } from "../../provider-anthropic/src/index.mjs";
 import { ClaudeCliProvider, probeClaudeCli } from "../../provider-claude-cli/src/index.mjs";
+import { AgentSdkProvider } from "../../provider-agent-sdk/src/index.mjs";
+import { hostPlugins, pluginSkillNames } from "../../launcher/src/launch.mjs";
 import { ui, REPO_ROOT } from "./runtime.mjs";
 
-/** @typedef {"anthropic" | "claude-cli" | "auto"} ProviderName */
+/** @typedef {"anthropic" | "claude-cli" | "agent-sdk" | "auto"} ProviderName */
 
 export function hasApiKey() {
   return Boolean(process.env["ANTHROPIC_API_KEY"] || process.env["ANTHROPIC_AUTH_TOKEN"]);
 }
 
 /**
- * @param {{ provider?: ProviderName, cwd?: string, mcp?: { configPath: string, env: Record<string, string> } }} opts
+ * @param {{ provider?: ProviderName, cwd?: string, mcp?: { configPath: string, env: Record<string, string> }, host?: import("../../provider-agent-sdk/src/index.mjs").Host }} opts
  * @returns {{ provider: import("@ax-navi/core").LLMProvider, note: string, short: string } | { error: string }}
  */
 export function selectProvider(opts = {}) {
@@ -30,6 +32,11 @@ export function selectProvider(opts = {}) {
     return ANTHROPIC();
   }
 
+  if (wanted === "agent-sdk") {
+    if (!opts.host) return { error: "agent-sdk Provider 는 질문·승인 손잡이(host)가 있는 실행에서만 쓸 수 있습니다." };
+    return AGENT_SDK(opts.host, opts.cwd, opts.mcp);
+  }
+
   if (wanted === "claude-cli") {
     const probe = probeClaudeCli();
     if (!probe.ok) return { error: `claude CLI를 쓸 수 없습니다 — ${probe.reason}` };
@@ -38,6 +45,8 @@ export function selectProvider(opts = {}) {
 
   // auto — 키가 있으면 통제력이 더 큰 쪽을 먼저 택한다.
   if (hasApiKey()) return ANTHROPIC();
+  // 질문·승인을 직접 받을 손잡이가 있으면 SDK 연결을 쓴다. 없으면(단발 실행 등) 예전 연결로 간다.
+  if (opts.host) return AGENT_SDK(opts.host, opts.cwd, opts.mcp);
   const probe = probeClaudeCli();
   if (probe.ok) return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp);
   return { error: authHelp("ANTHROPIC_API_KEY도 없고 claude CLI도 찾지 못했습니다.") };
@@ -82,6 +91,34 @@ function CLAUDE_CLI(version, cwd, mcp) {
     }),
     short: `claude-cli ${v} · 구독 인증`,
     note: `claude-cli ${v} · 구독 인증 · 도구 제약은 claude 권한 체계가 강제합니다`,
+  };
+}
+
+/**
+ * @param {import("../../provider-agent-sdk/src/index.mjs").Host} host
+ * @param {string} [cwd]
+ * @param {{ configPath: string, env: Record<string, string> }} [mcp]
+ */
+function AGENT_SDK(host, cwd, mcp) {
+  /*
+   * 호스트 플러그인 끄기와 이름이 겹치는 계정 동기화 스킬 막기(실측: claude.ai 에서 동기화된
+   * generate-wiki·publish-wiki·wiki-hub 가 ax-navi 스킬과 이름이 같다).
+   */
+  const mute = hostPlugins();
+  const settings = JSON.stringify({
+    ...(mute.length ? { enabledPlugins: Object.fromEntries(mute.map((n) => [n, false])) } : {}),
+    permissions: { deny: pluginSkillNames(REPO_ROOT).map((n) => `Skill(anthropic-skills:${n})`) },
+  });
+  return {
+    provider: new AgentSdkProvider({
+      host,
+      pluginDir: REPO_ROOT,
+      settings,
+      ...(cwd ? { cwd } : {}),
+      ...(mcp ? { mcpConfigPath: mcp.configPath } : {}),
+    }),
+    short: "agent-sdk · 구독 인증",
+    note: "agent-sdk · 구독 인증 · 질문·승인은 axnavi 화면이 직접 받습니다",
   };
 }
 

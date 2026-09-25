@@ -159,6 +159,12 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
       ...(providerName ? { provider: providerName } : {}),
       cwd: root,
       mcp: { configPath: bridge.configPath, env: bridge.env },
+      // SDK 연결은 질문·승인을 MCP 를 거치지 않고 여기로 직접 가져온다.
+      host: {
+        ask: (question, options, opts) => elicitor.ask(question, options, opts),
+        canAsk: () => elicitor.canAsk?.() ?? true,
+        approve: (tool, input) => approver.decide(tool, input),
+      },
     });
     if ("error" in picked) {
       process.stderr.write(`${picked.error}\n`);
