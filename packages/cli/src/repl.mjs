@@ -35,6 +35,7 @@ import { renderStatus } from "./status.mjs";
 import { estimateTokens } from "../../core/src/index.mjs";
 import { createNaviPersona } from "./persona.mjs";
 import { createTypeahead } from "./typeahead.mjs";
+import { createLineBurst } from "./line-burst.mjs";
 import { renderReplay, replayFrame } from "./replay.mjs";
 import { DEFAULT_MODE, MODES, modeOf, nextMode } from "./mode.mjs";
 
@@ -203,8 +204,11 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
     }
   };
 
-  rl.on("line", deliver);
+  // 붙여넣은 여러 줄은 한 메시지다(line-burst.mjs). 파이프 입력은 줄마다 명령이라 합치지 않는다.
+  const burst = createLineBurst(deliver, { enabled: Boolean(process.stdin.isTTY) });
+  rl.on("line", (line) => burst.push(line));
   rl.on("close", () => {
+    burst.flush();
     closed = true;
     waiter?.(null);
     waiter = null;
@@ -291,7 +295,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
   /** @returns {() => void} 되돌리는 함수 */
   const captureKeys = () => {
     if (!process.stdin.isTTY) return () => {};
-    const typeahead = createTypeahead({ onLine: deliver, onInterrupt: interrupt });
+    const typeahead = createTypeahead({ onLine: (line) => burst.push(line), onInterrupt: interrupt });
     reader = typeahead;
 
     const saved = /** @type {Function[]} */ (process.stdin.listeners("keypress"));
