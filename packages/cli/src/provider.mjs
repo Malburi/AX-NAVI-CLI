@@ -32,10 +32,7 @@ export function selectProvider(opts = {}) {
     return ANTHROPIC();
   }
 
-  if (wanted === "agent-sdk") {
-    if (!opts.host) return { error: "agent-sdk Provider 는 질문·승인 손잡이(host)가 있는 실행에서만 쓸 수 있습니다." };
-    return AGENT_SDK(opts.host, opts.cwd, opts.mcp);
-  }
+  if (wanted === "agent-sdk") return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
 
   if (wanted === "claude-cli") {
     const probe = probeClaudeCli();
@@ -45,12 +42,20 @@ export function selectProvider(opts = {}) {
 
   // auto — 키가 있으면 통제력이 더 큰 쪽을 먼저 택한다.
   if (hasApiKey()) return ANTHROPIC();
-  // 질문·승인을 직접 받을 손잡이가 있으면 SDK 연결을 쓴다. 없으면(단발 실행 등) 예전 연결로 간다.
-  if (opts.host) return AGENT_SDK(opts.host, opts.cwd, opts.mcp);
-  const probe = probeClaudeCli();
-  if (probe.ok) return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp);
-  return { error: authHelp("ANTHROPIC_API_KEY도 없고 claude CLI도 찾지 못했습니다.") };
+  // 키가 없으면 SDK 연결이 기본이다. 시작 화면·doctor 처럼 이름만 보는 호출도 같은 답을 받아야 한다.
+  return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
 }
+
+/*
+ * 손잡이 없이 고른 경우(시작 화면·doctor·기능 확인). 실제 실행은 execute.mjs 가 손잡이를 준다.
+ * 이 손잡이로 실행되면 묻지도 허용하지도 않는다 — 묻지 못했는데 허용하면 안 된다.
+ */
+/** @type {import("../../provider-agent-sdk/src/index.mjs").Host} */
+const NO_HOST = {
+  ask: async () => [],
+  canAsk: () => false,
+  approve: async () => ({ behavior: "deny", message: "이 실행에는 승인 창이 없습니다." }),
+};
 
 /* 짧은 라벨(시작 화면용)과 긴 설명(실행 로그용)을 나눠 둔다. */
 function ANTHROPIC() {
