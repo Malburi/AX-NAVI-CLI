@@ -15,7 +15,7 @@
   ═══╧═══╧═══   Enterprise AI Development Navigator
 ```
 
-현재 버전 **v0.1.0-alpha.25**
+현재 버전 **v0.1.0-alpha.26**
 
 ---
 
@@ -112,7 +112,7 @@ EUC-KR · CP949 등으로 저장된 파일은 읽고 고치는 동안에만 UTF-
 GitHub 태그에서 바로 받습니다. npm 계정이 필요 없습니다.
 
 ```bash
-npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.25
+npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.26
 ```
 
 > `npm i -g github:Malburi/AX-NAVI-CLI` 대신 위의 주소를 쓰세요.
@@ -121,9 +121,9 @@ npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0
 **폐쇄망**에서는 파일 하나로 옮깁니다. 태그를 체크아웃한 깨끗한 폴더에서 만들어야 받는 쪽이 태그와 같은 판을 받습니다.
 
 ```powershell
-git checkout v0.1.0-alpha.25
-npm pack                                                          # axnavi-0.1.0-alpha.25.tgz 생성
-npm i -g \\공유폴더\axnavi-0.1.0-alpha.25.tgz --omit=optional   # 받는 쪽
+git checkout v0.1.0-alpha.26
+npm pack                                                          # axnavi-0.1.0-alpha.26.tgz 생성
+npm i -g \\공유폴더\axnavi-0.1.0-alpha.26.tgz --omit=optional   # 받는 쪽
 ```
 
 `--omit=optional` 을 빼면 npm 이 선택 의존성(Claude Agent SDK)을 받으려고 레지스트리에 붙다가 약 5분 동안 멈춘 것처럼 보입니다. SDK 없이 설치하면 설치된 `claude` CLI 로 실행합니다.
@@ -140,12 +140,12 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned # 또는 내 계정만 허�
 대화형 모드를 띄우면 하루 한 번 새 판이 있는지 확인해 알려 줍니다.
 
 ```
-  새 판  0.1.0-alpha.24 → v0.1.0-alpha.25 · axnavi upgrade
+  새 판  0.1.0-alpha.25 → v0.1.0-alpha.26 · axnavi upgrade
 ```
 
 ```bash
 axnavi upgrade                   # 최신 판으로
-axnavi upgrade v0.1.0-alpha.24   # 특정 판으로
+axnavi upgrade v0.1.0-alpha.25   # 특정 판으로
 ```
 
 ### 설치 확인
