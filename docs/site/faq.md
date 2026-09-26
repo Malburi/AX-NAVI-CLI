@@ -76,11 +76,11 @@ harness-init은 spec-gate를 자동 호출하지 않습니다. 큰 작업 전에
 
 **Q. GO / HOLD / STOP이 나왔는데 어떻게 하나요?**
 
-GO는 진행해도 안전, HOLD는 주의 후 결정, STOP은 현재 방식 중단 권고입니다. GO는 pattern-conformance `CONFORM`, 필수 테스트·빌드·린트 exit 0, change-safety `GO`가 모두 충족될 때만 나오고 검증 미실행은 HOLD입니다. Claude는 HOLD/STOP에서도 자동 수정하지 않으며 판정을 우회하는 방법은 제공하지 않습니다.
+GO는 진행해도 안전, HOLD는 주의 후 결정, STOP은 현재 방식 중단 권고입니다. GO는 pattern-conformance `CONFORM`, 필수 테스트·빌드·린트 exit 0(적용할 명령이 없거나 도구가 없으면 `검증 수단 없음` + 정적 대조), change-safety `GO`가 모두 충족될 때만 나오고 적용할 수 있는 검증 명령을 돌리지 않았으면 HOLD입니다. Claude는 HOLD/STOP에서도 자동 수정하지 않으며 판정을 우회하는 방법은 제공하지 않습니다.
 
 **Q. 자동 수정은 안 하나요?**
 
-보안 위험·DEAD/ORPHAN 같은 위험 항목은 권고만 합니다. `safe-modify`의 변경 적용도 사용자가 진행 의사를 명시한 경우에만 합니다.
+보안 위험·DEAD/ORPHAN 같은 위험 항목은 권고만 합니다. `safe-modify`는 수정 요청 자체를 진행 의사로 보고 변경을 적용하며, CRITICAL이거나 데이터 변경 전제를 확인하지 못했거나 요청 해석이 갈릴 때만 먼저 묻습니다.
 
 **Q. "그냥 고쳐줘"라고 하면 게이트를 건너뛰나요?**
 

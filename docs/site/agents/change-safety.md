@@ -4,7 +4,7 @@
 
 ## 호출 경로
 
-- [safe-modify](/skills/safe-modify.md) Phase 3-3이 pattern-conformance(3-1)와 검증 명령 실행(3-2) 뒤에 부른다.
+- [safe-modify](/skills/safe-modify.md) Phase 3-3이 pattern-conformance(3-1)와 검증 명령 실행(3-2) 뒤에 부른다. 규모 small이면 3-2 뒤 3-1과 동시에 `병렬 합산` 모드로 불리고, 컨벤션 차원은 오케스트레이터가 패턴 판정과 합친다(HOLD → 최소 HOLD, FAIL → STOP).
 - [scaffold-feature](/skills/scaffold-feature.md) Phase 4-3이 생성 파일·패턴 리포트·검증 결과를 전달해 부른다.
 - [cross-repo-modify](/skills/cross-repo-modify.md) Phase 6이 시작 측과 반영된 파트너(들) 각각에 대해 병렬로 부른다.
 - frontmatter `model`은 `sonnet`, `tools`는 `Read, Grep, Glob, Bash, Write`다. `Edit`가 없어 소스 파일을 제자리에서 수정하지 않는다.
@@ -31,12 +31,12 @@
 
 ```
 종합 위험도 = (회귀 + 컨벤션 + 사이드이펙트 + 롤백 + 보안 × 2 + 테스트) / 7
-GO   : 종합 < 3, 보안 < 5, pattern-conformance=CONFORM, 필수 검증 명령 exit 0
+GO   : 종합 < 3, 보안 < 5, pattern-conformance=CONFORM, 필수 검증 명령 exit 0 또는 검증 수단 없음 + 정적 대조(DB 스키마·트랜잭션·인증·공통 모듈 변경이 아닐 때)
 HOLD : 종합 3~6, 또는 보안 5~7
 STOP : 종합 > 6, 또는 보안 ≥ 8, 또는 즉시 STOP 트리거 발견
 ```
 
-점수와 무관한 하드 게이트가 있다. 어댑터가 `UNSUPPORTED`이거나 판정 자체가 없으면 최소 HOLD다. `PARTIAL`(`READ`)은 대상과 연결 파일 원문을 읽은 `원문 확인` 목록이 있으면 통과하고, 없으면 HOLD로 두고 원문 확인을 보완 액션으로 낸다. pattern-conformance HOLD 또는 있는 검증 명령을 실행하지 않았으면(`UNVERIFIED`) 최소 HOLD, pattern-conformance FAIL 또는 검증 명령 실패면 STOP이다. "테스트가 없어 실행하지 않음"은 PASS가 아니며 `검증 수단 없음`으로 기록한다. 이때 DB 스키마·트랜잭션·인증·공통 모듈 변경이면 HOLD, 그 밖은 점수로 판정한다. 즉시 STOP 트리거는 평문 비밀번호/API 키 추가, SQL 인젝션 가능 패턴, 인증/인가 우회 코드, 데이터 손실 가능 변경(TRUNCATE·DROP·WHERE 없는 DELETE), 검증 없는 운영 전용 분기다.
+점수와 무관한 하드 게이트가 있다. 어댑터가 `UNSUPPORTED`이거나 판정 자체가 없으면 최소 HOLD다. `PARTIAL`(`READ`)은 대상과 연결 파일 원문을 읽은 `원문 확인` 목록이 있으면 통과하고, 없으면 HOLD로 두고 원문 확인을 보완 액션으로 낸다. pattern-conformance HOLD 또는 바뀐 파일을 검사하고 실행 가능한 검증 명령을 실행하지 않았으면(`UNVERIFIED`) 최소 HOLD, pattern-conformance FAIL 또는 검증 명령 실패면 STOP이다. "테스트가 없어 실행하지 않음"은 PASS가 아니며 `검증 수단 없음`으로 기록한다. 도구가 설치되지 않은 `unavailable`(exit 3)과 assertion이 빈 테스트 골격도 같다. 이때 DB 스키마·트랜잭션·인증·공통 모듈 변경이면 HOLD, 그 밖은 점수로 판정한다. 즉시 STOP 트리거는 평문 비밀번호/API 키 추가, SQL 인젝션 가능 패턴, 인증/인가 우회 코드, 데이터 손실 가능 변경(TRUNCATE·DROP·WHERE 없는 DELETE), 검증 없는 운영 전용 분기다.
 
 리포트는 `=== CHANGE SAFETY REPORT ===`로 시작해 변경 라인·파일 수·입력 impact 리포트·입력 패턴 판정·실행 검증·어댑터 커버리지 헤더, 차원별 점수 표, 즉시 STOP 트리거, `## 결정: [GO / HOLD / STOP]`과 근거, 결정별 후속 조치, diff 요약, 영향 요약으로 이어진다.
 

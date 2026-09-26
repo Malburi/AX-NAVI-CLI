@@ -36,13 +36,15 @@ AX Navi를 쓰다 마주치는 증상을 원인과 조치로 정리했습니다.
 | 업무 코드가 인덱스에 없음 | 벤더 디렉터리명·테스트 디렉터리명과 일치하거나 `include_paths` 밖 | `_meta.excluded_sources`의 `by_reason` 확인. 필요하면 `test_exclude: false` 또는 `include_paths` 조정 |
 | `schema.json`의 컬럼이 전부 비어 있음 | DDL이 없어 `sql_usage.json`에서 테이블만 유도(`_meta.source: derived-from-sql`) | 정상. 컬럼은 지어내지 않음. DDL 파일을 저장소에 두면 다음 인덱싱에서 DDL 우선 |
 | 한글 주석·경로가 `U+FFFD`로 깨짐 | 소스가 EUC-KR인데 인코딩 판정이 실패 | 인덱서는 BOM → 선언 인코딩 → UTF-8 → `euc-kr` 순으로 자동 판정함. `_meta.encoding.guessed`에 든 파일이 잘못 읽힌 후보이므로 확인. `guessed_count`가 0이 아니면 Phase 3 보고에 드러남 |
+| EUC-KR 파일을 고친 뒤 인코딩이 바뀌지 않았는지 걱정됨 | 레거시 인코딩(EUC-KR·CP949 등) 파일 | 정상 동작. Read/Edit/Write가 도는 동안만 제자리에서 UTF-8로 바꿨다가 끝나면(실패·거부·세션 종료 포함) 원래 인코딩으로 되돌린다. 바이너리 파일은 대상이 아니다. axnavi CLI와 Claude Code 플러그인(`hooks/hooks.json`) 모두 적용 |
+| 수정이 `인코딩 보존 불가`로 거부됨 | 원래 인코딩으로 온전히 되돌릴 수 없는 파일(깨진 바이트, 표에 없는 조합)이거나 32MB 초과 | 읽기는 된다. 원본 글자가 바뀌지 않도록 수정만 막은 것이므로 그 파일은 편집기에서 인코딩을 확인해 직접 고치거나 UTF-8 전환을 팀에서 결정한다 |
 | `indexer-config.json`을 PowerShell로 만들었는데 인식이 이상함 | PowerShell JSON 출력에 BOM이 붙음 | 인덱서와 Python 쪽이 모두 BOM을 벗겨 읽으므로 보통 문제 없음. 다른 도구로 열 때만 주의 |
 
 ## 스택·어댑터
 
 | 증상 | 원인 | 조치 |
 |------|------|------|
-| safe-modify가 시작부터 HOLD | 변경 대상 확장자의 어댑터가 `PARTIAL`(`.jsp`·`.xml`·`.cshtml`·`.xfdl`·`.csproj` 등)이거나 `UNSUPPORTED` | PARTIAL이면 원문을 읽지 않고 멈춘 것이다. "원문 읽고 진행해줘"로 다시 요청. UNSUPPORTED면 어댑터 추가가 필요. `check-adapter-coverage.mjs --target <파일>`로 사유 확인 |
+| safe-modify가 시작부터 HOLD | 변경 대상 확장자의 어댑터가 `UNSUPPORTED`이거나 `_meta.json`이 없다. `PARTIAL`(`.jsp`·`.xml`·`.cshtml`·`.xfdl`·`.csproj` 등)은 원래 원문을 읽고 진행하므로, 원문을 읽지 않고 멈춘 경우에만 HOLD가 된다 | UNSUPPORTED면 어댑터 추가가 필요. PARTIAL인데 멈췄으면 "원문 읽고 진행해줘"로 다시 요청. `check-adapter-coverage.mjs --target <파일>`로 사유 확인 |
 | `_meta.json` 없음으로 HOLD | 인덱싱되지 않았거나 구버전 인덱스 | `build-index.mjs --mode init` |
 | Rust·COBOL·ABAP 등에서 코드 변경 자동화가 거부됨 | 분석 깊이 LOW, discovery-only | 의도된 제한. `legacy-decoder`로 구조 파악 후 수동 작업 |
 

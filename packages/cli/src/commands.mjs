@@ -664,8 +664,8 @@ export async function cmdUpgrade(tag) {
      * 그때도 손으로 올릴 길은 알려 줘야 한다.
      */
     process.stderr.write(
-      `  ${ui.yellow("최신 판을 확인하지 못했습니다")} ${ui.dim("— 망이 막혀 있을 수 있다.")}${NEWLINE}` +
-        `  ${ui.dim(`태그를 직접 지정할 수 있다:  axnavi upgrade v0.1.0-alpha.5`)}${NEWLINE}`,
+      `  ${ui.yellow("최신 판을 확인하지 못했습니다")} ${ui.dim("— 망이 막혔거나 프록시 환경일 수 있습니다(프록시면 NODE_USE_ENV_PROXY=1 을 설정).")}${NEWLINE}` +
+        `  ${ui.dim(`태그를 직접 지정할 수 있습니다:  axnavi upgrade v<판>  (예: 지금 판은 v${readVersion()})`)}${NEWLINE}`,
     );
     return 1;
   }

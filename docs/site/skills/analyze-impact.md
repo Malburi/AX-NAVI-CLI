@@ -94,9 +94,9 @@ slug는 변경 대상의 안전한 파일명 형태다(예: `OrderService_cancel
         권고:
         [MEDIUM] 영향 파일 단위 테스트 권고: OrderServiceTest, BatchOrderServiceTest
 
-        ⚠️ 정적 분석으로 잡히지 않는 항목 (수동 확인):
-        - 리플렉션/동적 호출 가능성
-        - 외부 cron/메시지 큐에서의 호출 가능성
+        동적 호출 확인 (인덱스 밖, 이름으로 Grep 한 결과):
+        - 리플렉션/동적 호출: 없음
+        - 외부 cron/메시지 큐 호출: 없음
 
         다음 단계 권고:
         - 진행하시려면: "safe-modify" 호출 또는 변경 적용 후 "안전성 평가"

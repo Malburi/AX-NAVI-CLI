@@ -18,7 +18,7 @@ SKILL.md description에 적힌 트리거 문구는 다음과 같다.
 
 | 단계 | 하는 일 | 호출 에이전트·스크립트 | 사용자 개입 |
 |------|---------|----------------------|------------|
-| Phase 0 사전 조건 확인 | 어댑터 지원 수준, `pair_config.md`, 패턴 프로필, API 계약 확인 | `check-adapter-coverage.mjs`, `pattern_profile.py validate`, 계약 없으면 `api-bridge` extract | 1:N이면 포함할 클라이언트 체크리스트, 패턴 미추출 시 계속 여부 Y/N |
+| Phase 0 사전 조건 확인 | 어댑터 지원 수준, `pair_config.md`, 패턴 프로필, API 계약 확인 | `check-adapter-coverage.mjs`, `pattern_profile.py validate`, 계약 없으면 `api-bridge` extract | 1:N이면 포함할 클라이언트 체크리스트 |
 | Phase 1 기능 명세 수집 | 기능명·엔드포인트·백엔드 범위·프론트 범위·유사 기능을 한 번에 질문 | 없음 | 5개 항목 입력 |
 | Phase 2 사전 충돌 검사 | 계약의 동일 경로·메서드, 각 클라이언트의 동일 도메인 파일 검색 | 없음 | 충돌 시 덮어쓰기/다른 경로/함수 추가 선택 |
 | Phase 3 백엔드 스캐폴딩 | scaffold-feature 지침으로 백엔드 레이어 생성 | `general-purpose` (scaffold-feature 지침, cross-repo 모드) | 없음 |
@@ -35,14 +35,14 @@ Phase 0의 게이트 규칙은 세 가지다.
 |------|----------|
 | 어느 저장소든 어댑터 PARTIAL | 유사 화면·설정 원문을 직접 읽어 확인한 뒤 생성(`READ`) |
 | 어느 저장소든 어댑터 UNSUPPORTED | 해당 저장소와 전체 판정은 HOLD |
-| 패턴 프로필 누락·검증 실패·스켈레톤 상태 | 경고 후 계속해도 그 저장소의 최종 판정은 최소 HOLD |
+| 패턴 프로필 누락·검증 실패·스켈레톤 상태 | 묻지 않고 이웃 파일을 기준으로 진행(`기준: 이웃 파일`, pattern-extractor 재실행 권고). 이웃 파일까지 없는 저장소만 생성을 멈추고 HOLD |
 | 지원 수준이 다른 저장소의 GO | 합쳐서 전체 GO로 올리지 않음 |
 
 Phase 1의 입력 처리는 엔드포인트를 `POST /api/orders/{id}/cancel` 형식으로 정규화하고, `/api/orders/...`에서 `order` 도메인을 뽑아 파일명 접두사를 정한다. 백엔드 기본 범위는 Controller + Service + DAO/Repository + DTO + Test, 프론트 기본 범위는 Service 스텁 + Component + Route 등록이다.
 
 Phase 5의 클라이언트 생성은 세 단계다. Step 1 서비스 스텁은 `api_contract.json`의 `models{}` 정의를 실제로 읽어 DTO 타입을 채우고, models에 없을 때만 `// TODO`로 남긴다. Step 2 컴포넌트는 서비스 함수를 호출하는 골격만 만들고 UI 구현은 TODO다. Step 3 라우트는 Vue Router·React Router·Next.js·모바일 스택별 관행에 맞춰 기존 파일을 덮어쓰지 않고 항목만 추가한다.
 
-Phase 6의 전체 GO 조건은 모든 저장소의 대상 어댑터가 FULL, 패턴 CONFORM, 필수 검증 exit 0, change-safety GO, 모든 클라이언트의 API 드리프트 0건일 때만이다. 그 외에는 가장 낮은 판정을 쓴다. 검증 명령 미실행은 `UNVERIFIED`이며 최소 HOLD, 패턴 FAIL 또는 검증 명령 실패는 STOP이다. GO인 저장소는 analyzer incremental로 인덱스를 갱신한 뒤 `generate-wiki`를 실행한다.
+Phase 6의 전체 GO 조건은 모든 저장소의 대상 어댑터가 FULL 또는 READ(원문 확인), 패턴 CONFORM, 필수 검증 exit 0(또는 `검증 수단 없음` + 정적 대조, 위험 변경 아님), change-safety GO, 모든 클라이언트의 API 드리프트 0건일 때만이다. 그 외에는 가장 낮은 판정을 쓴다. 적용 가능하고 실행 가능한 검증 명령을 돌리지 않았으면 `UNVERIFIED`이며 최소 HOLD, 패턴 FAIL 또는 검증 명령 실패는 STOP이다. GO인 저장소는 analyzer incremental로 인덱스를 갱신한 뒤 `generate-wiki`를 실행한다.
 
 ## 입력과 산출물
 

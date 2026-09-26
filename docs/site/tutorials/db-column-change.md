@@ -78,13 +78,13 @@ DDL이 적용됐거나 적용 일정이 확정됐으면 코드를 바꾼다.
 운영 배포 예정 — 이 변경 안전하게 적용해줘. Order Entity에 status 필드 추가, OrderMapper.xml의 selectOrder에 STATUS 컬럼 포함, OrderDto에 status 노출
 ```
 
-`safe-modify`가 "운영 배포" 키워드로 `production` 모드를 잡는다. Phase 1 영향 분석은 2단계 리포트를 재사용하거나 다시 만들고, 진행 옵션을 묻는다. 적용 뒤 `pattern-conformance` → `verify-target.mjs run` → `change-safety` 순으로 평가한다.
+`safe-modify`가 "운영 배포" 키워드로 `production` 모드를 잡는다. DB 스키마가 걸린 변경이라 규모는 `normal`이고, Phase 1은 2단계 리포트를 재사용하지 않고 `impact-analyzer`로 영향 분석을 새로 한다. 결과를 보여 준 뒤 묻지 않고 진행하며, DDL 적용 여부처럼 변경의 전제를 원문으로 확인하지 못했을 때만 먼저 묻는다. 적용 뒤 `pattern-conformance` → `verify-target.mjs run` → `change-safety` 순으로 평가한다.
 
 `change-safety`의 롤백 차원은 "DB 스키마 변경 포함 → 다운 마이그레이션 스크립트 필요"로 채점한다. 3단계에서 Down 스크립트를 준비했으면 여기서 근거로 제시한다. 사이드 이펙트 차원은 새 트랜잭션 경계나 외부 통신이 도입되지 않았는지 본다.
 
 ### 5. 판정 읽기와 후속
 
-GO는 `어댑터 FULL + 패턴 CONFORM + 필수 검증 exit 0 + change-safety GO`가 모두 충족될 때만이다. `production` 모드에서는 보안 가중치가 2배이므로 같은 변경도 HOLD가 나오기 쉽다. HOLD면 보완 항목을 처리하고 "이 변경 다시 평가해줘"로 재평가한다.
+GO는 `어댑터 FULL 또는 READ(원문 확인) + 패턴 CONFORM + 필수 검증 exit 0 + change-safety GO`가 모두 충족될 때만이다. DB 스키마 변경은 위험 변경이므로 검증 수단이 없으면 `검증 수단 없음` + 정적 대조만으로 GO가 나오지 않는다. `production` 모드에서는 보안 가중치가 2배이므로 같은 변경도 HOLD가 나오기 쉽다. HOLD면 보완 항목을 처리하고 "이 변경 다시 평가해줘"로 재평가한다.
 
 GO 뒤 Phase 5가 인덱스를 incremental로 갱신하고 wiki를 재생성한다. 스키마가 바뀌었으므로 `schema.json`과 `sql_usage.json`이 새 컬럼을 반영하는지 보고에서 확인한다.
 

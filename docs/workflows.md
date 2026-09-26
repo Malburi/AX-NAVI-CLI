@@ -52,7 +52,7 @@
    → analyze-impact: LOW (3/10), 영향 테스트 4개
 2. "이 변경 안전하게 적용해줘. null 체크 추가"
    → safe-modify:
-      - 사전 영향 확인 (위와 동일)
+      - 사전 영향 확인 (규모 small — 오케스트레이터가 인덱스로 직접 확인, 1번 리포트는 재사용하지 않음)
       - 동일 모듈·레이어의 preferred 프로필과 실제 기준 파일 선택
       - 어시스턴트가 변경 적용
       - pattern-conformance → CONFORM

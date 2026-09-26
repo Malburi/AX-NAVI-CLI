@@ -5,18 +5,18 @@
 ## 호출 경로
 
 - [scaffold-feature](/skills/scaffold-feature.md) Phase 3-5 "Test 레이어"가 부른다.
-- [safe-modify](/skills/safe-modify.md) Phase 1의 진행 옵션 2("사전 회귀 테스트 작성 후 진행")와 GO 이후 "자동 후속"에서 사용자가 명시적으로 요청할 때 부른다. 기본은 OFF다.
+- [safe-modify](/skills/safe-modify.md) Phase 1이 CRITICAL일 때의 선택지 2("사전 회귀 테스트 작성 후 진행")와 GO 이후 "자동 후속"에서 사용자가 명시적으로 요청할 때 부른다. 기본은 OFF다.
 - [plan-migration](/skills/plan-migration.md)은 구현 단계의 후속 작업으로 사용을 권고한다.
 - frontmatter `model`은 `sonnet`, `tools`는 지정하지 않는다. 작업 범위는 "테스트 골격 생성·문서화, 실제 코드(non-test) 수정 금지"다.
 
 ## 하는 일
 
-1. Step 1에서 `pattern_profile.py validate` 후 대상 모듈·test 레이어 프로필을 선택하고, 선택된 `reference_files`와 `.claude/patterns/test_pattern.md`를 읽는다. 기존 테스트가 전혀 없어 검증된 기준을 정할 수 없으면 프레임워크·명명·fixture 방식을 사용자에게 확인하기 전 생성하지 않는다.
+1. Step 1에서 `pattern_profile.py validate` 후 대상 모듈·test 레이어 프로필을 선택하고, 선택된 `reference_files`와 `.claude/patterns/test_pattern.md`를 읽는다. 기존 테스트가 전혀 없으면 빌드 파일(pom.xml·build.gradle·package.json·pyproject.toml 등)에 이미 선언된 테스트 의존성을 기준으로 삼는다. 그것도 없으면 임의 프레임워크를 들이지 않고 생성하지 않으며 `검증 수단 없음 — 테스트 기준 없음`으로 보고한다. 사용자에게 고르게 하지 않는다.
 2. Step 2에서 대상 파일/함수의 시그니처·의존성·예외를 분석하고 impact 리포트가 있으면 영향 범위를 활용한다.
 3. Step 3에서 우선순위에 따라 케이스 목록을 만들고 각 케이스에 필요한 이유를 한 줄로 단다. Happy path(최소 1개) → 경계값 → 에러 → 권한/인가 → 트랜잭션 롤백 → 외부 통신 실패(mock) 순이다.
 4. 영향도 점수가 높을수록 더 많은 케이스를 만든다(LOW 1~2개, HIGH 5~10개).
 5. Step 4에서 스택별 표준 위치에 파일을 쓴다. Java는 `src/test/java/`, Python은 `tests/`, Node는 `__tests__/` 또는 `*.test.ts`, .NET은 기존 `*.Tests` 프로젝트다. 기존 테스트 파일은 덮어쓰지 않고 새 파일 또는 새 메서드만 추가한다.
-6. WinForms/DevExpress는 UI에서 분리된 application service만 단위 테스트하고, Nexacro는 기존 테스트 도구가 없으면 임의 프레임워크를 만들지 않고 수동 회귀 절차를 출력하며 `UNVERIFIED/HOLD` 처리한다.
+6. WinForms/DevExpress는 UI에서 분리된 application service만 단위 테스트하고, Nexacro는 기존 테스트 도구가 없으면 임의 프레임워크를 만들지 않고 Dataset 입력·transaction callback·오류코드 시나리오를 회귀 절차로 출력하며 `검증 수단 없음`으로 표시한다.
 7. Step 5에서 생성 테스트가 빌드되는지 lint/compile로 확인하고 실패하면 import/설정 누락을 보고한다.
 8. `_workspace/reports/tests_<slug>.md`에 요약을 쓴다.
 

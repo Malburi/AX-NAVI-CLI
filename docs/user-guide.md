@@ -296,8 +296,10 @@ git commit -m "docs: add project harness"
 flowchart TD
     A[변경 요청] --> B[영향도 분석]
     B --> C[실제 기준 패턴 선택]
-    C --> D{사용자 확인}
-    D -->|진행| E[변경 적용]
+    C --> D{CRITICAL 또는 전제 미확인?}
+    D -->|아니오| E[변경 적용]
+    D -->|예| K[사용자 확인]
+    K -->|진행| E
     E --> F[패턴 적합성·실행 검증]
     F --> G{안전성 판정}
     G -->|GO ✅| H[인덱스·wiki 갱신]
@@ -313,7 +315,7 @@ flowchart TD
 | ⚠️ **HOLD** | 주의 후 진행 | 트랜잭션 경계 변경, 외부 시스템 연동 |
 | 🛑 **STOP** | 현재 방식 중단 | 운영 DB 직접 수정, 인증 우회 위험 |
 
-GO는 `pattern-conformance=CONFORM`, 테스트·빌드·린트 exit 0, `change-safety=GO`가 충족될 때 가능하다. 있는 검증 명령을 실행하지 않았으면 HOLD다. 부분 지원(PARTIAL) 파일은 에이전트가 원문을 읽어 확인한 뒤 진행한다.
+GO는 `pattern-conformance=CONFORM`, 테스트·빌드·린트 exit 0(적용할 명령이 없거나 도구가 없으면 `검증 수단 없음` + 정적 대조), `change-safety=GO`가 충족될 때 가능하다. 적용할 수 있고 실행 가능한 검증 명령을 돌리지 않았으면 HOLD다. DB 스키마·트랜잭션·인증·공통 모듈 변경은 검증 수단이 없으면 HOLD다. 부분 지원(PARTIAL) 파일은 에이전트가 원문을 읽어 확인한 뒤 진행한다.
 
 > Claude는 HOLD/STOP 상황에서도 **자동 수정하지 않습니다.** 판단은 항상 사람이 합니다.
 

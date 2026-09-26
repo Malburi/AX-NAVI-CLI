@@ -69,7 +69,7 @@ python agents/lib/pattern_profile.py select \
   --layer service
 ```
 
-선택 결과는 `_workspace/reports/pattern_selection.json`에 기록된다. 경로 일치가 가장 큰 가중치를 가지며, 이어 모듈·레이어·신뢰도를 반영한다.
+선택 결과는 `_workspace/reports/pattern_selection.json`에 기록된다. 경로 일치가 가장 큰 가중치를 가지며, 이어 모듈·레이어·신뢰도를 반영한다. 프로필이 없거나 맞는 프로필이 없으면 `basis: "neighbors"`와 이웃 `reference_files`(대상 자신 → 같은 폴더 → 상위 폴더의 같은 확장자 파일, 이름순)를 돌려주고, 작업 보고에는 `기준: 이웃 파일`이 남는다.
 
 ## 코드 작업 게이트
 
@@ -89,10 +89,10 @@ flowchart TD
 최종 GO에는 다음 증거가 모두 필요하다.
 
 - pattern-conformance가 `CONFORM`
-- 프로젝트의 필수 테스트·빌드·린트 명령이 exit 0
+- 프로젝트의 필수 테스트·빌드·린트 명령이 exit 0, 또는 적용할 명령이 없거나 도구가 없을 때 `검증 수단 없음` + 정적 대조(DB 스키마·트랜잭션·인증·공통 모듈 변경 제외)
 - change-safety가 `GO`
 
-검증을 실행하지 못한 상태는 `UNVERIFIED`이며 최소 HOLD다. 패턴 적합성 FAIL 또는 필수 검증 실패는 STOP이다.
+적용할 수 있고 실행 가능한 검증 명령을 돌리지 않은 상태는 `UNVERIFIED`이며 최소 HOLD다. 패턴 적합성 FAIL 또는 필수 검증 실패는 STOP이다.
 
 ## Wiki 반영
 

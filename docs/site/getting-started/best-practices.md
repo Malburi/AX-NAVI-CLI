@@ -77,16 +77,16 @@ node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "D:\work\order-
 - 외부 API 계약 변경 (요청·응답 필드, 엔드포인트).
 - 트랜잭션 경계 변경.
 - 3개 이상 파일에 걸친 수정.
-- 대상 모듈에 검증된 preferred 패턴 프로필이 없음.
+- `pattern_profile.py select`가 프로필도 이웃 기준 파일도 돌려주지 않음(주변에 같은 종류 파일이 하나도 없음).
 
 작업 도중 승격 조건이 드러나면 그 자리에서 멈추고 승격하며, 이미 적용한 변경도 승격된 스킬의 사전 영향 분석에 포함시킵니다. 범용 요청("고쳐줘", "개발해줘")은 항상 안전 워크플로우가 기본 경로이고, `vibe`는 사용자가 명시적으로 말할 때만 탑니다.
 
 ## HOLD/STOP이 나왔을 때 하지 말 것
 
-`safe-modify`는 `어댑터 FULL 또는 READ(원문 확인 완료) + 패턴 CONFORM + 검증 exit 0 + change-safety GO`가 충족되면 GO를 냅니다. 있는 검증 명령을 실행하지 못했거나 어댑터가 UNSUPPORTED면 HOLD(`UNVERIFIED`)입니다. HOLD/STOP은 실패가 아니라 사람이 결정할 차례라는 신호입니다.
+`safe-modify`는 `어댑터 FULL 또는 READ(원문 확인 완료) + 패턴 CONFORM + 검증 exit 0(또는 검증 수단 없음 + 정적 대조) + change-safety GO`가 충족되면 GO를 냅니다. 적용할 수 있고 실행 가능한 검증 명령을 돌리지 않았으면 HOLD(`UNVERIFIED`), 어댑터가 UNSUPPORTED면 HOLD입니다. HOLD/STOP은 실패가 아니라 사람이 결정할 차례라는 신호입니다.
 
 - 판정을 무시하고 "그냥 적용해줘"로 밀어붙이지 마세요. 자동 수정을 우회하는 경로는 의도적으로 제공되지 않으며, 같은 요청을 `vibe`로 돌려도 승격 조건에 걸리면 다시 안전 워크플로우로 돌아옵니다.
-- HOLD 사유를 읽기 전에 재실행하지 마세요. Claude가 이유와 권고 조치를 함께 알려 주므로 그 항목(빌드·수동 시나리오·패턴 근거)을 먼저 확보하는 것이 빠릅니다.
+- HOLD 사유를 읽기 전에 재실행하지 마세요. Claude가 이유와 권고 조치를 함께 알려 주므로 그 항목(빌드·검증 명령·패턴 근거)을 먼저 확보하는 것이 빠릅니다.
 - WinForms Designer·DevExpress·XFDL·JSP/Struts XML 같은 PARTIAL 대상은 에이전트가 원문을 직접 읽어 확인한 뒤 수정합니다(`READ`). 따로 준비할 것은 없고, 보고의 `원문 확인` 목록에서 무엇을 읽었는지 볼 수 있습니다.
 - STOP은 현재 방식으로 진행하지 않기를 권고하는 것입니다. 대안을 논의하세요.
 - HOLD/STOP으로 끝났고 그 사이 재인덱싱이 있었다면 wiki도 낡은 상태입니다. 종료 보고의 `generate-wiki` 재실행 안내를 따르세요.

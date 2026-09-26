@@ -52,7 +52,7 @@ Phase 6 보고에서 엔드포인트 수와 드리프트 건수(MISSING/MISMATCH
 주문 취소 기능 전체 만들어줘
 ```
 
-`cross-repo-scaffold`가 Phase 0에서 백엔드와 클라이언트 모두에 대해 어댑터 커버리지·`pattern_profile.py validate`·API 계약 로드를 확인한다. PARTIAL인 쪽은 원문을 직접 읽어 확인한 뒤 진행한다. 어느 한쪽이라도 UNSUPPORTED이거나 패턴이 미추출이면 그 저장소의 판정은 최소 HOLD이고 전체 GO로 올라가지 않는다. 1:N에서 클라이언트가 2개 이상이면 포함할 클라이언트를 체크리스트로 묻는다.
+`cross-repo-scaffold`가 Phase 0에서 백엔드와 클라이언트 모두에 대해 어댑터 커버리지·`pattern_profile.py validate`·API 계약 로드를 확인한다. PARTIAL인 쪽은 원문을 직접 읽어 확인한 뒤 진행한다. 어느 한쪽이라도 UNSUPPORTED면 그 저장소의 판정은 최소 HOLD이고 전체 GO로 올라가지 않는다. 패턴이 미추출인 저장소는 묻지 않고 이웃 파일을 기준으로 진행하며(`기준: 이웃 파일`), 이웃 파일까지 없을 때만 멈춘다. 1:N에서 클라이언트가 2개 이상이면 포함할 클라이언트를 체크리스트로 묻는다.
 
 Phase 1에서 한 번에 묻는다.
 
@@ -91,7 +91,7 @@ TODO 절에 백엔드 비즈니스 로직·실제 쿼리, 클라이언트 UI 구
 `cross-repo-modify`가 `safe-modify` 흐름 위에 파트너 분기를 얹어 진행한다.
 
 1. Phase 0 — `pair_config.md` 확인, 운영 모드 키워드 감지(safe-modify와 같은 표), 양쪽 패턴 프로필 검증.
-2. Phase 1 — 시작 측 `impact-analyzer`로 `_workspace/reports/impact_<slug>.md`. 변경 대상이 파트너 노출 대상(엔드포인트·컨트롤러·DTO)이 아니면 단독 `safe-modify`로 진행한다.
+2. Phase 1 — 시작 측 영향 분석으로 `_workspace/reports/impact_<slug>.md`. 규모 small(API 계약 변경 없음)이면 오케스트레이터가 직접 확인하고, normal이면 `impact-analyzer`를 쓴다. 변경 대상이 파트너 노출 대상(엔드포인트·컨트롤러·DTO)이 아니면 단독 `safe-modify`로 진행한다.
 3. Phase 2 — 파트너마다 `api-bridge check-impact`로 호출 위치·영향 컴포넌트를 찾는다. 전부 0건이면 단독 진행이다.
 4. Phase 3 — 파트너 반영 확인 게이트.
 
@@ -144,7 +144,7 @@ API 드리프트 확인해줘
 
 - **"먼저 pair-init으로 연동하세요"** — `_workspace/pair_config.md`가 없다. 1단계를 먼저 한다. 단일 저장소만 고치려면 `safe-modify`를 쓴다.
 - **파트너 경로 접근 불가** — 그 파트너 설정만 스킵하고 나머지는 계속된다. 경로를 고친 뒤 `pair-init`을 재실행하면 "재설정" 선택지가 나온다.
-- **패턴 미추출 WARN이 나온다** — 계속 진행할 수 있지만 그 저장소는 최소 HOLD다. 해당 저장소에서 "패턴 추출해줘"를 먼저 한다.
+- **패턴 미추출 WARN이 나온다** — 그 저장소는 이웃 파일을 기준으로 진행되고 보고에 `기준: 이웃 파일`이 남는다. 더 정확한 기준이 필요하면 해당 저장소에서 "패턴 추출해줘"를 한다.
 - **드리프트가 HIGH다** — `MISSING_ENDPOINT`(프론트가 부르는데 백엔드에 없음), `METHOD_MISMATCH`(경로 같고 메서드 다름)는 즉시 수정 대상이다. `UNUSED_ENDPOINT`는 정보성이다.
 - **파트너 파일이 고쳐졌는데 커밋이 안 됐다** — 의도된 동작이다. 어느 저장소든 git commit은 자동 실행하지 않는다.
 - **1:N인데 특정 클라이언트만 반영하고 싶다** — Phase 3 게이트의 "2. 일부만 반영"으로 라벨을 고른다. 체크리스트는 "확인 후보"를 좁힐 뿐이고 실제 반영은 이 게이트에서 결정된다.

@@ -8,9 +8,9 @@ AX Navi의 코드 작업은 "수정 → 곧장 commit → 운영 사고" 사이�
 |------|------|------|------|
 | 인덱스 신선도 | `build-index.mjs --check-stale` | exit 0 / 1 | 모든 작업 시작 |
 | 어댑터 커버리지 | `check-adapter-coverage.mjs` | FULL/GO, PARTIAL/READ, UNSUPPORTED/HOLD | `safe-modify`, `scaffold-feature`, cross-repo |
-| 변경 영향도 | `impact-analyzer` | 위험도 0~10, LOW/MEDIUM/HIGH/CRITICAL | `analyze-impact`, `safe-modify` |
+| 변경 영향도 | `impact-analyzer` | 위험도 0~10, LOW/MEDIUM/HIGH/CRITICAL | `analyze-impact`, `safe-modify`(규모 normal일 때만. small은 오케스트레이터가 직접 확인) |
 | 패턴 적합성 | `pattern-conformance` | CONFORM / HOLD / FAIL | `safe-modify`, `scaffold-feature`, cross-repo |
-| 실행 증거 | `verify-target.mjs run` | `overall` pass/fail, exit 0/2 | `safe-modify`, `scaffold-feature`, `vibe` |
+| 실행 증거 | `verify-target.mjs run` | `overall` pass/fail/unavailable, exit 0/2/3 | `safe-modify`, `scaffold-feature`, `vibe` |
 | 변경 안전성 | `change-safety` | GO / HOLD / STOP | `safe-modify`, `scaffold-feature`, cross-repo |
 | SQL 리뷰 | `sql-reviewer` | 위험도 0~10, GO/HOLD/STOP | `review-sql` |
 
@@ -37,7 +37,7 @@ AX Navi의 코드 작업은 "수정 → 곧장 commit → 운영 사고" 사이�
 | 7~8 | HIGH | 회귀 테스트 + 사전 코드 리뷰 필수 |
 | 9~10 | CRITICAL | 외부 시스템 조율 + 단계별 배포 + 롤백 계획 필수 |
 
-정적 분석 한계로 리플렉션·동적 바인딩·외부 트리거는 누락될 수 있으므로 결과에 +1~2를 고려하라는 문구가 리포트에 붙는다. `safe-modify`는 이 결과를 보여주고 진행 여부를 사용자에게 묻는다. CRITICAL이면 사전 회귀 테스트 작성(test-generator) 옵션을 권장한다. 리포트는 `_workspace/reports/impact_<slug>.md`에 남는다.
+정적 분석 한계로 리플렉션·동적 바인딩·외부 트리거는 누락될 수 있으므로 결과에 +1~2를 고려하라는 문구가 리포트에 붙는다. `safe-modify`는 이 결과를 보여 주고 묻지 않고 진행한다. CRITICAL이거나, 데이터 변경·되돌리기 어려운 변경의 전제를 확인하지 못했거나, 요청 해석이 갈릴 때만 묻는다. CRITICAL일 때는 진행 / 사전 회귀 테스트 작성(test-generator) 후 진행 / 중단 중에서 고르게 한다. 리포트는 `_workspace/reports/impact_<slug>.md`에 남는다.
 
 ## 어댑터 커버리지 — PARTIAL·UNSUPPORTED일 때
 
@@ -74,10 +74,10 @@ node "$CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" run --root <프로젝트
 ```
 
 - `detect`는 `package.json` scripts, `pom.xml`, `build.gradle`, `.csproj`/`.sln` 등 매니페스트에서 lint/typecheck/test/build 후보를 읽기만 한다(부작용 0). 무엇을 돌릴지 사용자에게 먼저 보이기 위한 것이다.
-- `run`은 감지된 명령을 실행하고 성공이면 요약만, 실패면 `fail_lines`(명령당 기본 15줄 상한, `truncated` 명시)만 돌려준다. `overall`이 `pass`면 exit 0, 아니면 exit 2다.
+- `run`은 감지된 명령을 실행하고 성공이면 요약만, 실패면 `fail_lines`(명령당 기본 15줄 상한, `truncated` 명시)만 돌려준다. `overall`이 `pass`면 exit 0, `fail`이면 exit 2, 도구가 설치되지 않아 실행하지 못했으면 `unavailable`(`missing_tool`)로 exit 3이다.
 - `detected`가 비어 있으면(`count: 0`) 자동 검증이 없다는 뜻이다. PASS로 적지 않고 `검증 수단 없음`으로 적는다. 위험 변경이 아니면 원문 확인 근거로 진행한다. 바뀐 파일 종류를 검사하지 않는 명령(JSP·XML 변경에 Java 컴파일 등)과 도구가 설치되지 않아 실행되지 않는 명령도 `검증 수단 없음`이다. 이때 에이전트가 SQL 컬럼 순서 ↔ 화면 매핑 같은 정적 대조를 직접 하고, 배포 뒤에야 알 수 있는 것은 `배포 후 확인 권장`으로 따로 적는다(GO 조건 아님). 실행할 수 없거나 assertion까지 도달하지 못한 검사도 PASS가 아니다.
 
-스킬은 `commands[].cmd`·`exit`·`fail_lines`와 `overall`을 그대로 change-safety 입력에 넘긴다. 필수 검증이 exit 0이 아니면 GO는 나올 수 없다.
+스킬은 `commands[].cmd`·`exit`·`fail_lines`와 `overall`을 그대로 change-safety 입력에 넘긴다. GO를 막는 것은 실패한 명령(exit 2)이다. `unavailable`(exit 3)이나 적용할 명령이 없는 경우는 `검증 수단 없음`으로 적고 정적 대조로 대신한다.
 
 ## 변경 안전성 — GO / HOLD / STOP
 
@@ -96,7 +96,7 @@ node "$CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" run --root <프로젝트
 
 | 결정 | 조건 |
 |------|------|
-| `GO` | 종합 < 3, 보안 < 5, pattern-conformance CONFORM, 필수 검증 exit 0, 어댑터 FULL |
+| `GO` | 종합 < 3, 보안 < 5, pattern-conformance CONFORM, 필수 검증 exit 0 또는 `검증 수단 없음` + 정적 대조, 어댑터 FULL 또는 READ(원문 확인) |
 | `HOLD` | 종합 3~6, 또는 보안 5~7, 또는 pattern-conformance HOLD, 또는 있는 검증 명령 미실행(`UNVERIFIED`), 또는 어댑터 UNSUPPORTED, 또는 PARTIAL인데 원문 확인 없음, 또는 검증 수단이 없는 위험 변경(DB 스키마·트랜잭션·인증·공통 모듈) |
 | `STOP` | 종합 > 6, 또는 보안 ≥ 8, 또는 pattern-conformance FAIL, 또는 필수 검증 실패, 또는 즉시 STOP 트리거 |
 
@@ -142,7 +142,7 @@ HOLD는 "진행 불가"가 아니라 "보완 후 재평가"다. 리포트의 보
 1. `_workspace/reports/safety_<slug>.md`에서 어느 차원의 점수가 높은지, 어떤 하드 게이트에 걸렸는지 확인한다.
 2. `UNVERIFIED`면 `verify-target.mjs detect` 결과에서 명령을 골라 실제로 실행한다. 자동 검증이 없는 프로젝트면 `검증 수단 없음`으로 기록한다.
 3. 어댑터 PARTIAL이면 대상과 연결 파일 원문을 읽고 `원문 확인` 목록을 첨부한다. UNSUPPORTED면 어댑터를 먼저 추가한다.
-4. pattern-conformance HOLD면 리포트의 "필요한 조치"를 보고 의도적 차이인지 결정한다. 의도적이면 그 결정을 명시하고, 아니면 기준 파일에 맞춰 고친다.
+4. pattern-conformance HOLD면 스킬이 먼저 기준 파일에 맞춰 고치고 한 번 재검증한다. 그래도 HOLD면 리포트의 "필요한 조치"를 보고 의도적 차이인지 결정한다. 의도적이면 그 결정을 명시하고, 아니면 기준 파일에 맞춰 고친다.
 5. 패턴 프로필이 없으면 이웃 파일을 기준으로 진행한다(`기준: 이웃 파일`). 더 정확한 기준이 필요하면 `"패턴 추출해줘"`로 프로필을 만든다.
 6. 보완 후 `"이 변경 다시 평가해줘"`로 change-safety를 재실행한다.
 

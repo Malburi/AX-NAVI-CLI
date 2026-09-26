@@ -90,6 +90,10 @@
 **Windows 에서 편하게 씁니다.**
 경로에 공백과 한글이 있어도 되고, 한글 폭을 정확히 계산해 화면이 깨지지 않습니다.
 
+**EUC-KR 레거시 파일도 인코딩을 지키며 고칩니다.**
+EUC-KR · CP949 등으로 저장된 파일은 읽고 고치는 동안에만 UTF-8 로 바꿨다가 끝나면(실패 · 거부 · 세션 종료 포함) 원래 인코딩으로 되돌립니다.
+원래 인코딩으로 온전히 되돌릴 수 없거나 32MB 를 넘는 파일은 읽기만 하고 수정은 `인코딩 보존 불가` 로 거부합니다. Claude Code 플러그인으로 쓸 때도 같은 훅이 걸립니다.
+
 ---
 
 ## 설치
@@ -114,11 +118,21 @@ npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0
 > `npm i -g github:Malburi/AX-NAVI-CLI` 대신 위의 주소를 쓰세요.
 > 위 주소는 평범한 HTTPS 다운로드라 git 프로토콜이 막힌 사내망에서도 설치됩니다.
 
-**폐쇄망**에서는 파일 하나로 옮깁니다.
+**폐쇄망**에서는 파일 하나로 옮깁니다. 태그를 체크아웃한 깨끗한 폴더에서 만들어야 받는 쪽이 태그와 같은 판을 받습니다.
 
-```bash
-npm pack                                   # axnavi-0.1.0-alpha.25.tgz 생성
-npm i -g \\공유폴더\axnavi-0.1.0-alpha.25.tgz   # 받는 쪽
+```powershell
+git checkout v0.1.0-alpha.25
+npm pack                                                          # axnavi-0.1.0-alpha.25.tgz 생성
+npm i -g \\공유폴더\axnavi-0.1.0-alpha.25.tgz --omit=optional   # 받는 쪽
+```
+
+`--omit=optional` 을 빼면 npm 이 선택 의존성(Claude Agent SDK)을 받으려고 레지스트리에 붙다가 약 5분 동안 멈춘 것처럼 보입니다. SDK 없이 설치하면 설치된 `claude` CLI 로 실행합니다.
+
+**PowerShell 에서 `axnavi` 가 실행되지 않으면** 실행 정책 때문입니다(`running scripts is disabled`). 관리자 권한 없이 둘 중 하나로 해결합니다.
+
+```powershell
+axnavi.cmd                                          # .cmd 로 부르면 정책과 상관없이 실행됩니다
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned # 또는 내 계정만 허용
 ```
 
 ### 업그레이드
@@ -147,11 +161,13 @@ axnavi doctor
   ✓ Node       v20.20.2
   ✓ Python     python 3.12.9
   ✓ git        git version 2.46.0
-  ✓ 실행 경로   agent-sdk · 구독 인증 · 질문·승인은 axnavi 화면이 직접 받습니다
-  ✓ 인덱스      최신
-  ✓ 인덱서      v1.12.0
-  ✓ 에이전트    19개
-  ✓ 스킬        24개
+  ✓ 실행 경로  agent-sdk · 구독 인증 · 질문·승인은 axnavi 화면이 직접 받습니다
+  ✓ 로그인     Claude 구독 로그인 기록 있음
+  ! CLI 설정   없음 — axnavi init
+  ✓ 인덱스     최신 — 소스 지문 일치 — 재인덱싱 불필요
+  ✓ 인덱서     v1.16.0
+  ✓ 에이전트   19개
+  ✓ 스킬       17개 (+ 별칭 7)
 ```
 
 ---

@@ -20,10 +20,10 @@ SKILL.md description에 적힌 트리거 문구는 다음과 같다.
 | 단계 | 하는 일 | 호출 에이전트·스크립트 | 사용자 개입 |
 |------|---------|----------------------|------------|
 | Phase 0 사전 조건 확인 | 어댑터 지원 수준, `pair_config.md`, 운영 모드 키워드, 패턴 프로필 확인 | `check-adapter-coverage.mjs`, `pattern_profile.py validate` | hub에서 시작하고 클라이언트가 2개 이상이면 확인 후보 체크리스트 |
-| Phase 1 시작 측 영향 분석 | 변경 대상 정규화와 영향 리포트, 파트너 노출 대상 여부 판별 | `impact-analyzer` | 없음 |
+| Phase 1 시작 측 영향 분석 | 변경 대상 정규화와 영향 리포트, 파트너 노출 대상 여부 판별. safe-modify 규모 판정을 따라 small(API 계약 변경 없음)이면 오케스트레이터가 직접 확인한다 | `impact-analyzer`(normal일 때) | 없음 |
 | Phase 2 파트너 영향 확인 | 대상마다 파트너 호출 위치·영향 컴포넌트 확인 (병렬) | `ax-navi:api-bridge` mode check-impact | 없음 |
 | Phase 3 파트너 반영 확인 게이트 | 영향받는 파트너 파일을 나열하고 반영 범위를 확인 | 없음 | 1 전부 반영 / 2 일부만 / 3 이 프로젝트만 / 4 중단 |
-| Phase 4 시작 측 변경 적용 | preferred 프로필 선택 후 변경 적용, 계약 형태가 바뀌면 계약 갱신 | `pattern_profile.py select`, `api-bridge` extract | 직접 작성 또는 자연어 설명 |
+| Phase 4 시작 측 변경 적용 | preferred 프로필 선택 후 변경 적용, 계약 형태가 바뀌면 계약 갱신 | `pattern_profile.py select`, `api-bridge` extract | 없음. 어시스턴트가 Edit/Write로 바로 적용한다 |
 | Phase 5 파트너 측 변경 적용 | 남은 대상 전부 병렬로 safe-modify Phase 2 지침만 수행 | `general-purpose` | 없음 |
 | Phase 6 통합 평가·드리프트 재검증 | 저장소마다 패턴 적합성·실행 검증·안전성, 파트너마다 드리프트 재검증 | `pattern-conformance`, 테스트·빌드·린트 명령, `ax-navi:change-safety`, `ax-navi:api-bridge` mode validate | 없음 |
 | Phase 7 결과 보고 | 저장소별 변경 파일·판정·TODO와 전체 결정 | 없음 | HOLD/STOP이면 보완 |
@@ -48,7 +48,7 @@ Phase 3 게이트의 규칙은 다음과 같다.
 | Phase 1 impact가 CRITICAL | 옵션 1·2 선택 시 "운영 영향도가 높습니다. 정말 진행할까요?" 재확인 |
 | 무응답·다른 주제 전환·비대화형 호출 | 4 중단과 동일 처리. 파트너 저장소 미반영이 기본값 |
 
-Phase 6의 전체 GO 조건은 모든 대상 어댑터가 FULL, 패턴 CONFORM, 필수 검증 exit 0, change-safety GO, API 드리프트 0건일 때만이다. 미실행(`UNVERIFIED`)은 최소 HOLD, 패턴 FAIL 또는 필수 명령 실패는 STOP이다. GO인 각 저장소는 analyzer incremental로 인덱스를 갱신한 후 `generate-wiki`를 실행한다.
+Phase 6의 전체 GO 조건은 모든 대상 어댑터가 FULL 또는 READ(원문 확인), 패턴 CONFORM, 필수 검증 exit 0(또는 `검증 수단 없음` + 정적 대조, 위험 변경 아님), change-safety GO, API 드리프트 0건일 때만이다. 적용 가능하고 실행 가능한 명령을 돌리지 않았으면(`UNVERIFIED`) 최소 HOLD, 패턴 FAIL 또는 필수 명령 실패는 STOP이다. GO인 각 저장소는 analyzer incremental로 인덱스를 갱신한 후 `generate-wiki`를 실행한다.
 
 ## 입력과 산출물
 

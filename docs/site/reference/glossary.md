@@ -17,6 +17,7 @@ AX Navi 문서와 에이전트 리포트에 반복해서 나오는 용어를 모
 | `_workspace/` | 파이프라인 산출물 작업 공간. 에이전트 간 인자 전달이 이 폴더의 파일로 이뤄짐. 상세는 [_workspace 파일 사전](/reference/workspace-files.md) |
 | 부분 재실행 | 기존 하네스에서 "스킬만"·"에이전트만"·"validator만"·"패턴만"·"qa만" 등 한 단계만 다시 돌리는 harness-init 모드 |
 | 인덱스 리프레시 | "인덱스만 갱신해줘"로 LLM 분석 없이 인덱스를 다시 만들고 `_ai_patch.json`을 재적용하는 모드 |
+| 작업 맥락 파일 | safe-modify Phase 0이 쓰는 `_workspace/reports/context_<slug>.md`. 요청·규모·변경 예정 파일·원문 확인·핵심 사실·확인하지 못한 사실을 담고 Phase 2 뒤 `## 변경 내역`이 붙는다. 모든 에이전트가 먼저 읽어 같은 파일을 다시 탐색하지 않음 |
 
 ## 인덱스
 
@@ -49,14 +50,19 @@ AX Navi 문서와 에이전트 리포트에 반복해서 나오는 용어를 모
 | 프로필 검증 | `pattern_profile.py validate`. 중복 ID·잘못된 상태·프로젝트 밖 경로·없는 기준 파일·빈 규칙을 FAIL 처리하고 `pattern_profile_validation.json`에 기록 |
 | 패턴 선택 | `pattern_profile.py select`. 대상 경로·모듈·레이어에 가장 가까운 preferred 프로필을 골라 `reports/pattern_selection.json`에 기록 |
 | 적합성 게이트 | 변경 코드가 선택된 프로필과 기준 파일을 따르는지 pattern-conformance가 독립 판정하는 사후 게이트 |
+| 기준: 이웃 파일 | 프로필이 없거나 후보가 충돌·저신뢰일 때 `select`가 `basis: "neighbors"`로 돌려준 가장 가까운 실제 파일(대상 자신 → 같은 폴더 → 상위 폴더의 같은 확장자, 이름순)을 기준으로 삼았다는 보고 표시. 사용자에게 고르게 하지 않음 |
 
 ## 판정
 
 | 용어 | 의미 |
 |------|------|
 | CONFORM / HOLD / FAIL | pattern-conformance 판정. 필수 규칙 준수 / 가장 가까운 기준 파일과도 다른 위험한 방식을 근거 없이 도입 / 레이어 오선택·필수 규칙 위반·안티패턴 복제 |
-| GO / HOLD / STOP | change-safety 최종 판정. GO는 종합 점수 < 3·보안 < 5·CONFORM·필수 검증 exit 0이 모두 충족될 때만. 검증 미실행은 HOLD, 필수 검증 실패나 즉시 STOP 트리거는 STOP |
-| UNVERIFIED | 테스트·빌드·린트를 실행하지 못한 상태. PASS가 아니며 최소 HOLD |
+| GO / HOLD / STOP | change-safety 최종 판정. GO는 종합 점수 < 3·보안 < 5·CONFORM·필수 검증 exit 0(또는 `검증 수단 없음` + 정적 대조)이 모두 충족될 때만. 적용 가능한 검증 미실행은 HOLD, 필수 검증 실패나 즉시 STOP 트리거는 STOP |
+| UNVERIFIED | 바뀐 파일을 검사하고 이 환경에서 실행 가능한 테스트·빌드·린트 명령을 돌리지 않은 상태. PASS가 아니며 최소 HOLD |
+| 검증 수단 없음 | 적용할 검증 명령이 없거나(감지 0건, 바뀐 파일 종류를 검사하지 않는 명령) 도구가 설치되지 않아 `verify-target run`이 `unavailable`(exit 3)인 상태. UNVERIFIED가 아니며 정적 대조로 대신한다. DB 스키마·트랜잭션·인증·공통 모듈 변경이면 HOLD |
+| 정적 대조 | 검증 수단이 없을 때 에이전트가 직접 하는 원문 대조. SQL SELECT 컬럼 순서 ↔ 화면 `getString(n)`, 태그·colspan 개수, 같은 SQL·화면을 쓰는 다른 파일 확인 등 |
+| 배포 후 확인 권장 | 배포 뒤에야 알 수 있는 확인 항목을 따로 적는 보고 절. 사람의 육안 확인·스모크 테스트는 GO 조건이 아니며 여기에 적는다 |
+| READ | 어댑터 PARTIAL 대상의 게이트 동작. 에이전트가 대상과 연결된 설정·화면·SQL 원문을 직접 읽고 진행하며 읽은 파일을 `원문 확인` 목록으로 남긴다. 사용자에게 수동 검증을 요청하지 않음 |
 | 즉시 STOP 트리거 | 한 항목이라도 발견되면 점수와 무관하게 STOP이 되는 항목(운영 DB 직접 수정, 인증 우회 등) |
 | 모호성 점수 | spec-clarifier가 범위·목표·제약·레거시·우선순위 5영역 응답을 가중 합산한 값. ≤0.2 GO, 0.21~0.4 REFINE(1회 재질문), >0.4는 GO(미답변 진행) |
 | PASS / PARTIAL / RETRY | harness-evaluator 총점 구간. 80~100 / 60~79(타겟 재생성) / 0~59(주요 재생성). 2차 평가 후에는 점수와 무관하게 종료 |

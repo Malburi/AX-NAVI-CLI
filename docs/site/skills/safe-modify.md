@@ -21,9 +21,9 @@
 |------|---------|------------------------|-------------|
 | Phase 0 | 운영 모드 키워드 감지, 인덱스 신선도 확인, 어댑터 커버리지 게이트, 패턴 프로필 검증·선택. 확인한 파일과 사실을 `context_<slug>.md`에 적고 규모(small/normal)를 정한다. 이후 모든 에이전트가 이 파일을 먼저 읽어 같은 파일을 다시 탐색하지 않는다. | `build-index.mjs --check-stale`, `check-adapter-coverage.mjs`, `pattern_profile.py validate/select` | 재인덱싱 건너뛰기를 원하면 알린다. |
 | Phase 1 | 사전 영향 분석. 규모 small이면 오케스트레이터가 인덱스 질의 체크리스트(쓰는 곳·순서로 읽는 곳·DB 확인·트랜잭션·파트너)로 직접 확인하고, normal이면 [analyze-impact](/skills/analyze-impact.md) 절차 그대로 실행한다. 어느 쪽이든 `impact_<slug>.md`를 만들고 결과를 보여 준 뒤 묻지 않고 진행한다. 확정 못 한 사실은 보고의 `확인하지 못한 사실`로 남긴다. | [impact-analyzer](/agents/impact-analyzer.md) | CRITICAL이거나, 데이터 변경·되돌리기 어려운 변경의 전제를 확인하지 못했거나, 요청 해석이 갈릴 때만 묻는다. |
-| Phase 2 | 변경 적용. 사용자가 직접 작성하거나 자연어 설명을 어시스턴트가 Edit/Write로 적용한다. `pattern_selection.json`의 선택 프로필과 `reference_files`를 먼저 읽는다. | Edit/Write | 변경 내용을 설명하거나 직접 작성한다. |
+| Phase 2 | 변경 적용. 어시스턴트가 Edit/Write로 직접 적용하며 사용자 작성을 기다리지 않는다. `pattern_selection.json`의 선택 프로필과 `reference_files`를 먼저 읽고, 적용 뒤 `context_<slug>.md`에 `## 변경 내역`을 덧붙인다. | Edit/Write | 없음 |
 | Phase 3-1 | 패턴 적합성 검증. FAIL이면 수정 후 재검증, HOLD면 기준 파일에 맞춰 고치고 한 번 재검증한다. | [pattern-conformance](/agents/pattern-conformance.md) | 없음 |
-| Phase 3-2 | 검증 명령 실행. `detect`로 lint/typecheck/test/build 후보를 확보하고, 변경 범위에 맞는 가장 작은 명령을 `run`으로 실제 실행한다. | `verify-target.mjs detect/run` | `detected` 목록을 보고 고른다. |
+| Phase 3-2 | 검증 명령 실행. `detect`로 lint/typecheck/test/build 후보를 확보하고, 변경 범위에 맞는 가장 작은 명령을 `run`으로 실제 실행한다. 바뀐 파일 종류를 검사하지 않거나 도구가 없으면(`unavailable`) `검증 수단 없음`으로 적고 정적 대조를 직접 한다. | `verify-target.mjs detect/run` | 없음. 에이전트가 변경 범위에 맞는 가장 작은 명령을 고른다. |
 | Phase 3-3 | 변경 안전성 평가. 변경 파일·mode·impact 리포트·패턴 적합성·검증 결과를 넘긴다. 규모 small(파일 3개 이하, API 계약·DB 스키마·트랜잭션·인증·공통 모듈 무관)이면 3-2를 먼저 하고 3-1과 3-3을 동시에 돌려 결과를 합친다. | [change-safety](/agents/change-safety.md) | 없음 |
 | Phase 4 | 결정 + 후속 조치. 차원별 점수, 종합 위험도, 패턴 적합성, 검증 증거, 결정(GO/HOLD/STOP)을 보고한다. | 리포트 읽기 | HOLD면 보완 후 "이 변경 다시 평가해줘"로 재호출한다. |
 | Phase 5 | 인덱스·위키 증분 갱신. GO 후 기본 실행한다. | `build-index.mjs --mode incremental`, [generate-wiki](/skills/generate-wiki.md) | 허브 발행 이력이 있으면 "허브 발행본도 갱신할까요?"를 1회 묻는다. 기본은 갱신하지 않음이다. |
@@ -52,11 +52,11 @@
 
 | 결정 | 조건 |
 |------|------|
-| **GO** | `어댑터 FULL + 패턴 CONFORM + 필수 검증 exit 0 + change-safety GO`가 모두 충족될 때만. |
-| **HOLD** | 있는 검증 명령을 실행하지 못했거나, 어댑터가 UNSUPPORTED이거나, PARTIAL인데 원문을 읽지 않았으면 HOLD(`UNVERIFIED`). 검증 수단이 아예 없으면 위험 변경(DB 스키마·트랜잭션·인증)일 때만 HOLD. `구조화 패턴 미검증` 폴백도 자동 GO 대상이 아니다. |
+| **GO** | `어댑터 FULL 또는 READ(원문 확인) + 패턴 CONFORM + 필수 검증 exit 0 또는 검증 수단 없음 + 정적 대조 + change-safety GO`가 모두 충족될 때만. |
+| **HOLD** | 바뀐 파일을 검사하고 실행 가능한 검증 명령을 실행하지 않았거나, 어댑터가 UNSUPPORTED이거나, PARTIAL인데 원문을 읽지 않았으면 HOLD(`UNVERIFIED`). 검증 수단이 아예 없으면 위험 변경(DB 스키마·트랜잭션·인증·공통 모듈)일 때만 HOLD. |
 | **STOP** | pattern-conformance FAIL, 필수 검증 명령 실패, 또는 즉시 STOP 트리거(평문 비밀번호/API 키 추가, SQL 인젝션 가능 패턴, 인증/인가 우회, 데이터 손실 가능 변경, 운영 전용 분기 + 검증 없음). |
 
-change-safety는 회귀 · 컨벤션 · 사이드이펙트 · 롤백 · 보안 · 테스트 6개 차원을 채점하고 `(회귀 + 컨벤션 + 사이드이펙트 + 롤백 + 보안 × 2 + 테스트) / 7`로 종합한다. GO는 종합 < 3이고 보안 점수 < 5일 때, HOLD는 종합 3~6 또는 보안 5~7, STOP은 종합 > 6 또는 보안 ≥ 8이다. `구조화 패턴 미검증` 상태에서 진행하려면 "패턴 근거가 없는 상태로 적용할까요?"를 명시적으로 확인받은 뒤에만 GO로 올린다.
+change-safety는 회귀 · 컨벤션 · 사이드이펙트 · 롤백 · 보안 · 테스트 6개 차원을 채점하고 `(회귀 + 컨벤션 + 사이드이펙트 + 롤백 + 보안 × 2 + 테스트) / 7`로 종합한다. GO는 종합 < 3이고 보안 점수 < 5일 때, HOLD는 종합 3~6 또는 보안 5~7, STOP은 종합 > 6 또는 보안 ≥ 8이다. 패턴 프로필이 없어도 이웃 파일 기준(`기준: 이웃 파일`)으로 진행하며 사용자 확인을 받지 않는다.
 
 ## 입력과 산출물
 
@@ -67,6 +67,7 @@ change-safety는 회귀 · 컨벤션 · 사이드이펙트 · 롤백 · 보안 �
 | 읽는 파일 | `.claude/patterns/pattern_profile.json`, `.claude/patterns/*.md` | 기준 패턴 선택과 폴백 |
 | 읽는 파일 | `_workspace/wiki/` 존재 여부 | 재인덱싱 후 wiki stale 인지 |
 | 읽는 파일 | 프로젝트 루트 `.env`의 `WIKI_DB_ENGINE` 등 | 허브 발행 이력 판단 |
+| 쓰는 파일 | `_workspace/reports/context_<slug>.md` | Phase 0 작업 맥락(요청·규모·변경 예정 파일·원문 확인·핵심 사실·확인하지 못한 사실). Phase 2 뒤 `## 변경 내역`이 붙고 모든 에이전트가 먼저 읽는다. |
 | 쓰는 파일 | `_workspace/reports/impact_<slug>.md` | Phase 1 영향도 리포트 |
 | 쓰는 파일 | `_workspace/reports/pattern_selection.json` | Phase 0 `pattern_profile.py select` 결과 |
 | 쓰는 파일 | `_workspace/reports/pattern_conformance_<slug>.md` | Phase 3-1 패턴 적합성 판정 |
@@ -124,7 +125,7 @@ change-safety는 회귀 · 컨벤션 · 사이드이펙트 · 롤백 · 보안 �
 - **외과적 변경 원칙이 모든 Phase에서 최우선이다.** 요청된 부분만 수정하고 인접 코드·주석·포맷을 "개선"하지 않는다. 내가 만든 orphan만 정리하며 기존 dead code는 언급하되 삭제하지 않는다. 변경된 모든 줄은 사용자 요청에 직접 연결되어야 하고, 리팩터링은 변경 후 별도 제안으로만 언급한다.
 - **모델 고정.** 이 스킬과 영향 분석·패턴 검증·안전성 평가·선택적 테스트 생성/문서 동기화의 모든 Agent 호출 및 재시도는 `claude-sonnet-5`를 사용한다. `sonnet` 별칭이나 Opus 자동 승격을 사용하지 않는다.
 - **수정 요청 자체가 진행 의사다.** Phase 1 결과를 보여 주고 바로 적용한다. CRITICAL·데이터 변경 전제 미확인·해석이 갈리는 요청만 먼저 묻는다.
-- **에이전트 호출 신뢰성.** 지시한 출력 파일이 실제로 디스크에 생성됐는지 확인하고, 없거나 대기·연기 응답이면 같은 에이전트를 1회 재호출한다. 재시도까지 실패하면 진행을 멈추고 알린다. 임의로 게이트를 건너뛰지 않는다.
+- **에이전트 호출 신뢰성.** 지시한 출력 파일이 실제로 디스크에 생성됐는지 확인한다. 파일은 없지만 리포트 본문을 돌려줬으면 그 본문을 파일로 저장하고 재호출하지 않는다. 파일도 본문도 없거나 대기·연기 응답이면 같은 에이전트를 1회 재호출한다. 재시도까지 실패하면 진행을 멈추고 알린다. 임의로 게이트를 건너뛰지 않는다.
 - **잔여 백그라운드 에이전트 위생.** 이전에 방치된 에이전트가 뒤늦게 재개되어 `pattern_profile.json` 등을 덮어쓸 수 있으므로, 새 Phase 1·3-1·3-3 호출 전에 확인하고 남아 있으면 `TaskStop`으로 정리한다. 작업 범위 밖의 승인 요청은 승인하지 않는다.
 - **인덱스만 믿고 결론 내리지 않는다.** 인덱스 결과는 반드시 실물과 대조하며, stale일 수 있는 구간에서는 특히 그렇다.
 - **미실행은 PASS가 아니다.** `detected`가 비어 있으면(`count: 0`) PASS로 적지 않고 `검증 수단 없음`으로 적는다. 바뀐 파일 종류를 검사하지 않는 명령(JSP·XML 변경에 Java 컴파일 등)과 도구가 설치되지 않아 실행되지 않는 명령도 `검증 수단 없음`이다. 이때 에이전트가 SQL 컬럼 순서 ↔ 화면 매핑 같은 정적 대조를 직접 하고, 배포 뒤에야 알 수 있는 것은 `배포 후 확인 권장`으로 따로 적는다(GO 조건 아님). 실행할 수 없거나 assertion까지 도달하지 못한 검사도 PASS가 아니다.
