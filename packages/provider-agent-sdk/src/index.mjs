@@ -11,7 +11,6 @@
  * 스킬 본문과 플러그인은 플러그인 모드와 같은 경로(plugins 옵션)로 실린다.
  */
 import { readFileSync } from "node:fs";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import {
   MODEL_BY_TIER,
   RESPONSE_STYLE,
@@ -151,6 +150,11 @@ export class AgentSdkProvider {
         : { behavior: "deny", message: decision.message };
     };
 
+    /*
+     * SDK 는 선택 의존성이다 — 폐쇄망에서 설치 파일 하나로 옮기면 없을 수 있다. 쓸 때만 불러오고,
+     * 없으면 selectProvider 가 애초에 이 연결을 고르지 않는다(claude -p 연결로 간다).
+     */
+    const { query } = await import("@anthropic-ai/claude-agent-sdk");
     const stream = query({
       prompt,
       options: {

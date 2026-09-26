@@ -1,18 +1,32 @@
 /*
  * Provider 선택.
  *
- * 두 경로가 공존한다.
+ * 세 경로가 공존한다.
  *   anthropic   Messages API. Core의 ToolGateway가 도구를 실행한다. ANTHROPIC_API_KEY 필요.
- *   claude-cli  설치된 claude CLI에 위임. 구독 인증을 그대로 쓴다. 키 불필요.
+ *   agent-sdk   Claude Agent SDK. 질문·승인을 콜백으로 직접 받는다. 구독 인증. 키 불필요. (기본)
+ *   claude-cli  설치된 claude CLI 에 -p 로 위임. SDK 가 없을 때(폐쇄망 설치 등) 쓴다.
  *
- * 기본값은 "쓸 수 있는 쪽"이다. 키가 있으면 Gateway가 통제하는 경로를 택하고,
- * 없으면 claude CLI로 간다. 둘 다 없으면 무엇이 없는지 구체적으로 말하고 멈춘다.
+ * 기본값은 "쓸 수 있는 쪽"이다. 키가 있으면 Gateway가 통제하는 경로, 없으면 SDK, SDK 가 설치돼
+ * 있지 않으면 claude CLI 로 간다. 다 없으면 무엇이 없는지 구체적으로 말하고 멈춘다.
  */
 import { AnthropicProvider } from "../../provider-anthropic/src/index.mjs";
 import { ClaudeCliProvider, probeClaudeCli } from "../../provider-claude-cli/src/index.mjs";
 import { AgentSdkProvider } from "../../provider-agent-sdk/src/index.mjs";
 import { hostPlugins, pluginSkillNames } from "../../provider-agent-sdk/src/host-settings.mjs";
 import { ui, REPO_ROOT } from "./runtime.mjs";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+/*
+ * Agent SDK 가 설치돼 있는가. 선택 의존성이라 폐쇄망에서 설치 파일 하나로 옮기면 없을 수 있다.
+ * 개발 폴더(npm link)·전역 설치는 이 설치본의 node_modules 에, 다른 패키지의 의존성으로 깔렸으면
+ * 한 단계 위(끌어올려진 node_modules)에 있다.
+ * @param {string} [root]
+ */
+export function sdkInstalled(root = REPO_ROOT) {
+  const rel = join("@anthropic-ai", "claude-agent-sdk", "package.json");
+  return [join(root, "node_modules", rel), join(dirname(root), rel)].some((p) => existsSync(p));
+}
 
 /** @typedef {"anthropic" | "claude-cli" | "agent-sdk" | "auto"} ProviderName */
 
@@ -32,7 +46,10 @@ export function selectProvider(opts = {}) {
     return ANTHROPIC();
   }
 
-  if (wanted === "agent-sdk") return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
+  if (wanted === "agent-sdk") {
+    if (!sdkInstalled()) return { error: "Claude Agent SDK 가 설치되어 있지 않습니다 — 인터넷이 되는 곳에서 axnavi 를 다시 설치하거나 --provider claude-cli 로 실행하세요." };
+    return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
+  }
 
   if (wanted === "claude-cli") {
     const probe = probeClaudeCli();
@@ -43,7 +60,11 @@ export function selectProvider(opts = {}) {
   // auto — 키가 있으면 통제력이 더 큰 쪽을 먼저 택한다.
   if (hasApiKey()) return ANTHROPIC();
   // 키가 없으면 SDK 연결이 기본이다. 시작 화면·doctor 처럼 이름만 보는 호출도 같은 답을 받아야 한다.
-  return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
+  if (sdkInstalled()) return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
+  // SDK 가 없으면(폐쇄망 설치 등) 설치된 claude CLI 로 간다.
+  const probe = probeClaudeCli();
+  if (probe.ok) return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp);
+  return { error: authHelp("ANTHROPIC_API_KEY도 없고, Claude Agent SDK 도 claude CLI 도 찾지 못했습니다.") };
 }
 
 /*

@@ -84,7 +84,8 @@
 
 **설치가 가볍습니다.**
 필수 런타임 의존성이 0입니다. Claude 구독이 있으면 API 키 없이 추가 비용 없이 씁니다.
-사내망에서도 HTTPS 한 번으로 설치되고, 폐쇄망은 파일 하나로 옮깁니다.
+기본 연결인 Claude Agent SDK 는 선택 의존성이라 인터넷이 되면 함께 설치되고(Claude Code 실행 파일 포함, 약 240MB),
+폐쇄망에 파일 하나로 옮겨 SDK 가 없으면 설치된 `claude` CLI 연결로 자동으로 돕니다.
 
 **Windows 에서 편하게 씁니다.**
 경로에 공백과 한글이 있어도 되고, 한글 폭을 정확히 계산해 화면이 깨지지 않습니다.
@@ -98,7 +99,7 @@
 | 항목 | 버전 | 용도 |
 |---|---|---|
 | **Node.js** | 18.18 이상 (20 LTS 권장) | 실행 |
-| **`claude` CLI** | 2.x | Claude 구독으로 실행 ([인증](#인증)) |
+| **`claude` CLI** | 2.x | 구독 로그인([인증](#인증)). SDK 가 없는 설치(폐쇄망)에서는 실행도 맡습니다 |
 | git | 아무 버전 | 변경 범위 표시 |
 | Python | 3.8 이상 | wiki 생성 · 패턴 프로필 검증 등 일부 스킬 |
 
@@ -146,7 +147,7 @@ axnavi doctor
   ✓ Node       v20.20.2
   ✓ Python     python 3.12.9
   ✓ git        git version 2.46.0
-  ✓ 실행 경로   claude-cli 2.1.280 · 구독 인증
+  ✓ 실행 경로   agent-sdk · 구독 인증 · 질문·승인은 axnavi 화면이 직접 받습니다
   ✓ 인덱스      최신
   ✓ 인덱서      v1.12.0
   ✓ 에이전트    19개
@@ -376,7 +377,7 @@ SQL 주석과 엔드포인트 설명까지 훑어서 찾습니다.
 ────────────────────────────────────────────────────────────────────────────
 ❯ /index refresh▏
 ────────────────────────────────────────────────────────────────────────────
-⠹ harness-init › analyzer · 8m 7s · ↓ 30.6k tokens · Read   claude-cli · deep · Ctx 27.1k
+⠹ harness-init › analyzer · 8m 7s · ↓ 30.6k tokens · Read   agent-sdk · deep · Ctx 27.1k
 ```
 
 작업 중에 입력한 요청은 그대로 보이고, 지금 작업이 끝나면 순서대로 실행됩니다.
@@ -467,7 +468,7 @@ axnavi skill run <이름> <요청>   스킬 실행
 | `--root <경로>` | 현재 폴더 | 프로젝트 루트 |
 | `--index-dir <경로>` | `<root>/_workspace/index` | 인덱스 위치 |
 | `--tier <등급>` | `Auto` | `Auto` · `Standard` · `Full` |
-| `--provider <이름>` | `auto` | `auto` · `anthropic` · `claude-cli` |
+| `--provider <이름>` | `auto` | `auto` · `anthropic` · `agent-sdk` · `claude-cli` |
 | `--verbose` | 꺼짐 | 도구 목록 · 토큰 내역 · 감사 기록 경로 |
 
 **대화형 모드의 슬래시 명령** — `/` 를 치면 아래 목록과 스킬 24종이 함께 뜹니다.
@@ -501,6 +502,13 @@ axnavi
 
 여러 에이전트의 병렬 실행, 하네스 초기화 같은 오케스트레이터 스킬, 파일 수정 전 승인 창이
 모두 이 경로에서 동작합니다.
+
+연결은 두 가지이고 axnavi 가 알아서 고릅니다.
+
+| 연결 | 언제 | 특징 |
+|---|---|---|
+| `agent-sdk` (기본) | Claude Agent SDK 가 설치돼 있을 때 | 질문·승인을 axnavi 화면이 직접 받습니다. 자동 모드(안전한 명령은 묻지 않음)를 씁니다. Claude Code 판이 axnavi 판에 고정됩니다 |
+| `claude-cli` | SDK 가 없을 때(폐쇄망 설치 등) | 설치된 `claude` 를 `-p` 로 부릅니다. `--provider claude-cli` 로 직접 고를 수도 있습니다 |
 
 ### Anthropic API 키
 
