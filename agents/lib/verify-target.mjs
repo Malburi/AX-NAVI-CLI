@@ -244,10 +244,17 @@ function extractFailLines(output, limit) {
  * 끝났고, change-safety 는 이를 "검증 미실행(UNVERIFIED)" 으로 읽어 코드와 무관하게 HOLD 했다. 메시지는
  * 셸·로캘마다 달라 글로 판단하면 흔들린다 — 실행 전에 PATH 에서 찾아 본다.
  */
+const SHELL_BUILTINS = new Set(["cd", "set", "call", "pushd", "popd", "echo", "export", "source", ".", "env", "setlocal", "if", "for", "start"]);
+
 export function commandAvailable(root, cmd) {
   const quoted = cmd.trim().match(/^"([^"]+)"/);
   const token = quoted ? quoted[1] : (cmd.trim().match(/^(\S+)/) || [])[1] || "";
   if (!token) return { ok: false, tool: "" };
+  /*
+   * 셸 내장 명령·환경 변수 대입으로 시작하면 PATH 에 실행 파일이 없는 게 정상이다. 실행해 본다.
+   * 안 그러면 `cd sub && npm test` 가 "도구 없음" 이 되어 실제로 실패하는 테스트가 가려진다(리뷰 실측).
+   */
+  if (SHELL_BUILTINS.has(token.toLowerCase()) || /^[A-Za-z_][\w]*=/.test(token)) return { ok: true, tool: token };
   if (/[\\/]/.test(token)) {
     const path = resolve(root, token);
     const exts = process.platform === "win32" ? ["", ".cmd", ".bat", ".exe"] : [""];

@@ -18,7 +18,7 @@ process.stdin.on("end", () => {
     return;
   }
   const input = event.tool_input ?? {};
-  // 값이 없으면 Claude 기본값(뒤에서 실행)을 따른다 — 명시적 false 만 그대로 둔다.
+  // 값이 없어도 바꾼다 — Claude 기본값이 뒤에서 실행이다. 명시적 false 만 그대로 둔다.
   if (input["run_in_background"] === false) return;
   process.stdout.write(
     JSON.stringify({

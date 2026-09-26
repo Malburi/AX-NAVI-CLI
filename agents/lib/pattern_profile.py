@@ -202,6 +202,14 @@ def select_profiles(data, targets, layer=None, module=None, limit=3):
 SKIP_DIRS = {"node_modules", "_workspace", "bin", "obj", "target", "build", "dist", "vendor", "bower_components"}
 
 
+def _inside(root, path):
+    """문자열 앞부분 비교는 C:\\proj 가 C:\\proj-old 를 품는 것으로 본다. 경로 단위로 비교한다."""
+    try:
+        return os.path.commonpath([os.path.abspath(root), os.path.abspath(path)]) == os.path.abspath(root)
+    except ValueError:  # 드라이브가 다르면
+        return False
+
+
 def neighbor_references(root, targets, limit=3):
     """프로필로 기준을 못 고를 때 쓰는 결정적 기준 파일.
 
@@ -220,8 +228,9 @@ def neighbor_references(root, targets, limit=3):
         picked.append({"path": rel, "reason": reason})
 
     for target in targets:
-        rel = (target or "").replace("\\", "/").strip("/")
-        if not rel:
+        # ./src/a.jsp 와 src/a.jsp 가 따로 잡혀 같은 파일이 두 번 나오던 것을 막는다(리뷰 실측).
+        rel = os.path.normpath(target or "").replace("\\", "/").strip("/") if target else ""
+        if not rel or rel == ".":
             continue
         ext = os.path.splitext(rel)[1].lower()
         absolute = os.path.join(root, rel)
@@ -233,7 +242,7 @@ def neighbor_references(root, targets, limit=3):
             folder = os.path.dirname(folder)
         for depth, reason in ((0, "같은 폴더의 같은 종류 파일"), (1, "상위 폴더의 같은 종류 파일")):
             base = folder if depth == 0 else os.path.dirname(folder)
-            if not base or not os.path.isdir(base) or not os.path.abspath(base).startswith(os.path.abspath(root)):
+            if not base or not os.path.isdir(base) or not _inside(root, base):
                 continue
             if os.path.basename(base) in SKIP_DIRS or os.path.basename(base).startswith("."):
                 continue

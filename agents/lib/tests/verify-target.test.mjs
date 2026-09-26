@@ -127,6 +127,18 @@ export async function test(register, assert) {
     }
   });
 
+  register("run은 셸 내장 명령으로 시작하는 명령을 도구 없음으로 가리지 않고 실제로 실행한다", () => {
+    const root = mkdtempSync(join(tmpdir(), "vt-builtin-"));
+    try {
+      const res = runCli(["run", "--root", root, "--cmd", 'cd . && node -e "process.exit(4)"']);
+      const out = JSON.parse(res.stdout);
+      assert.equal(out.overall, "fail", "실패하는 명령이 '도구 없음'으로 가려졌다 " + res.stdout);
+      assert.equal(out.commands[0].exit, 4, res.stdout);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("run은 실패 명령에 overall fail·exit 2·실패 라인만 반환", () => {
     const root = mkdtempSync(join(tmpdir(), "vt-fail-"));
     try {
