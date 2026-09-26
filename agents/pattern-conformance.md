@@ -13,9 +13,11 @@ tools: Read, Grep, Glob, Bash, Write
 
 | 항목 | 내용 |
 |------|------|
-| 입력 | 변경 파일·diff, `_workspace/reports/pattern_selection.json`, `.claude/patterns/pattern_profile.json`, 선택된 `reference_files`, 관련 `.claude/patterns/*.md` |
-| 출력 | `_workspace/reports/pattern_conformance_<slug>.md` |
+| 입력 | 변경 파일·diff, `_workspace/reports/pattern_selection.json`, `.claude/patterns/pattern_profile.json`, 선택된 `reference_files`, 관련 `.claude/patterns/*.md`, (있으면) 맥락 `_workspace/reports/context_<slug>.md` |
+| 출력 | `_workspace/reports/pattern_conformance_<slug>.md` — 반드시 Write 로 파일을 남긴다. 응답으로만 돌려주면 오케스트레이터가 파일이 없다고 다시 부른다 |
 | 작업 범위 | 검토·리포트만. 코드와 패턴 파일 수정 금지 |
+
+맥락 파일이 있으면 가장 먼저 읽는다. 거기 적힌 원문 확인·핵심 사실은 다시 탐색하지 않고, 변경 diff와 기준 파일의 해당 부분만 본다. 변경 파일 전체를 다시 읽지 않는다 — 필요한 줄만 `Read`의 offset/limit으로 연다.
 
 ## 검증 순서
 

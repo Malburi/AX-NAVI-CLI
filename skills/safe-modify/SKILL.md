@@ -100,6 +100,28 @@ python "${CLAUDE_PLUGIN_ROOT}/agents/lib/pattern_profile.py" select --root "[프
 
 프로필이 없거나 맞는 프로필이 없으면 `select`가 `basis: "neighbors"`와 `reference_files`(대상 파일 자신 → 같은 폴더 → 상위 폴더의 같은 종류 파일)를 돌려준다. 그 파일들의 원문을 읽어 기준으로 삼고 리포트에 `기준: 이웃 파일`을 표시한다. 사용자에게 기준을 고르게 하지 않는다. `reference_files`까지 비어 있을 때(같은 종류 파일이 주변에 하나도 없음)만 신규 파일 생성 전에 pattern-extractor를 먼저 실행한다.
 
+### 작업 맥락 파일과 규모 판정
+
+서브에이전트는 새 대화로 시작해 앞 단계가 읽은 것을 모른다. 실측(컬럼 1개 추가, 24분): 같은 JSP·SQL·서비스를 오케스트레이터·impact-analyzer·pattern-conformance·change-safety가 네 번 다시 읽었고, 도구 호출 한 번이 5~15초라 그것만으로 수 분이 들었다. Phase 0에서 확인한 것을 파일 하나에 적어 모든 호출에 넘긴다.
+
+`_workspace/reports/context_<slug>.md`에 Write 한다(같은 이름의 이전 파일은 덮어쓴다 — 이전 요청의 것일 수 있다).
+
+```
+# 작업 맥락: <slug>
+요청: [사용자 요청 원문]
+규모: small | normal  (판정 근거 한 줄)
+변경 예정 파일: [경로 목록]
+원문 확인: [경로:줄 범위 — 무엇을 확인했는지] (Phase 0에서 읽은 것 전부)
+핵심 사실: [SQL ID, SELECT 컬럼 순서, 이 SQL·화면을 쓰는 다른 파일, 파일 인코딩, 어댑터 판정, 선택된 기준 파일 등]
+확인하지 못한 사실: [없음 또는 목록]
+```
+
+**규모 `small`**: 변경 예정 파일이 3개 이하이고, API 계약(엔드포인트 경로·요청/응답 필드)·DB 스키마(DDL)·트랜잭션 경계·인증/인가·공통 모듈을 바꾸지 않는다. 하나라도 걸리면 `normal`이다.
+
+Phase 2 적용 뒤 같은 파일 끝에 `## 변경 내역`(파일별 요지, 정적 대조 결과)을 덧붙인다.
+
+이전 실행이 남긴 `impact_<slug>.md`·`pattern_conformance_<slug>.md`·`safety_<slug>.md`는 재사용하지 않는다. 이번 요청의 결과가 아니다.
+
 ---
 
 ## Phase 1: 사전 영향 분석
@@ -107,7 +129,7 @@ python "${CLAUDE_PLUGIN_ROOT}/agents/lib/pattern_profile.py" select --root "[프
 변경 대상이 명확하면 → `analyze-impact` 호출 (위의 analyze-impact 스킬 그대로):
 - 변경 대상 정규화
 - 인덱스 준비
-- impact-analyzer 실행 → `_workspace/reports/impact_<slug>.md`
+- impact-analyzer 실행 → `_workspace/reports/impact_<slug>.md`. 프롬프트에 `맥락: _workspace/reports/context_<slug>.md`와 `규모: small|normal`을 넣는다.
 
 영향도 결과를 사용자에게 보여 주고 **묻지 않고 진행**한다 — 사용자는 이미 수정을 요청했다:
 
@@ -143,6 +165,16 @@ Phase 1 결과를 보여 준 뒤:
 
 ## Phase 3: 사후 패턴·실행·안전성 평가
 
+**순서.** `normal`은 3-1 → 3-2 → 3-3 차례로 한다. `small`은 3-2(검증 명령·정적 대조, 1분 안팎)를 먼저 하고, **3-1과 3-3을 한 메시지에 두 Agent 호출로 함께 부른다**(동시에 돈다). 둘 다 "바뀐 코드를 보고 판정"하는 일이라 서로 기다릴 이유가 작다. 이때 change-safety 프롬프트의 패턴 적합성 자리에는 `병렬 합산`을 넣고, 두 결과를 오케스트레이터가 합친다.
+
+| pattern-conformance | 최종 결정 |
+|---|---|
+| CONFORM | change-safety 결정 그대로 |
+| HOLD | 지적된 차이를 고치고 3-1만 한 번 재검증. 그래도 HOLD면 최소 HOLD |
+| FAIL | 고친 뒤 3-1·3-3 재실행. 그래도 FAIL이면 STOP |
+
+모든 호출 프롬프트에 `맥락: _workspace/reports/context_<slug>.md`를 넣는다.
+
 ### 3-1. 패턴 적합성 검증
 
 `pattern-conformance` 에이전트를 호출한다.
@@ -153,7 +185,7 @@ Phase 1 결과를 보여 준 뒤:
 Agent(
   subagent_type="ax-navi:pattern-conformance",
   description="변경 코드 패턴 적합성 검증",
-  prompt="<변경 파일: [목록]. 선택 결과: _workspace/reports/pattern_selection.json. 출력: _workspace/reports/pattern_conformance_<slug>.md>",
+  prompt="<변경 파일: [목록]. 맥락: _workspace/reports/context_<slug>.md. 선택 결과: _workspace/reports/pattern_selection.json. 출력: _workspace/reports/pattern_conformance_<slug>.md>",
   model="sonnet"
 )
 ```
@@ -188,7 +220,7 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝
 Agent(
   subagent_type="ax-navi:change-safety",
   description="변경 안전성 평가",
-  prompt="<변경 파일: [목록]. mode: [감지된 모드]. impact 리포트: _workspace/reports/impact_<slug>.md. 패턴 적합성: _workspace/reports/pattern_conformance_<slug>.md. 검증 결과: verify-target run의 commands(cmd·exit·fail_lines)와 overall. 출력: _workspace/reports/safety_<slug>.md>",
+  prompt="<변경 파일: [목록]. mode: [감지된 모드]. 맥락: _workspace/reports/context_<slug>.md. impact 리포트: _workspace/reports/impact_<slug>.md. 패턴 적합성: _workspace/reports/pattern_conformance_<slug>.md (small 병렬이면 '병렬 합산'). 검증 결과: verify-target run의 commands(cmd·exit·fail_lines)와 overall. 출력: _workspace/reports/safety_<slug>.md>",
   model="sonnet"
 )
 ```

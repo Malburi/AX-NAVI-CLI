@@ -63,7 +63,7 @@ exit 1(`stale:true`)이면 재인덱싱 후 진행한다 — `reason`이 `인덱
 Agent(
   subagent_type="ax-navi:impact-analyzer",
   description="변경 영향도 분석",
-  prompt="<변경 대상: [정규화된 식별자]. 프로젝트 루트: [절대경로]. 출력: _workspace/reports/impact_<slug>.md>",
+  prompt="<변경 대상: [정규화된 식별자]. 프로젝트 루트: [절대경로]. (safe-modify에서 부를 때) 맥락: _workspace/reports/context_<slug>.md, 규모: small|normal. 출력: _workspace/reports/impact_<slug>.md>",
   model="sonnet"
 )
 ```

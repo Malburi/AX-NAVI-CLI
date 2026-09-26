@@ -19,12 +19,12 @@
 
 | 단계 | 하는 일 | 호출 에이전트·스크립트 | 사용자 개입 |
 |------|---------|------------------------|-------------|
-| Phase 0 | 운영 모드 키워드 감지, 인덱스 신선도 확인, 어댑터 커버리지 게이트, 패턴 프로필 검증·선택. | `build-index.mjs --check-stale`, `check-adapter-coverage.mjs`, `pattern_profile.py validate/select` | 재인덱싱 건너뛰기를 원하면 알린다. |
+| Phase 0 | 운영 모드 키워드 감지, 인덱스 신선도 확인, 어댑터 커버리지 게이트, 패턴 프로필 검증·선택. 확인한 파일과 사실을 `context_<slug>.md`에 적고 규모(small/normal)를 정한다. 이후 모든 에이전트가 이 파일을 먼저 읽어 같은 파일을 다시 탐색하지 않는다. | `build-index.mjs --check-stale`, `check-adapter-coverage.mjs`, `pattern_profile.py validate/select` | 재인덱싱 건너뛰기를 원하면 알린다. |
 | Phase 1 | 사전 영향 분석. [analyze-impact](/skills/analyze-impact.md) 절차 그대로 실행해 `impact_<slug>.md`를 만들고 결과를 보여 준 뒤 묻지 않고 진행한다. 확정 못 한 사실은 보고의 `확인하지 못한 사실`로 남긴다. | [impact-analyzer](/agents/impact-analyzer.md) | CRITICAL이거나, 데이터 변경·되돌리기 어려운 변경의 전제를 확인하지 못했거나, 요청 해석이 갈릴 때만 묻는다. |
 | Phase 2 | 변경 적용. 사용자가 직접 작성하거나 자연어 설명을 어시스턴트가 Edit/Write로 적용한다. `pattern_selection.json`의 선택 프로필과 `reference_files`를 먼저 읽는다. | Edit/Write | 변경 내용을 설명하거나 직접 작성한다. |
 | Phase 3-1 | 패턴 적합성 검증. FAIL이면 수정 후 재검증, HOLD면 기준 파일에 맞춰 고치고 한 번 재검증한다. | [pattern-conformance](/agents/pattern-conformance.md) | 없음 |
 | Phase 3-2 | 검증 명령 실행. `detect`로 lint/typecheck/test/build 후보를 확보하고, 변경 범위에 맞는 가장 작은 명령을 `run`으로 실제 실행한다. | `verify-target.mjs detect/run` | `detected` 목록을 보고 고른다. |
-| Phase 3-3 | 변경 안전성 평가. 변경 파일·mode·impact 리포트·패턴 적합성·검증 결과를 넘긴다. | [change-safety](/agents/change-safety.md) | 없음 |
+| Phase 3-3 | 변경 안전성 평가. 변경 파일·mode·impact 리포트·패턴 적합성·검증 결과를 넘긴다. 규모 small(파일 3개 이하, API 계약·DB 스키마·트랜잭션·인증·공통 모듈 무관)이면 3-2를 먼저 하고 3-1과 3-3을 동시에 돌려 결과를 합친다. | [change-safety](/agents/change-safety.md) | 없음 |
 | Phase 4 | 결정 + 후속 조치. 차원별 점수, 종합 위험도, 패턴 적합성, 검증 증거, 결정(GO/HOLD/STOP)을 보고한다. | 리포트 읽기 | HOLD면 보완 후 "이 변경 다시 평가해줘"로 재호출한다. |
 | Phase 5 | 인덱스·위키 증분 갱신. GO 후 기본 실행한다. | `build-index.mjs --mode incremental`, [generate-wiki](/skills/generate-wiki.md) | 허브 발행 이력이 있으면 "허브 발행본도 갱신할까요?"를 1회 묻는다. 기본은 갱신하지 않음이다. |
 
