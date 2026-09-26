@@ -185,13 +185,13 @@ export function renderCommandMenu(commands, ui) {
   }
 
   lines.push("");
-  lines.push(`  ${ui.bold("스킬")} ${ui.dim("— /<이름> 뒤에 요청을 쓰면 그대로 전달된다")}`);
+  lines.push(`  ${ui.bold("스킬")} ${ui.dim("— /<이름> 뒤에 요청을 쓰면 그대로 전달됩니다")}`);
   for (const c of skills) {
     lines.push(`    ${ui.cyan(`/${c.name}`.padEnd(18))} ${ui.dim(c.summary)}`);
   }
 
   lines.push("");
-  lines.push(`  ${ui.dim("Tab 자동완성. 슬래시 없이 쓰면 요청 내용으로 에이전트를 고른다.")}`);
+  lines.push(`  ${ui.dim("Tab 자동완성. 슬래시 없이 쓰면 요청 내용으로 에이전트를 고릅니다.")}`);
   lines.push("");
   return lines.join("\n");
 }

@@ -355,7 +355,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
       return;
     }
     exitArmed = true;
-    process.stdout.write(`\n${ui.dim("  한 번 더 Ctrl+C 를 누르면 나간다 (또는 /exit)")}\n`);
+    process.stdout.write(`\n${ui.dim("  한 번 더 Ctrl+C 를 누르면 나갑니다(또는 /exit)")}\n`);
     rl.prompt();
   });
 
@@ -380,7 +380,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
       if (key?.ctrl && key.name === "o") {
         const item = takeFolded();
         if (!item) {
-          process.stdout.write(`${NL}  ${ui.dim("펼쳐 볼 것이 없다.")}${NL}`);
+          process.stdout.write(`${NL}  ${ui.dim("펼쳐 볼 것이 없습니다.")}${NL}`);
         } else {
           const body = item.text.split(NL).map((l) => `  ${ui.dim(l)}`).join(NL);
           process.stdout.write(`${NL}  ${ui.cyan("⎿")} ${ui.bold(item.label)} ${ui.dim("전문")}${NL}${body}${NL}`);
@@ -463,7 +463,7 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
         );
       }
     } else {
-      process.stdout.write(`  ${ui.yellow("이어갈 세션이 없습니다")} ${ui.dim("— 새 대화로 시작한다.")}\n\n`);
+      process.stdout.write(`  ${ui.yellow("이어갈 세션이 없습니다")} ${ui.dim("— 새 대화로 시작합니다.")}\n\n`);
     }
   }
 
@@ -746,17 +746,17 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
 function statusLines(paths, state, picked) {
   /** @type {string[]} */
   const lines = [];
-  lines.push(row("Project", `${ui.bold(basename(paths.root))}  ${ui.dim(paths.root)}`));
+  lines.push(row("프로젝트", `${ui.bold(basename(paths.root))}  ${ui.dim(paths.root)}`));
 
   const stack = state.hasIndex ? readStack(paths.indexDir) : null;
   if (stack) {
-    lines.push(row("Stack", `${stack.stack}  ${ui.dim(`· ${stack.files} files · tier ${stack.tier}`)}`));
+    lines.push(row("스택", `${stack.stack}  ${ui.dim(`· ${stack.files} 파일 · tier ${stack.tier}`)}`));
   }
 
   if (state.hasIndex) {
     const st = indexStaleness(paths.root);
     lines.push(
-      row("Index", st.stale ? `${ui.yellow("갱신 필요")}  ${ui.dim(st.reason)}` : `${ui.green("Ready")}  ${ui.dim(st.reason)}`),
+      row("인덱스", st.stale ? `${ui.yellow("갱신 필요")}  ${ui.dim(st.reason)}` : `${ui.green("준비됨")}  ${ui.dim(st.reason)}`),
     );
   } else {
     /*
@@ -767,13 +767,13 @@ function statusLines(paths, state, picked) {
      */
     const found = discoverRoots(paths.root).roots;
     if (found.length) {
-      lines.push(row("Index", `${ui.green("Ready")}  ${ui.dim(`저장소 ${found.length}개`)}`));
+      lines.push(row("인덱스", `${ui.green("준비됨")}  ${ui.dim(`저장소 ${found.length}개`)}`));
       for (const r of found) {
         const tag = r.hasPair ? ui.dim("  ← 페어") : "";
-        lines.push(row("", `${ui.cyan(r.name)}  ${ui.dim(`${r.files.toLocaleString()} files · tier ${r.tier}`)}${tag}`));
+        lines.push(row("", `${ui.cyan(r.name)}  ${ui.dim(`${r.files.toLocaleString()} 파일 · tier ${r.tier}`)}${tag}`));
       }
     } else {
-      lines.push(row("Index", `${ui.yellow("없음")}  ${ui.dim("— /index build 로 만드세요 (LLM·API 키 불필요)")}`));
+      lines.push(row("인덱스", `${ui.yellow("없음")}  ${ui.dim("— /index build 로 만드세요 (LLM·API 키 불필요)")}`));
     }
   }
 
@@ -783,14 +783,14 @@ function statusLines(paths, state, picked) {
    * 썼는데, claude 구독으로 도는 경우에는 그게 거짓말이다.
    */
   if ("error" in picked) {
-    lines.push(row("Runtime", `${ui.red("없음")}  ${ui.dim("— 아래 안내 참고")}`));
+    lines.push(row("실행 경로", `${ui.red("없음")}  ${ui.dim("— 아래 안내 참고")}`));
   } else {
     const [head, ...tail] = picked.short.split(" · ");
-    lines.push(row("Runtime", `${ui.green(head ?? "")}  ${ui.dim(tail.join(" · "))}`));
+    lines.push(row("실행 경로", `${ui.green(head ?? "")}  ${ui.dim(tail.join(" · "))}`));
   }
 
   if (state.hasPluginHarness) {
-    lines.push(row("Harness", `${ui.green("플러그인 하네스 감지됨")}  ${ui.dim("· CLAUDE.md + .claude/")}`));
+    lines.push(row("하네스", `${ui.green("플러그인 하네스 감지됨")}  ${ui.dim("· CLAUDE.md + .claude/")}`));
   }
 
   lines.push("");
@@ -897,7 +897,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
 
       const mode = modeOf(sessionMode());
       const lines = MODES.map((m) => `  ${m.id === mode.id ? ui.cyan("❯") : " "} ${ui.cyan(m.label.padEnd(8))} ${ui.dim(m.hint)}${m.caveat ? ui.dim(`  (${m.caveat})`) : ""}`);
-      process.stdout.write(`${lines.join(NL)}${NL}  ${ui.dim("Shift+Tab 으로 돌리거나 /mode <이름> 으로 바로 지정한다.")}${NL}`);
+      process.stdout.write(`${lines.join(NL)}${NL}  ${ui.dim("Shift+Tab 으로 돌리거나 /mode <이름> 으로 바로 지정합니다.")}${NL}`);
       return 0;
     }
 
@@ -944,7 +944,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
         out.push(`  ${" ".repeat(r.id.length)}  ${ui.dim(r.title || "(제목 없음)")}`);
       }
       out.push("");
-      out.push(`  ${ui.dim("/resume 으로 바로 돌아간다. 밖에서는 axnavi --resume <id> · --continue 는 가장 최근 것.")}`);
+      out.push(`  ${ui.dim("/resume 으로 바로 돌아갑니다. 밖에서는 axnavi --resume <id>, 가장 최근 대화는 --continue 입니다.")}`);
       out.push("", "");
       process.stdout.write(out.join("\n"));
       return 0;
@@ -953,7 +953,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
     case "context": {
       const info = onContext?.();
       if (!info) {
-        process.stdout.write(`  ${ui.dim("진행 중인 대화 없음. 뭐든 물어보면 시작된다.")}\n`);
+        process.stdout.write(`  ${ui.dim("진행 중인 대화가 없습니다. 무엇이든 물어보면 시작됩니다.")}\n`);
         return 0;
       }
       const resume = info.sessionId
@@ -967,7 +967,7 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
           `  ${ui.dim("턴")}        ${info.turns}`,
           `  ${ui.dim("이어가기")}  ${resume}`,
           "",
-          `  ${ui.dim("/new 로 대화를 끊는다. 주제가 바뀌면 끊는 편이 싸다.")}`,
+          `  ${ui.dim("/new 로 대화를 새로 시작합니다. 주제가 바뀌면 새로 시작하는 편이 비용이 적습니다.")}`,
           "",
           "",
         ].join("\n"),

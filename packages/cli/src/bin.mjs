@@ -73,7 +73,7 @@ function parseArgs(argv) {
     else if (arg === "--provider") {
       const value = argv[++i];
       if (value !== "auto" && value !== "anthropic" && value !== "claude-cli" && value !== "agent-sdk") {
-        throw new Error(`--provider 값이 올바르지 않다: ${value} (auto | anthropic | claude-cli | agent-sdk)`);
+        throw new Error(`--provider 값이 올바르지 않습니다: ${value} (auto | anthropic | claude-cli | agent-sdk)`);
       }
       out.provider = value;
     }

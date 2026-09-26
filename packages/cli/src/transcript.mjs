@@ -237,7 +237,7 @@ export function renderCall({ tool, input, result, isError, pending, root, depth 
   const lines = [`${pad}${bullet} ${ui.bold(name)}${ui.dim(shown)}`];
 
   if (pending) {
-    lines.push(clipToWidth(`${pad}${ui.dim("  ⎿  (결과를 받지 못했다)")}`, cap));
+    lines.push(clipToWidth(`${pad}${ui.dim("  ⎿  (결과를 받지 못했습니다)")}`, cap));
     return lines;
   }
 

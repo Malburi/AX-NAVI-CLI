@@ -408,7 +408,7 @@ export async function cmdSkill(root, argv, providerName) {
  */
 export async function runSkill(root, name, prompt, providerName, ctx = {}) {
   if (!existsSync(join(SKILLS_DIR, name, "SKILL.md"))) {
-    process.stderr.write(`그런 스킬이 없다: ${name} (axnavi skill list)\n`);
+    process.stderr.write(`그런 스킬이 없습니다: ${name} (axnavi skill list)\n`);
     return 2;
   }
   const { skill, via } = await resolveSkill(SKILLS_DIR, name);

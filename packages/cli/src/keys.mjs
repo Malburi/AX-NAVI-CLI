@@ -20,7 +20,7 @@ const ESC = String.fromCharCode(27);
  */
 export function cmdKeys() {
   if (!process.stdin.isTTY) {
-    process.stderr.write("터미널에서 직접 실행해야 한다 (파이프로는 키를 받을 수 없다).\n");
+    process.stderr.write("터미널에서 직접 실행해야 합니다(파이프로는 키를 받을 수 없습니다).\n");
     return Promise.resolve(2);
   }
 

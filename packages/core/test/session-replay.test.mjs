@@ -44,7 +44,7 @@ test("질문·답·도구 호출과 결과를 순서대로 그리고, 결과를 
     assert.match(text, /● QueryIndex/, "mcp 접두어를 걷고 도구 호출을 그린다");
     assert.match(text, /결과/);
     assert.ok(!text.includes("**"), "마크다운을 서식으로 바꾸지 않았다");
-    assert.match(text, /● Bash[\s\S]*결과를 받지 못했다/, "결과 없는 호출을 숨겼다");
+    assert.match(text, /● Bash[\s\S]*결과를 받지 못했습니다/, "결과 없는 호출을 숨겼다");
     assert.ok(text.indexOf("수강신청 어디") < text.indexOf("QueryIndex"), "순서가 뒤집혔다");
   } finally {
     rmSync(dir, { recursive: true, force: true });

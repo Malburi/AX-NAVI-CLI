@@ -93,7 +93,7 @@ test("실패와 성공을 표시로 가른다", () => {
 
 test("결과를 못 받고 끝난 호출은 그 사실을 밝힌다 — 조용히 버리지 않는다", () => {
   const lines = render({ pending: true, result: undefined });
-  assert.match(lines.join("\n"), /받지 못했다/);
+  assert.match(lines.join("\n"), /받지 못했습니다/);
 });
 
 test("출력이 없어도 빈칸으로 두지 않는다", () => {

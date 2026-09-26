@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ui } from "./runtime.mjs";
+import { visibleLength } from "./width.mjs";
 
 const C = (/** @type {string} */ code, /** @type {string} */ text) =>
   process.stdout.isTTY && !process.env["NO_COLOR"] ? `[${code}m${text}[0m` : text;
@@ -81,7 +82,8 @@ export function readStack(indexDir) {
  * @param {string} value
  */
 export function row(label, value) {
-  return `  ${ui.dim(label.padEnd(9))} ${value}`;
+  // 한글 라벨은 두 칸이다 — padEnd 로 채우면 값 열이 어긋난다.
+  return `  ${ui.dim(label + " ".repeat(Math.max(0, 10 - visibleLength(label))))} ${value}`;
 }
 
 /**
