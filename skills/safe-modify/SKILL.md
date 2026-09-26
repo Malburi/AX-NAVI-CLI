@@ -118,6 +118,8 @@ python "${CLAUDE_PLUGIN_ROOT}/agents/lib/pattern_profile.py" select --root "[프
 
 **규모 `small`**: 변경 예정 파일이 3개 이하이고, API 계약(엔드포인트 경로·요청/응답 필드)·DB 스키마(DDL)·트랜잭션 경계·인증/인가·공통 모듈을 바꾸지 않는다. 하나라도 걸리면 `normal`이다.
 
+규모는 **무엇을 바꾸는지**로만 정한다. 아직 확인하지 않은 위험(같은 SQL을 다른 화면도 쓸 것 같다, 뷰에 컬럼이 없을 수도 있다)은 규모를 올리는 이유가 아니다 — 그것을 찾는 것이 Phase 1 체크리스트다. 이전 실행이 남긴 `00_pipeline_status.md`·리포트의 판단도 근거로 쓰지 않는다. 실측: 이전 실행 기록의 "CRITICAL 리스크" 문구를 보고 SELECT 컬럼 하나 추가를 `normal`로 올려 영향 분석 에이전트를 다시 불렀다.
+
 Phase 2 적용 뒤 같은 파일 끝에 `## 변경 내역`(파일별 요지, 정적 대조 결과)을 덧붙인다.
 
 이전 실행이 남긴 `impact_<slug>.md`·`pattern_conformance_<slug>.md`·`safety_<slug>.md`는 재사용하지 않는다. 이번 요청의 결과가 아니다.
