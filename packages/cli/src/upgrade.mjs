@@ -14,7 +14,7 @@
  *   되돌리기 어려운 변경이다. 명령 한 줄을 보여 주고 `axnavi upgrade` 로 실행한다.
  */
 
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -64,6 +64,31 @@ export function compareVersions(a, b) {
  * @returns {Promise<string | null>}
  */
 export async function resolveLatestTag() {
+  const viaApi = await latestFromApi();
+  if (viaApi) return viaApi;
+  /*
+   * Node 의 fetch 는 HTTPS_PROXY 같은 프록시 환경변수를 보지 않는다(Node 24 에서도 NODE_USE_ENV_PROXY=1 이
+   * 있어야 본다). 외부 직접 연결이 막힌 사내망에서는 늘 "확인하지 못했습니다" 가 떴다(리뷰 실측).
+   * git 은 https_proxy 와 http.proxy 설정을 따르므로 태그 목록을 git 으로 한 번 더 물어본다.
+   */
+  return latestFromGit();
+}
+
+/** @param {Iterable<string>} names */
+function pickLatest(names) {
+  /*
+   * 목록의 첫 번째가 최신이라고 믿지 않는다 — GitHub 은 이름 순으로 주기도 한다.
+   * 직접 비교해서 고른다.
+   */
+  let best = null;
+  for (const name of names) {
+    if (!/^v?\d+\.\d+\.\d+/.test(name)) continue;
+    if (!best || compareVersions(name, best) > 0) best = name;
+  }
+  return best;
+}
+
+async function latestFromApi() {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -75,21 +100,21 @@ export async function resolveLatestTag() {
     if (!res.ok) return null;
     const tags = await res.json();
     if (!Array.isArray(tags) || !tags.length) return null;
-    /*
-     * 목록의 첫 번째가 최신이라고 믿지 않는다 — GitHub 은 이름 순으로 주기도 한다.
-     * 직접 비교해서 고른다.
-     */
-    let best = null;
-    for (const t of tags) {
-      const name = typeof t?.name === "string" ? t.name : null;
-      if (!name) continue;
-      if (!best || compareVersions(name, best) > 0) best = name;
-    }
-    return best;
+    return pickLatest(tags.map((t) => (typeof t?.name === "string" ? t.name : "")));
   } catch {
     // 폐쇄망·프록시·시간 초과. 전부 정상적인 경우다.
     return null;
   }
+}
+
+function latestFromGit() {
+  return new Promise((done) => {
+    execFile("git", ["ls-remote", "--tags", "--refs", `https://github.com/${REPO}.git`], { timeout: TIMEOUT_MS * 2, windowsHide: true }, (error, stdout) => {
+      if (error) return done(null);
+      const names = String(stdout).split(/\r?\n/).map((line) => line.split("refs/tags/")[1] ?? "").filter(Boolean);
+      done(pickLatest(names));
+    });
+  });
 }
 
 /**
