@@ -22,7 +22,7 @@
 | Phase 0 | 운영 모드 키워드 감지, 인덱스 신선도 확인, 어댑터 커버리지 게이트, 패턴 프로필 검증·선택. | `build-index.mjs --check-stale`, `check-adapter-coverage.mjs`, `pattern_profile.py validate/select` | 재인덱싱 건너뛰기를 원하면 알린다. |
 | Phase 1 | 사전 영향 분석. [analyze-impact](/skills/analyze-impact.md) 절차 그대로 실행해 `impact_<slug>.md`를 만들고 진행 여부를 묻는다. | [impact-analyzer](/agents/impact-analyzer.md) | **1. 변경 적용 후 안전성 평가까지 진행 / 2. 사전 회귀 테스트 작성 후 진행 / 3. 중단** 중 선택한다. CRITICAL이면 옵션 2를 권장한다. |
 | Phase 2 | 변경 적용. 사용자가 직접 작성하거나 자연어 설명을 어시스턴트가 Edit/Write로 적용한다. `pattern_selection.json`의 선택 프로필과 `reference_files`를 먼저 읽는다. | Edit/Write | 변경 내용을 설명하거나 직접 작성한다. |
-| Phase 3-1 | 패턴 적합성 검증. FAIL이면 수정 후 재검증, HOLD면 사용자 결정 전 GO로 진행하지 않는다. | [pattern-conformance](/agents/pattern-conformance.md) | HOLD 시 의도적 차이인지 결정한다. |
+| Phase 3-1 | 패턴 적합성 검증. FAIL이면 수정 후 재검증, HOLD면 기준 파일에 맞춰 고치고 한 번 재검증한다. | [pattern-conformance](/agents/pattern-conformance.md) | 없음 |
 | Phase 3-2 | 검증 명령 실행. `detect`로 lint/typecheck/test/build 후보를 확보하고, 변경 범위에 맞는 가장 작은 명령을 `run`으로 실제 실행한다. | `verify-target.mjs detect/run` | `detected` 목록을 보고 고른다. |
 | Phase 3-3 | 변경 안전성 평가. 변경 파일·mode·impact 리포트·패턴 적합성·검증 결과를 넘긴다. | [change-safety](/agents/change-safety.md) | 없음 |
 | Phase 4 | 결정 + 후속 조치. 차원별 점수, 종합 위험도, 패턴 적합성, 검증 증거, 결정(GO/HOLD/STOP)을 보고한다. | 리포트 읽기 | HOLD면 보완 후 "이 변경 다시 평가해줘"로 재호출한다. |
@@ -46,7 +46,7 @@
 | `PARTIAL/READ` | 인덱스만으로 확정하지 않는다. 대상과 연결된 설정·화면·스크립트·SQL 원문을 직접 읽어 확인한 뒤 진행한다. 읽은 파일은 `원문 확인` 목록으로 보고에 남는다. |
 | `UNSUPPORTED/HOLD` | 내용을 읽을 수 없는 형식이다. 지원되는 어댑터를 추가하기 전 변경 금지. |
 
-여러 파일이면 가장 낮은 커버리지를 전체 변경의 커버리지로 사용한다. 패턴 프로필이 없으면 Markdown 패턴과 동일 모듈의 유사 코드로 폴백할 수 있지만 리포트에 `구조화 패턴 미검증`을 표시하고, 신규 파일 생성이 포함된 변경은 폴백하지 않고 pattern-extractor를 먼저 실행한다.
+여러 파일이면 가장 낮은 커버리지를 전체 변경의 커버리지로 사용한다. 패턴 프로필이 없으면 `select`가 돌려준 이웃 파일(대상 자신 → 같은 폴더 → 상위 폴더)을 기준으로 삼고 리포트에 `기준: 이웃 파일`을 표시한다. 주변에 같은 종류 파일이 없을 때만 pattern-extractor를 먼저 실행한다.
 
 ### Phase 4 결정 기준
 

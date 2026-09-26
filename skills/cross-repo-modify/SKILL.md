@@ -59,7 +59,7 @@ safe-modify Phase 0과 동일한 키워드 표 적용 (`production`/`hotfix`/`le
 
 ### 패턴 프로필 검증
 
-시작 저장소와 후보 파트너 전부에서 `pattern_profile.py validate --root "[root]"`를 실행한다. 누락·실패 저장소는 pattern-extractor 재실행을 권고한다. 사용자가 계속 진행해도 그 저장소의 최종 판정은 최소 HOLD다.
+시작 저장소와 후보 파트너 전부에서 `pattern_profile.py validate --root "[root]"`를 실행한다. 누락·실패 저장소는 `select`가 돌려주는 이웃 `reference_files`(대상 자신 → 같은 폴더 → 상위 폴더)를 기준으로 진행하고, 보고에 `기준: 이웃 파일`과 pattern-extractor 재실행 권고를 남긴다.
 
 ---
 

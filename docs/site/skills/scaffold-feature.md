@@ -23,7 +23,7 @@
 | Phase 1 | 기능 명세 수집(1~2회 질문)과 유사 기능·기준 패턴 선정. `pattern_profile.py select`로 레이어별 `preferred` 프로필과 `reference_files`를 고른다. | [feature-finder](/agents/feature-finder.md), `pattern_profile.py select` | 기능명, 영향 레이어, 기존 유사 모듈, API 엔드포인트, DB 테이블 영향을 답한다. |
 | Phase 2 | 사전 영향 체크(선택). 같은 엔드포인트·SQL ID·클래스/메서드명 충돌을 점검한다. | [analyze-impact](/skills/analyze-impact.md) | 충돌 발견 시 명명 조정을 결정한다. |
 | Phase 3 | 파일 생성. 분석된 `workspace.kind`와 선택 프로필에 따라 해당 구조만 생성한다. 테스트 레이어는 test-generator가 골격만 만든다. | Edit/Write, [test-generator](/agents/test-generator.md) | 없음 |
-| Phase 4-1 | 패턴 적합성 독립 검증. CONFORM이면 다음 단계, HOLD면 사용자 확인 후 수정·재검증, FAIL이면 수정 후 재검증이며 FAIL 상태에서는 GO 보고 금지. | [pattern-conformance](/agents/pattern-conformance.md) | HOLD 시 충돌·의도적 차이를 확인한다. |
+| Phase 4-1 | 패턴 적합성 독립 검증. CONFORM이면 다음 단계, HOLD면 기준 파일에 맞춰 고치고 한 번 재검증, FAIL이면 수정 후 재검증이며 FAIL 상태에서는 GO 보고 금지. | [pattern-conformance](/agents/pattern-conformance.md) | 없음 |
 | Phase 4-2 | 프로젝트 검증 명령 실행. `detect` 후 생성 범위에 필요한 항목을 `run`으로 실제 실행해 `cmd`·`exit`·`fail_lines`를 기록한다. | `verify-target.mjs detect/run` | 없음 |
 | Phase 4-3 | 변경 안전성 평가. 생성 파일, 패턴 적합성 리포트, 실제 검증 결과를 함께 전달한다. | [change-safety](/agents/change-safety.md) | 없음 |
 | Phase 4-4 | GO일 때 인덱스를 incremental 모드로 갱신하고 generate-wiki를 재실행한다. | `build-index.mjs --mode incremental`, [generate-wiki](/skills/generate-wiki.md) | 없음 |

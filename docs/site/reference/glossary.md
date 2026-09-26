@@ -54,7 +54,7 @@ AX Navi 문서와 에이전트 리포트에 반복해서 나오는 용어를 모
 
 | 용어 | 의미 |
 |------|------|
-| CONFORM / HOLD / FAIL | pattern-conformance 판정. 필수 규칙 준수 / 충돌·LOW 신뢰도·표본 부족 / 레이어 오선택·필수 규칙 위반·안티패턴 복제 |
+| CONFORM / HOLD / FAIL | pattern-conformance 판정. 필수 규칙 준수 / 가장 가까운 기준 파일과도 다른 위험한 방식을 근거 없이 도입 / 레이어 오선택·필수 규칙 위반·안티패턴 복제 |
 | GO / HOLD / STOP | change-safety 최종 판정. GO는 종합 점수 < 3·보안 < 5·CONFORM·필수 검증 exit 0이 모두 충족될 때만. 검증 미실행은 HOLD, 필수 검증 실패나 즉시 STOP 트리거는 STOP |
 | UNVERIFIED | 테스트·빌드·린트를 실행하지 못한 상태. PASS가 아니며 최소 HOLD |
 | 즉시 STOP 트리거 | 한 항목이라도 발견되면 점수와 무관하게 STOP이 되는 항목(운영 DB 직접 수정, 인증 우회 등) |

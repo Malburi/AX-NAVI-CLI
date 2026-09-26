@@ -97,7 +97,7 @@ python "${CLAUDE_PLUGIN_ROOT}/agents/lib/pattern_profile.py" validate --root "[�
 python "${CLAUDE_PLUGIN_ROOT}/agents/lib/pattern_profile.py" select --root "[프로젝트 루트 절대 경로]" --target "[변경 대상 경로]" --module "[모듈명]" --limit 20
 ```
 
-프로필이 없으면 Markdown 패턴과 동일 모듈의 유사 코드로 폴백할 수 있지만, 리포트에 `구조화 패턴 미검증`을 표시한다. 신규 파일 생성이 포함된 변경은 폴백하지 않고 pattern-extractor를 먼저 실행한다. 기존 파일 수정이라도 `구조화 패턴 미검증` 상태에서는 자동 GO를 내지 않는다(Phase 4 참조) — 패턴 근거가 약한 채로 통과하지 않게 한다.
+프로필이 없거나 맞는 프로필이 없으면 `select`가 `basis: "neighbors"`와 `reference_files`(대상 파일 자신 → 같은 폴더 → 상위 폴더의 같은 종류 파일)를 돌려준다. 그 파일들의 원문을 읽어 기준으로 삼고 리포트에 `기준: 이웃 파일`을 표시한다. 사용자에게 기준을 고르게 하지 않는다. `reference_files`까지 비어 있을 때(같은 종류 파일이 주변에 하나도 없음)만 신규 파일 생성 전에 pattern-extractor를 먼저 실행한다.
 
 ---
 
@@ -155,7 +155,7 @@ Agent(
 )
 ```
 
-FAIL이면 수정 후 재검증하고, HOLD이면 사용자 결정 전 GO로 진행하지 않는다.
+FAIL이면 수정 후 재검증한다. HOLD이면 지적된 차이를 기준 파일 원문에 맞춰 고치고 한 번 재검증한다. 그래도 HOLD면 그 사유를 보고에 남기고 HOLD로 끝낸다.
 
 ### 3-2. 검증 명령 실행
 
@@ -229,7 +229,7 @@ Agent(
 전체 리포트: _workspace/reports/safety_<slug>.md
 ```
 
-GO는 `어댑터 FULL 또는 READ(원문 확인 완료) + 패턴 CONFORM + 검증 명령 exit 0 + change-safety GO`가 모두 충족될 때 사용한다. 어댑터가 READ인데 원문을 읽지 않았거나, UNSUPPORTED이거나, 있는 검증 명령을 실행하지 않았으면 HOLD(`UNVERIFIED`)로 보고한다. 프로젝트에 실행할 검증 명령이 아예 없으면 그 사실을 보고에 밝히고, DB 스키마·트랜잭션·인증 같은 위험 변경이 아니면 GO로 진행한다. Phase 0에서 `구조화 패턴 미검증`으로 폴백한 경우도 자동 GO 대상이 아니다 — 다른 조건이 모두 충족돼도 HOLD(`구조화 패턴 미검증`)로 보고하고, 진행하려면 사용자에게 "패턴 근거가 없는 상태로 적용할까요?"를 명시적으로 확인받은 뒤에만 GO로 올린다.
+GO는 `어댑터 FULL 또는 READ(원문 확인 완료) + 패턴 CONFORM + 검증 명령 exit 0 + change-safety GO`가 모두 충족될 때 사용한다. 어댑터가 READ인데 원문을 읽지 않았거나, UNSUPPORTED이거나, 있는 검증 명령을 실행하지 않았으면 HOLD(`UNVERIFIED`)로 보고한다. 프로젝트에 실행할 검증 명령이 아예 없으면 그 사실을 보고에 밝히고, DB 스키마·트랜잭션·인증 같은 위험 변경이 아니면 GO로 진행한다. Phase 0에서 이웃 파일을 기준으로 삼은 경우도 다른 조건이 충족되면 GO이며, 보고에 `기준: 이웃 파일 [경로]`를 남긴다.
 
 ## Phase 5: 인덱스·위키 증분 갱신
 

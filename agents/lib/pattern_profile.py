@@ -193,7 +193,58 @@ def select_profiles(data, targets, layer=None, module=None, limit=3):
         scored.append({"score": score, "reasons": reasons, "profile": item})
 
     scored.sort(key=lambda row: (-row["score"], row["profile"].get("id", "")))
-    return scored[:max(1, limit)]
+    # 레이어·모듈·경로 어느 것도 맞지 않은 후보(점수 0 이하)는 기준이 아니다. 실측: JSP 화면 수정에
+    # Struts 설정 파일 프로필(-7점)이 골라져 엉뚱한 파일을 기준으로 읽었다. 이웃 파일로 넘긴다.
+    return [row for row in scored if row["score"] > 0][:max(1, limit)]
+
+
+# 이웃 파일을 찾을 때 건너뛸 폴더. 인덱서의 벤더 규칙과 같은 취지다.
+SKIP_DIRS = {"node_modules", "_workspace", "bin", "obj", "target", "build", "dist", "vendor", "bower_components"}
+
+
+def neighbor_references(root, targets, limit=3):
+    """프로필로 기준을 못 고를 때 쓰는 결정적 기준 파일.
+
+    예전에는 프로필이 없거나 후보가 충돌하면 사용자에게 고르게 하고 멈췄다. 레거시에서는
+    대부분 그 상태라 수정마다 사람 결정을 기다렸다. 가장 가까운 기존 코드가 가장 좋은 근거라서
+    대상 파일 자신 → 같은 폴더의 같은 확장자 → 한 단계 위 폴더 순으로, 이름순으로 고른다.
+    """
+    picked = []
+    seen = set()
+
+    def add(rel, reason):
+        key = rel.lower()
+        if key in seen or len(picked) >= limit + len(targets):
+            return
+        seen.add(key)
+        picked.append({"path": rel, "reason": reason})
+
+    for target in targets:
+        rel = (target or "").replace("\\", "/").strip("/")
+        if not rel:
+            continue
+        ext = os.path.splitext(rel)[1].lower()
+        absolute = os.path.join(root, rel)
+        if os.path.isfile(absolute):
+            add(rel, "변경 대상 자신 — 기존 스타일 유지")
+        # 신규 파일이면 폴더도 아직 없을 수 있다. 있는 폴더까지 올라간다.
+        folder = os.path.dirname(absolute) if ext else absolute
+        while folder and not os.path.isdir(folder) and os.path.abspath(folder) != os.path.abspath(root):
+            folder = os.path.dirname(folder)
+        for depth, reason in ((0, "같은 폴더의 같은 종류 파일"), (1, "상위 폴더의 같은 종류 파일")):
+            base = folder if depth == 0 else os.path.dirname(folder)
+            if not base or not os.path.isdir(base) or not os.path.abspath(base).startswith(os.path.abspath(root)):
+                continue
+            if os.path.basename(base) in SKIP_DIRS or os.path.basename(base).startswith("."):
+                continue
+            names = sorted(n for n in os.listdir(base) if os.path.isfile(os.path.join(base, n)))
+            for name in names:
+                if ext and os.path.splitext(name)[1].lower() != ext:
+                    continue
+                add(os.path.relpath(os.path.join(base, name), root).replace("\\", "/"), reason)
+            if len(picked) >= 1 + limit:
+                break
+    return picked
 
 
 def main():
@@ -242,21 +293,26 @@ def main():
         print(json.dumps(report, ensure_ascii=False))
         return 1 if errors else 0
 
-    if errors:
-        print(json.dumps({"selected": [], "errors": errors, "warnings": warnings}, ensure_ascii=False))
-        return 1
-
-    selected = select_profiles(data, args.target, args.layer, args.module, args.limit)
+    selected = [] if errors else select_profiles(data, args.target, args.layer, args.module, args.limit)
     out = args.out or os.path.join(root, "_workspace", "reports", "pattern_selection.json")
     report = {
         "profile": os.path.relpath(profile_path, root).replace("\\", "/"),
         "request": {"targets": args.target, "layer": args.layer, "module": args.module},
+        "basis": "profile" if selected else "neighbors",
         "selected": selected,
         "warnings": warnings,
     }
+    if errors:
+        report["errors"] = errors
+    if not selected:
+        # 사람에게 고르게 하지 않는다. 가장 가까운 기존 코드를 기준으로 삼고 그 사실을 남긴다.
+        report["reference_files"] = neighbor_references(root, args.target, args.limit)
+        report["note"] = "구조화 프로필로 기준을 고르지 못해 이웃 파일을 기준으로 삼았다. 이 파일들의 원문을 읽고 그 방식을 따른다."
     _write(out, report)
     print(json.dumps(report, ensure_ascii=False))
-    return 0 if selected else 2
+    if selected or report["reference_files"]:
+        return 0
+    return 1 if errors else 2
 
 
 if __name__ == "__main__":

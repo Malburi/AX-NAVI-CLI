@@ -106,6 +106,40 @@ export async function test(register, assert) {
     }
   });
 
+  /*
+   * 프로필이 없거나 맞는 후보가 없을 때 사람에게 고르게 하고 멈추던 것을, 가장 가까운 기존 코드로 대신한다.
+   * 레거시 대부분이 이 상태라 수정마다 사용자 결정을 기다렸다.
+   */
+  register("프로필이 없으면 대상 자신과 같은 폴더·상위 폴더의 같은 종류 파일을 이름순으로 기준으로 삼는다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-pattern-profile-neighbors-"));
+    try {
+      for (const rel of ["web/list/b.jsp", "web/list/a.jsp", "web/list/target.jsp", "web/list/util.js", "web/top.jsp"]) write(root, rel, "<p/>");
+      const result = spawnSync(PY_BIN, [script, "select", "--root", root, "--target", "web/list/target.jsp", "--limit", "3"], { encoding: "utf8" });
+      assert.equal(result.status, 0, "기준을 찾았으면 멈추지 않는다");
+      const report = JSON.parse(readFileSync(join(root, "_workspace/reports/pattern_selection.json"), "utf8"));
+      assert.equal(report.basis, "neighbors");
+      assert.equal(JSON.stringify(report.reference_files.map((r) => r.path)), JSON.stringify(["web/list/target.jsp", "web/list/a.jsp", "web/list/b.jsp", "web/top.jsp"]));
+      assert.ok(!report.reference_files.some((r) => r.path.endsWith(".js")), "다른 종류 파일을 기준으로 삼았다");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  register("레이어·모듈·경로가 하나도 맞지 않는 프로필은 고르지 않고 이웃 파일로 넘긴다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-pattern-profile-weak-"));
+    try {
+      for (const rel of ["config/actconf/main.xml", "jsp/list/x.jsp", "jsp/list/y.jsp"]) write(root, rel, "<p/>");
+      profile(root, [preferred("action-config", "all", "action", "config/actconf", "config/actconf/main.xml")]);
+      const result = spawnSync(PY_BIN, [script, "select", "--root", root, "--target", "jsp/list/x.jsp"], { encoding: "utf8" });
+      assert.equal(result.status, 0);
+      const report = JSON.parse(readFileSync(join(root, "_workspace/reports/pattern_selection.json"), "utf8"));
+      assert.equal(report.selected.length, 0, "무관한 설정 프로필을 JSP 기준으로 골랐다");
+      assert.equal(JSON.stringify(report.reference_files.map((r) => r.path)), JSON.stringify(["jsp/list/x.jsp", "jsp/list/y.jsp"]));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("위키 패턴 페이지는 구조화 프로필과 실제 기준 파일을 표시한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-pattern-wiki-"));
     try {

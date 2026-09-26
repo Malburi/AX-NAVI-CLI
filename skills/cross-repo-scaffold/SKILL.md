@@ -50,14 +50,7 @@ description: 페어 연동된 백엔드+프론트엔드(1:1) 또는 백엔드+�
 - 백엔드와 각 `frontend_targets` 루트에서 `pattern_profile.py validate --root "[root]"`를 실행한다.
 - `.claude/patterns/pattern_profile.json`의 실제 기준 파일과 `.claude/patterns/*.md` 상세 문서를 함께 사용한다.
 
-하나라도 프로필 누락·검증 실패·스켈레톤 상태(pattern-extractor 미실행)면 경고:
-```
-[WARN] [대상] 패턴이 아직 추출되지 않았습니다.
-       실제 기준 파일이 검증되지 않아 코드 스타일 일치를 보장할 수 없습니다.
-       계속 진행할까요? (Y/N)
-```
-
-계속 진행하더라도 해당 저장소의 최종 판정은 최소 HOLD이며 GO로 승격하지 않는다.
+하나라도 프로필 누락·검증 실패·스켈레톤 상태(pattern-extractor 미실행)면 묻지 않고 그 저장소는 `select`가 돌려주는 이웃 `reference_files`를 기준으로 삼는다. 보고에 `기준: 이웃 파일`과 pattern-extractor 재실행 권고를 남긴다. 이웃 파일까지 없는 저장소만 생성을 멈추고 HOLD로 둔다.
 
 ### API 계약 로드
 
