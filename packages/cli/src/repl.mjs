@@ -1098,10 +1098,22 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       return cmdIndex(paths.root, rest[0] ?? "status", {});
 
     case "status": {
-      const st = indexStaleness(paths.root);
-      process.stdout.write(
-        `\n  ${ui.dim("Project")}  ${paths.root}\n  ${ui.dim("Index")}    ${st.stale ? ui.yellow(st.reason) : ui.green(st.reason)}\n\n`,
-      );
+      process.stdout.write(`\n  ${ui.dim("프로젝트")}  ${paths.root}\n`);
+      /*
+       * 여러 저장소를 담은 부모 폴더면 저장소마다 보여 준다. 배너는 "저장소 2개" 인데 여기서는
+       * "인덱스 없음" 이라고 해 서로 말이 달랐다(리뷰 실측).
+       */
+      const { roots, scanned } = discoverRoots(paths.root);
+      if (scanned && roots.length) {
+        for (const r of roots) {
+          const st = indexStaleness(r.paths.root);
+          process.stdout.write(`  ${ui.dim("인덱스")}    ${r.name} — ${st.stale ? ui.yellow(st.reason) : ui.green(st.reason)}\n`);
+        }
+      } else {
+        const st = indexStaleness(paths.root);
+        process.stdout.write(`  ${ui.dim("인덱스")}    ${st.stale ? ui.yellow(st.reason) : ui.green(st.reason)}\n`);
+      }
+      process.stdout.write("\n");
       return 0;
     }
 

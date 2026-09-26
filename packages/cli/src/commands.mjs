@@ -239,9 +239,26 @@ export async function cmdIndex(root, sub, opts) {
   const paths = resolveProjectPaths(root, opts.indexDir);
   const indexDir = resolveIndexDir(paths.root, opts.indexDir);
 
+  /*
+   * 여러 저장소를 담은 부모 폴더에서 열었으면 하위 저장소마다 보여 준다. 예전에는 배너·doctor 는
+   * "저장소 2개" 라고 하는데 status 는 "인덱스가 없습니다 — index build" 라고 해, 안내대로 하면 부모 폴더
+   * 전체를 세 번째 인덱스로 빌드하게 됐다(리뷰 실측).
+   */
+  if ((sub === "status" || sub === "coverage") && !opts.indexDir && !existsSync(join(indexDir, "_meta.json"))) {
+    const { roots } = discoverRoots(paths.root);
+    if (roots.length) {
+      let code = 0;
+      for (const r of roots) {
+        process.stdout.write(`${ui.bold(r.name)}${ui.dim(`  ${r.paths.root}`)}\n`);
+        code = Math.max(code, await cmdIndex(r.paths.root, sub, opts));
+      }
+      return code;
+    }
+  }
+
   if (sub === "status") {
     if (!existsSync(join(indexDir, "_meta.json"))) {
-      process.stdout.write(`${ui.yellow("인덱스가 없습니다")} — ${indexDir}\n  axnavi index build\n`);
+      process.stdout.write(`${ui.yellow("인덱스가 없습니다")} — ${indexDir}\n  axnavi index build  (대화형에서는 /index build)\n`);
       return 1;
     }
     const st = indexStaleness(paths.root, opts.indexDir);
@@ -254,7 +271,7 @@ export async function cmdIndex(root, sub, opts) {
 
   if (sub === "coverage") {
     if (!existsSync(join(indexDir, "_meta.json"))) {
-      process.stdout.write(`${ui.yellow("인덱스가 없습니다")} — ${indexDir}\n  axnavi index build\n`);
+      process.stdout.write(`${ui.yellow("인덱스가 없습니다")} — ${indexDir}\n  axnavi index build  (대화형에서는 /index build)\n`);
       return 1;
     }
     const { summary, markdown } = buildCoverageReport(paths.root, opts.indexDir);
