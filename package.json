@@ -32,6 +32,7 @@
   "files": [
     "packages/",
     ".claude-plugin/",
+    "hooks/",
     "agents/",
     "skills/",
     "docs/index-schema/",

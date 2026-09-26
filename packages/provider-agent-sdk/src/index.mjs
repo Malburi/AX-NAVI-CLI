@@ -20,6 +20,7 @@ import {
   toolBriefing,
   translateEvent,
 } from "../../provider-claude-cli/src/index.mjs";
+import { encodingPostToolUse, encodingPreToolUse } from "../../provider-claude-cli/src/legacy-encoding.mjs";
 import { noAnswerText } from "../../cli/src/mcp/answers.mjs";
 
 /**
@@ -174,7 +175,14 @@ export class AgentSdkProvider {
         mcpServers: sdkMcpServers(this.options.mcpConfigPath, this.options.mcpEnv),
         strictMcpConfig: true,
         canUseTool,
-        hooks: { PreToolUse: [{ matcher: "Agent", hooks: [foregroundAgents] }] },
+        hooks: {
+          PreToolUse: [
+            { matcher: "Agent", hooks: [foregroundAgents] },
+            // EUC-KR 등 레거시 인코딩 파일은 UTF-8 사본으로 읽고 고친 뒤 원래 인코딩으로 되돌려 쓴다.
+            { matcher: "Read|Edit|Write|MultiEdit", hooks: [async (input) => encodingPreToolUse(input)] },
+          ],
+          PostToolUse: [{ matcher: "Edit|Write|MultiEdit", hooks: [async (input) => encodingPostToolUse(input)] }],
+        },
         env: delegatedEnv(process.env, this.options.pluginDir ? { pluginDir: this.options.pluginDir } : {}),
         abortController: abort,
         extraArgs: {

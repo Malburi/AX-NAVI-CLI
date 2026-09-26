@@ -647,6 +647,8 @@ export function delegatedEnv(base, options) {
      * 입출력·open()·하위 명령 모두 UTF-8 이 된다. 사용자가 정했으면 따른다.
      */
     ...(base["PYTHONUTF8"] !== undefined ? {} : { PYTHONUTF8: "1" }),
+    // 인코딩 보존 훅을 axnavi 가 직접 건다. 플러그인의 같은 훅(hooks/hooks.json)은 이것을 보고 비킨다.
+    AXNAVI_ENCODING_HOOK: "1",
     ...(options.pluginDir ? { CLAUDE_PLUGIN_ROOT: options.pluginDir } : {}),
     ...options.env,
   };
@@ -747,7 +749,7 @@ function pluginMuteSettings() {
   }
   try {
     const file = join(mkdtempSync(join(tmpdir(), "axnavi-settings-")), "settings.json");
-    writeFileSync(file, JSON.stringify(delegatedSettings(names, FOREGROUND_HOOK_COMMAND), null, 2), "utf8");
+    writeFileSync(file, JSON.stringify(delegatedSettings(names, FOREGROUND_HOOK_COMMAND, ENCODING_HOOK_COMMAND), null, 2), "utf8");
     mutePath = file;
   } catch {
     // 임시 폴더에 못 쓰면 설정 없이 돈다. 안내문의 "뒤에서 돌리지 마라" 가 남은 방어선이다.
@@ -766,6 +768,9 @@ function pluginMuteSettings() {
  */
 const FOREGROUND_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "foreground-agent-hook.mjs");
 const FOREGROUND_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${FOREGROUND_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
+/* EUC-KR 등 레거시 인코딩 파일을 읽고 고칠 때 인코딩을 지키는 훅(legacy-encoding.mjs). 뒤에 pre|post 를 붙인다. */
+const ENCODING_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "legacy-encoding-hook.mjs");
+const ENCODING_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${ENCODING_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
 
 /*
  * 이어 가는 턴에는 이미 보낸 도구 안내·역할 지침을 다시 붙이지 않는다.
@@ -793,12 +798,17 @@ export function delegatedPayload(preamble, prompt, resumeFrom, sent = sentPreamb
  * 위임 실행에 얹는 설정. 순수 함수로 꺼내 테스트가 모양을 고정한다.
  * @param {string[]} pluginNames  끌 호스트 플러그인
  * @param {string} hookCommand
+ * @param {string} [encodingCommand]  인코딩 보존 훅 명령(뒤에 pre|post 를 붙인다)
  */
-export function delegatedSettings(pluginNames, hookCommand) {
+export function delegatedSettings(pluginNames, hookCommand, encodingCommand) {
   return {
     ...(pluginNames.length ? { enabledPlugins: Object.fromEntries(pluginNames.map((n) => [n, false])) } : {}),
     hooks: {
-      PreToolUse: [{ matcher: "Agent", hooks: [{ type: "command", command: hookCommand }] }],
+      PreToolUse: [
+        { matcher: "Agent", hooks: [{ type: "command", command: hookCommand }] },
+        ...(encodingCommand ? [{ matcher: "Read|Edit|Write|MultiEdit", hooks: [{ type: "command", command: `${encodingCommand} pre` }] }] : []),
+      ],
+      ...(encodingCommand ? { PostToolUse: [{ matcher: "Edit|Write|MultiEdit", hooks: [{ type: "command", command: `${encodingCommand} post` }] }] } : {}),
     },
   };
 }
