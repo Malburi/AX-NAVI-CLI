@@ -20,7 +20,7 @@
 | 단계 | 하는 일 | 호출 에이전트·스크립트 | 사용자 개입 |
 |------|---------|------------------------|-------------|
 | Phase 0 | 운영 모드 키워드 감지, 인덱스 신선도 확인, 어댑터 커버리지 게이트, 패턴 프로필 검증·선택. | `build-index.mjs --check-stale`, `check-adapter-coverage.mjs`, `pattern_profile.py validate/select` | 재인덱싱 건너뛰기를 원하면 알린다. |
-| Phase 1 | 사전 영향 분석. [analyze-impact](/skills/analyze-impact.md) 절차 그대로 실행해 `impact_<slug>.md`를 만들고 진행 여부를 묻는다. | [impact-analyzer](/agents/impact-analyzer.md) | **1. 변경 적용 후 안전성 평가까지 진행 / 2. 사전 회귀 테스트 작성 후 진행 / 3. 중단** 중 선택한다. CRITICAL이면 옵션 2를 권장한다. |
+| Phase 1 | 사전 영향 분석. [analyze-impact](/skills/analyze-impact.md) 절차 그대로 실행해 `impact_<slug>.md`를 만들고 결과를 보여 준 뒤 묻지 않고 진행한다. 확정 못 한 사실은 보고의 `확인하지 못한 사실`로 남긴다. | [impact-analyzer](/agents/impact-analyzer.md) | CRITICAL이거나, 데이터 변경·되돌리기 어려운 변경의 전제를 확인하지 못했거나, 요청 해석이 갈릴 때만 묻는다. |
 | Phase 2 | 변경 적용. 사용자가 직접 작성하거나 자연어 설명을 어시스턴트가 Edit/Write로 적용한다. `pattern_selection.json`의 선택 프로필과 `reference_files`를 먼저 읽는다. | Edit/Write | 변경 내용을 설명하거나 직접 작성한다. |
 | Phase 3-1 | 패턴 적합성 검증. FAIL이면 수정 후 재검증, HOLD면 기준 파일에 맞춰 고치고 한 번 재검증한다. | [pattern-conformance](/agents/pattern-conformance.md) | 없음 |
 | Phase 3-2 | 검증 명령 실행. `detect`로 lint/typecheck/test/build 후보를 확보하고, 변경 범위에 맞는 가장 작은 명령을 `run`으로 실제 실행한다. | `verify-target.mjs detect/run` | `detected` 목록을 보고 고른다. |
@@ -84,15 +84,10 @@ change-safety는 회귀 · 컨벤션 · 사이드이펙트 · 롤백 · 보안 �
 
         영향도: 3/10 (LOW)
         영향받는 테스트: 4개
+        확인하지 못한 사실: 없음
+        → 변경 적용 후 안전성 평가까지 진행합니다.
 
-        진행 옵션:
-        1. 변경 적용 후 안전성 평가까지 진행
-        2. 사전 회귀 테스트 작성 후 진행 (test-generator 호출)
-        3. 중단
-        선택?
-사용자: 1
-
-하네스: 변경 적용 완료 — OrderService.java 1개 파일, +3 / -0.
+        변경 적용 완료 — OrderService.java 1개 파일, +3 / -0.
         패턴 적합성: CONFORM
         검증 명령: ./gradlew test --tests OrderServiceTest → exit 0
 

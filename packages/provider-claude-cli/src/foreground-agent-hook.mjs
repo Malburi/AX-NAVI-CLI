@@ -18,7 +18,8 @@ process.stdin.on("end", () => {
     return;
   }
   const input = event.tool_input ?? {};
-  if (input["run_in_background"] !== true) return;
+  // 값이 없으면 Claude 기본값(뒤에서 실행)을 따른다 — 명시적 false 만 그대로 둔다.
+  if (input["run_in_background"] === false) return;
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {

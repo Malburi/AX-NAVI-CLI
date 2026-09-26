@@ -41,10 +41,12 @@ test("답이 비면 null — 기본값으로 넘어가지 않게 호출부가 �
   assert.equal(none, null);
 });
 
-test("뒤에서 돌리려는 서브에이전트만 포그라운드로 바꾼다", async () => {
+test("서브에이전트는 포그라운드로 돌린다 — 값을 비운 호출도(Claude 기본값이 뒤에서 실행)", async () => {
   const changed = await foregroundAgents({ tool_input: { prompt: "p", subagent_type: "ax-navi:analyzer", run_in_background: true } });
   assert.deepEqual(/** @type {any} */ (changed).hookSpecificOutput.updatedInput, { prompt: "p", subagent_type: "ax-navi:analyzer", run_in_background: false });
-  assert.deepEqual(await foregroundAgents({ tool_input: { prompt: "p" } }), {}, "포그라운드 호출을 건드렸다");
+  const unset = await foregroundAgents({ tool_input: { prompt: "p" } });
+  assert.deepEqual(/** @type {any} */ (unset).hookSpecificOutput?.updatedInput, { prompt: "p", run_in_background: false }, "값이 없는 호출을 뒤에서 돌게 두었다");
+  assert.deepEqual(await foregroundAgents({ tool_input: { prompt: "p", run_in_background: false } }), {}, "이미 포그라운드인 호출을 건드렸다");
 });
 
 test("MCP 는 인덱스 조회와 스킬 요청만 내놓는다 — 질문·승인은 콜백이 받는다", () => {

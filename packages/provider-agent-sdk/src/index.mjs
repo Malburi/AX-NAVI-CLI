@@ -61,11 +61,16 @@ export async function answerQuestions(input, ask) {
 /**
  * 서브에이전트를 뒤에서 돌리려는 호출을 포그라운드로 바꾼다. 턴이 끝나면 SDK 실행도 끝나므로
  * 뒤에서 돌던 서브에이전트는 결과를 잃는다(claude-cli 경로에서 실측한 것과 같다).
+ *
+ * 값을 비운 호출도 바꾼다. 이 버전의 Claude 는 "Agents run in the background by default" 라 값이 없으면
+ * 뒤에서 돈다. 실측(2026-09-26 safe-modify): run_in_background 없이 부른 impact-analyzer 가 뒤에서 돌고
+ * 메인 턴이 끝나 SDK 입력이 닫힌 뒤, 결과를 받아 이어 간 턴의 질문이 전부 "Stream closed" 로 실패했다.
+ * 명시적으로 false 인 것만 그대로 둔다.
  * @param {any} input
  */
 export async function foregroundAgents(input) {
   const ti = input?.tool_input;
-  if (!ti || ti.run_in_background !== true) return {};
+  if (!ti || ti.run_in_background === false) return {};
   return {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",

@@ -316,7 +316,7 @@ test("위임 설정은 서브에이전트 호출에 포그라운드 훅을 걸�
   assert.ok(!("enabledPlugins" in delegatedSettings([], "x")), "끌 플러그인이 없는데 빈 목록을 넣었다");
 });
 
-test("포그라운드 훅은 뒤에서 돌리려는 호출만 바꾸고 나머지 인자는 보존한다", async () => {
+test("포그라운드 훅은 명시적 포그라운드가 아닌 호출을 바꾸고 나머지 인자는 보존한다", async () => {
   const { spawnSync } = await import("node:child_process");
   const { fileURLToPath } = await import("node:url");
   const script = fileURLToPath(new URL("../../provider-claude-cli/src/foreground-agent-hook.mjs", import.meta.url));
@@ -327,7 +327,8 @@ test("포그라운드 훅은 뒤에서 돌리려는 호출만 바꾸고 나머�
   assert.equal(out.hookSpecificOutput.hookEventName, "PreToolUse");
   assert.deepEqual(out.hookSpecificOutput.updatedInput, { prompt: "p", subagent_type: "ax-navi:analyzer", run_in_background: false });
 
-  assert.equal(run({ tool_name: "Agent", tool_input: { prompt: "p" } }), "", "포그라운드 호출까지 건드렸다");
+  assert.deepEqual(JSON.parse(run({ tool_name: "Agent", tool_input: { prompt: "p" } })).hookSpecificOutput.updatedInput, { prompt: "p", run_in_background: false }, "값이 없는 호출(Claude 기본값은 뒤에서 실행)을 그대로 두었다");
+  assert.equal(run({ tool_name: "Agent", tool_input: { prompt: "p", run_in_background: false } }), "", "이미 포그라운드인 호출까지 건드렸다");
   assert.equal(spawnSync(process.execPath, [script], { input: "깨진 입력", encoding: "utf8" }).stdout, "", "입력이 깨지면 조용히 비켜야 한다");
 });
 
