@@ -75,7 +75,7 @@ node "$CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" run --root <프로젝트
 
 - `detect`는 `package.json` scripts, `pom.xml`, `build.gradle`, `.csproj`/`.sln` 등 매니페스트에서 lint/typecheck/test/build 후보를 읽기만 한다(부작용 0). 무엇을 돌릴지 사용자에게 먼저 보이기 위한 것이다.
 - `run`은 감지된 명령을 실행하고 성공이면 요약만, 실패면 `fail_lines`(명령당 기본 15줄 상한, `truncated` 명시)만 돌려준다. `overall`이 `pass`면 exit 0, 아니면 exit 2다.
-- `detected`가 비어 있으면(`count: 0`) 자동 검증이 없다는 뜻이다. PASS로 적지 않고 `검증 수단 없음`으로 적는다. 위험 변경이 아니면 원문 확인 근거로 진행한다. 실행할 수 없거나 assertion까지 도달하지 못한 검사도 PASS가 아니다.
+- `detected`가 비어 있으면(`count: 0`) 자동 검증이 없다는 뜻이다. PASS로 적지 않고 `검증 수단 없음`으로 적는다. 위험 변경이 아니면 원문 확인 근거로 진행한다. 바뀐 파일 종류를 검사하지 않는 명령(JSP·XML 변경에 Java 컴파일 등)과 도구가 설치되지 않아 실행되지 않는 명령도 `검증 수단 없음`이다. 이때 에이전트가 SQL 컬럼 순서 ↔ 화면 매핑 같은 정적 대조를 직접 하고, 배포 뒤에야 알 수 있는 것은 `배포 후 확인 권장`으로 따로 적는다(GO 조건 아님). 실행할 수 없거나 assertion까지 도달하지 못한 검사도 PASS가 아니다.
 
 스킬은 `commands[].cmd`·`exit`·`fail_lines`와 `overall`을 그대로 change-safety 입력에 넘긴다. 필수 검증이 exit 0이 아니면 GO는 나올 수 없다.
 

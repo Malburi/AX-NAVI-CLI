@@ -167,6 +167,10 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" detect --root "[프로
 
 `detected` 목록(lint/typecheck/test/build)을 사용자에게 보여주고, 변경 범위에 해당하는 가장 작은 명령을 골라 실제 실행한다.
 
+- 바뀐 파일 종류를 검사하지 않는 명령은 이 변경의 검증이 아니다(예: JSP·쿼리 XML만 바뀌었는데 Java 컴파일). 해당하는 명령이 없으면 `검증 수단 없음`이다.
+- 명령의 실행 파일이 이 환경에 없으면 `run`이 실행하지 않고 `overall: "unavailable"`(exit 3, `missing_tool`)을 돌려준다. 코드 결함이 아니다. 실패가 아니라 `검증 수단 없음(환경: <도구> 없음)`으로 적는다.
+- 검증 수단이 없으면 에이전트가 직접 할 수 있는 **정적 대조**를 한다. 예: SQL SELECT 목록 순서 ↔ 화면의 `getString(n)`·컬럼 매핑, 같은 SQL·화면을 쓰는 다른 파일, 태그 짝·colspan 수. 결과를 `정적 대조` 항목으로 change-safety에 넘긴다. 사람에게 육안 대조를 맡기지 않는다.
+
 ```powershell
 node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝트 루트 절대 경로]" --cmd "[detected에서 고른 명령]"
 ```
@@ -229,7 +233,7 @@ Agent(
 전체 리포트: _workspace/reports/safety_<slug>.md
 ```
 
-GO는 `어댑터 FULL 또는 READ(원문 확인 완료) + 패턴 CONFORM + 검증 명령 exit 0 + change-safety GO`가 모두 충족될 때 사용한다. 어댑터가 READ인데 원문을 읽지 않았거나, UNSUPPORTED이거나, 있는 검증 명령을 실행하지 않았으면 HOLD(`UNVERIFIED`)로 보고한다. 프로젝트에 실행할 검증 명령이 아예 없으면 그 사실을 보고에 밝히고, DB 스키마·트랜잭션·인증 같은 위험 변경이 아니면 GO로 진행한다. Phase 0에서 이웃 파일을 기준으로 삼은 경우도 다른 조건이 충족되면 GO이며, 보고에 `기준: 이웃 파일 [경로]`를 남긴다.
+GO는 `어댑터 FULL 또는 READ(원문 확인 완료) + 패턴 CONFORM + 검증 명령 exit 0 + change-safety GO`가 모두 충족될 때 사용한다. 어댑터가 READ인데 원문을 읽지 않았거나, UNSUPPORTED이거나, 있는 검증 명령을 실행하지 않았으면 HOLD(`UNVERIFIED`)로 보고한다. 실행할 검증 명령이 없거나(해당 명령 없음·도구 미설치) 그 사실을 보고에 밝히고 정적 대조를 마쳤으면, DB 스키마·트랜잭션·인증 같은 위험 변경이 아닌 한 GO로 진행한다. 배포 뒤에야 확인할 수 있는 것(실제 DB 값, 화면 표시)은 `배포 후 확인 권장`으로 따로 적되 GO 조건으로 삼지 않는다. Phase 0에서 이웃 파일을 기준으로 삼은 경우도 다른 조건이 충족되면 GO이며, 보고에 `기준: 이웃 파일 [경로]`를 남긴다.
 
 ## Phase 5: 인덱스·위키 증분 갱신
 

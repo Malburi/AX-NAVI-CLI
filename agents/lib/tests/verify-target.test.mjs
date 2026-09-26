@@ -112,6 +112,21 @@ export async function test(register, assert) {
     }
   });
 
+  /* 실측: Ant 없는 PC 의 `ant compile` 실패를 검증 미실행으로 읽어 코드와 무관하게 HOLD 했다. */
+  register("run은 실행 파일이 없는 명령을 실패가 아니라 unavailable·exit 3으로 구분한다", () => {
+    const root = mkdtempSync(join(tmpdir(), "vt-missing-"));
+    try {
+      const res = runCli(["run", "--root", root, "--cmd", "axnavi-no-such-tool-xyz compile"]);
+      const out = JSON.parse(res.stdout);
+      assert.equal(out.overall, "unavailable", res.stdout);
+      assert.equal(out.commands[0].missing_tool, "axnavi-no-such-tool-xyz", res.stdout);
+      assert.ok(/검증 수단 없음/.test(out.note), res.stdout);
+      assert.equal(res.status, 3, "도구 없음 exit 3");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("run은 실패 명령에 overall fail·exit 2·실패 라인만 반환", () => {
     const root = mkdtempSync(join(tmpdir(), "vt-fail-"));
     try {

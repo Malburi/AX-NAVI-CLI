@@ -237,8 +237,33 @@ function extractFailLines(output, limit) {
   return { fail_lines: picked.slice(0, limit), truncated };
 }
 
+/*
+ * 명령의 실행 파일이 이 환경에 있는가.
+ *
+ * 실측(2026-09-26): Ant 가 없는 PC 에서 `ant compile` 이 exit 1 과 "'ant'은(는) 내부 또는 외부 명령… 아닙니다" 로
+ * 끝났고, change-safety 는 이를 "검증 미실행(UNVERIFIED)" 으로 읽어 코드와 무관하게 HOLD 했다. 메시지는
+ * 셸·로캘마다 달라 글로 판단하면 흔들린다 — 실행 전에 PATH 에서 찾아 본다.
+ */
+export function commandAvailable(root, cmd) {
+  const quoted = cmd.trim().match(/^"([^"]+)"/);
+  const token = quoted ? quoted[1] : (cmd.trim().match(/^(\S+)/) || [])[1] || "";
+  if (!token) return { ok: false, tool: "" };
+  if (/[\\/]/.test(token)) {
+    const path = resolve(root, token);
+    const exts = process.platform === "win32" ? ["", ".cmd", ".bat", ".exe"] : [""];
+    return { ok: exts.some((e) => existsSync(path + e)), tool: token };
+  }
+  const exts = process.platform === "win32" ? ["", ...(process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").map((e) => e.toLowerCase())] : [""];
+  const dirs = [root, ...(process.env.PATH || "").split(process.platform === "win32" ? ";" : ":")].filter(Boolean);
+  // 윈도 셸은 현재 폴더를 먼저 찾는다(gradlew.bat 등). 유닉스는 ./ 없이 현재 폴더를 찾지 않는다.
+  const search = process.platform === "win32" ? dirs : dirs.slice(1);
+  return { ok: search.some((d) => exts.some((e) => existsSync(join(d, token + e)))), tool: token };
+}
+
 /* 명령 하나를 실행하고 exit code와 실패 라인만 캡처한다. */
 function runCommand(root, cmd, limit) {
+  const available = commandAvailable(root, cmd);
+  if (!available.ok) return { cmd, exit: null, unavailable: true, missing_tool: available.tool };
   const result = spawnSync(cmd, { cwd: root, shell: true, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
   const exit = result.status == null ? (result.error ? 127 : 1) : result.status;
   const combined = `${result.stdout || ""}\n${result.stderr || ""}`;
@@ -275,15 +300,17 @@ function main() {
     // detect가 내는 명령은 단일 명령이다. 여러 명령이 필요하면 run을 여러 번 호출한다
     // (여기서 &&·; 로 쪼개면 따옴표 안 인자까지 잘려 명령이 깨진다).
     const commands = [runCommand(args.root, args.cmd, args.limit)];
-    const overall = commands.every((c) => c.exit === 0) ? "pass" : "fail";
+    const overall = commands.every((c) => c.unavailable) ? "unavailable" : commands.every((c) => c.exit === 0 || c.unavailable) ? "pass" : "fail";
     const payload = {
       command: "run",
       root: args.root,
       commands,
       overall,
+      ...(overall === "unavailable" ? { note: `${commands.map((c) => c.missing_tool).join(", ")} 이(가) 이 환경에 없어 실행하지 않았습니다. 코드 결함이 아니므로 '검증 수단 없음(환경)'으로 보고하고 정적 대조로 진행합니다.` } : {}),
     };
     process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-    process.exitCode = overall === "pass" ? 0 : 2;
+    // 3 = 도구 없음. 실패(2)와 구분한다.
+    process.exitCode = overall === "pass" ? 0 : overall === "unavailable" ? 3 : 2;
     return;
   }
 
