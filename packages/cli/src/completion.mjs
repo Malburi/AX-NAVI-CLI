@@ -27,7 +27,7 @@ const BUILTINS = [
   { name: "agents", kind: "builtin", summary: "에이전트 19종 목록" },
   { name: "agent", kind: "builtin", summary: "에이전트 직접 실행", usage: "/agent <이름> <요청>" },
   { name: "skills", kind: "builtin", summary: "스킬 목록" },
-  { name: "index", kind: "builtin", summary: "인덱스 빌드·상태", usage: "/index [build|status|refresh]" },
+  { name: "index", kind: "builtin", summary: "인덱스 빌드·상태·진단서", usage: "/index [build|status|refresh|coverage]" },
   { name: "status", kind: "builtin", summary: "현재 프로젝트 상태" },
   { name: "context", kind: "builtin", summary: "진행 중인 대화 상태" },
   { name: "new", kind: "builtin", summary: "대화를 끊고 새로 시작" },
@@ -116,7 +116,7 @@ export function complete(line, ctx) {
     return [hits.length ? hits : ctx.agentNames, arg];
   }
   if (head === "index") {
-    const subs = ["build", "status", "refresh"];
+    const subs = ["build", "status", "refresh", "coverage"];
     const hits = subs.filter((n) => n.startsWith(arg));
     return [hits.length ? hits : subs, arg];
   }
@@ -151,9 +151,11 @@ export function menuItems(line, ctx) {
       .map((n) => ({ value: `/agent ${n}`, hint: "에이전트" }));
   }
   if (head === "index") {
-    return ["build", "status", "refresh"]
-      .filter((n) => n.startsWith(arg))
-      .map((n) => ({ value: `/index ${n}`, hint: "인덱스" }));
+    /* coverage 도 쓸 수 있었는데 메뉴에 없어 아무도 몰랐다(사용자 보고). 뜻을 함께 보여 준다. */
+    const hints = { build: "새로 만들기 (AI 없음)", status: "최신인지 확인", refresh: "갱신 (AI 보강 유지)", coverage: "얼마나 다룰 수 있는지 진단서 (AI 없음)" };
+    return Object.entries(hints)
+      .filter(([n]) => n.startsWith(arg))
+      .map(([n, hint]) => ({ value: `/index ${n}`, hint }));
   }
   return [];
 }

@@ -21,6 +21,7 @@
  */
 export function createNaviPersona({ agents, skills, pluginRoot = "" }) {
   const indexer = `${pluginRoot.split("\\").join("/")}/agents/lib/build-index.mjs`;
+  const cli = `${pluginRoot.split("\\").join("/")}/packages/cli/src/bin.mjs`;
   const roster = agents
     .map((a) => `- ${a.name}: ${a.description.split(/[.。]\s|\. /)[0] ?? a.description}`.slice(0, 160))
     .join("\n");
@@ -74,6 +75,8 @@ export function createNaviPersona({ agents, skills, pluginRoot = "" }) {
     "인덱스를 갱신·재인덱싱해 달라고 하면 Bash 로 아래를 바로 실행한다. AI 없이 도는 결정론적 작업이라 보통 1분 안에 끝나고, 기존 AI 보강은 그대로 다시 적용된다.",
     `node "${indexer}" --root "." --mode incremental`,
     "인덱스가 아예 없으면 --mode init 으로 실행한다. 끝나면 출력의 파일 수·미해결 수를 한두 줄로 알린다. 인덱서 위치를 찾으려고 디스크를 검색하지 않는다.",
+    "\"얼마나 분석할 수 있나\", \"커버리지\", \"진단서\" 같은 요청은 아래를 실행한다. AI 없이 도는 진단서이고, 요약이 화면에 나오고 전문은 _workspace/reports/coverage.md 에 남는다.",
+    `node "${cli}" index coverage --root "."`,
     "",
     "## 답하는 방식",
     "- 근거가 있는 것만 말한다. 파일·줄 번호를 붙일 수 있으면 붙인다.",
