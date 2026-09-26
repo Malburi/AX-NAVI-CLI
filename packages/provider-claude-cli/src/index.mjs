@@ -393,11 +393,13 @@ export function translateEvent(msg) {
     }
 
     if (msg.is_error || msg.subtype !== "success") {
+      const raw = String(msg.result || msg.subtype || "claude 실행이 실패로 끝났다");
+      const login = LOGIN_ERROR.test(raw);
       out.push({
         type: "error",
         error: {
-          kind: msg.api_error_status ? "unknown" : "invalid_request",
-          message: msg.result || msg.subtype || "claude 실행이 실패로 끝났다",
+          kind: login ? "auth" : msg.api_error_status ? "unknown" : "invalid_request",
+          message: login ? LOGIN_HELP : raw,
           retryable: false,
         },
       });
@@ -798,6 +800,13 @@ export function delegatedPayload(preamble, prompt, resumeFrom, sent = sentPreamb
   const known = Boolean(resumeFrom) && sent.get(/** @type {string} */ (resumeFrom)) === preamble;
   return [known ? "" : preamble, prompt].filter(Boolean).join("\n\n");
 }
+
+/*
+ * 로그인이 안 된 상태. Claude 는 "Not logged in · Please run /login" 이라고 하는데 `/login` 은 axnavi
+ * 명령이 아니다(리뷰 실측). 무엇을 하면 되는지로 바꿔 보여 준다.
+ */
+export const LOGIN_ERROR = /not logged in|please run \/login|not authenticated/i;
+export const LOGIN_HELP = "Claude 에 로그인되어 있지 않습니다. 터미널에서 claude 를 한 번 실행해 로그인한 뒤 다시 시도하세요(API 키를 쓰면 ANTHROPIC_API_KEY 를 설정).";
 
 /* 인코딩 보존 훅이 보는 도구. 읽기도 포함한다 — 모델이 한글을 깨진 채 보지 않게. */
 export const ENCODING_TOOLS = "Read|Edit|Write|MultiEdit";

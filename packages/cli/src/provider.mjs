@@ -24,7 +24,22 @@ import { dirname, join } from "node:path";
  * @param {string} [root]
  */
 export function sdkInstalled(root = REPO_ROOT) {
-  const rel = join("@anthropic-ai", "claude-agent-sdk", "package.json");
+  return packageInstalled("claude-agent-sdk", root);
+}
+
+/*
+ * Messages API 경로가 쓰는 `@anthropic-ai/sdk` 도 선택 의존성이다. 키만 보고 이 경로를 고르면, 폐쇄망 설치
+ * (`--omit=optional`)에 게이트웨이 토큰이 있는 흔한 조합에서 doctor 는 ✓ 인데 실행은 스택 트레이스로 죽었다
+ * (리뷰 실측). 설치돼 있을 때만 고른다.
+ * @param {string} [root]
+ */
+export function anthropicSdkInstalled(root = REPO_ROOT) {
+  return packageInstalled("sdk", root);
+}
+
+/** @param {string} name  `@anthropic-ai/` 아래 이름 @param {string} root */
+function packageInstalled(name, root) {
+  const rel = join("@anthropic-ai", name, "package.json");
   return [join(root, "node_modules", rel), join(dirname(root), rel)].some((p) => existsSync(p));
 }
 
@@ -43,6 +58,7 @@ export function selectProvider(opts = {}) {
 
   if (wanted === "anthropic") {
     if (!hasApiKey()) return { error: authHelp("anthropic Provider를 지정했지만 ANTHROPIC_API_KEY가 없습니다.") };
+    if (!anthropicSdkInstalled()) return { error: "anthropic 연결에 필요한 @anthropic-ai/sdk 가 설치되어 있지 않습니다(선택 의존성을 빼고 설치한 경우). 인터넷이 되는 곳에서 선택 의존성을 포함해 axnavi 를 다시 설치하거나 --provider claude-cli 로 실행하세요." };
     return ANTHROPIC();
   }
 
@@ -58,7 +74,7 @@ export function selectProvider(opts = {}) {
   }
 
   // auto — 키가 있으면 통제력이 더 큰 쪽을 먼저 택한다.
-  if (hasApiKey()) return ANTHROPIC();
+  if (hasApiKey() && anthropicSdkInstalled()) return ANTHROPIC();
   // 키가 없으면 SDK 연결이 기본이다. 시작 화면·doctor 처럼 이름만 보는 호출도 같은 답을 받아야 한다.
   if (sdkInstalled()) return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
   // SDK 가 없으면(폐쇄망 설치 등) 설치된 claude CLI 로 간다.

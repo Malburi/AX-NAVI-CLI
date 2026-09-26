@@ -35,6 +35,7 @@ ${ui.bold("사용법")}
   axnavi init                     .axnavi/ 설정 생성
   axnavi doctor                   실행 환경 진단
   axnavi keys                     키 진단 (Shift+Tab 이 안 먹을 때)
+  axnavi upgrade [태그]           최신 판(또는 지정한 판)으로 올리기
 
   axnavi index build              결정론적 인덱싱 (LLM·API 키 불필요)
   axnavi index status             인덱스 신선도
@@ -50,8 +51,9 @@ ${ui.bold("옵션")}
   --root <경로>       프로젝트 루트 (기본: 현재 폴더)
   --index-dir <경로>  인덱스 위치 (기본: <root>/_workspace/index)
   --tier <등급>       Auto | Standard | Full
-  --provider <이름>   auto | anthropic | claude-cli
-                      auto(기본): 키가 있으면 anthropic, 없으면 claude 구독
+  --provider <이름>   auto | agent-sdk | claude-cli | anthropic
+                      auto(기본): API 키와 SDK 가 있으면 anthropic, 없으면 agent-sdk(구독),
+                      SDK 가 없으면(폐쇄망 설치) claude-cli
   -c, --continue      마지막 대화를 이어서 시작
   --resume <id>       특정 대화를 이어서 시작 (/sessions 로 id 확인)
   --verbose           내부 진단 출력 (도구 목록·토큰 내역·감사기록 경로)

@@ -13,6 +13,8 @@
 import { readFileSync } from "node:fs";
 import {
   ENCODING_TOOLS,
+  LOGIN_ERROR,
+  LOGIN_HELP,
   MODEL_BY_TIER,
   RESPONSE_STYLE,
   encodingHookEvents,
@@ -207,7 +209,8 @@ export class AgentSdkProvider {
     } catch (error) {
       if (signal?.aborted) return; // 사용자가 끊은 것은 오류가 아니다
       const message = error instanceof Error ? error.message : String(error);
-      yield { type: "error", error: { kind: /auth|login|credential/i.test(message) ? "auth" : "unknown", message, retryable: false } };
+      const login = LOGIN_ERROR.test(message);
+      yield { type: "error", error: { kind: login || /auth|credential/i.test(message) ? "auth" : "unknown", message: login ? LOGIN_HELP : message, retryable: false } };
     } finally {
       signal?.removeEventListener("abort", onAbort);
       // 중단·오류로 뒷정리 훅이 못 돌았어도 UTF-8 로 바꿔 둔 레거시 파일을 되돌린다.

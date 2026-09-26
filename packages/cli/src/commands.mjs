@@ -8,6 +8,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { pythonInfo } from "../../../agents/lib/python-bin.mjs";
 import {
   buildCoverageReport,
@@ -28,6 +29,7 @@ import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { firstSentence } from "./completion.mjs";
+import { visibleLength } from "./width.mjs";
 import { renderSkillHeader } from "./transcript.mjs";
 import { compareVersions, readVersion, resolveLatestTag, runUpgrade } from "./upgrade.mjs";
 
@@ -86,6 +88,27 @@ export async function cmdInit(root) {
 /* ---------- doctor ---------- */
 
 /** @param {string} root */
+/* 한글은 두 칸이다. padEnd 는 글자 수로 채워 doctor 라벨이 어긋났다(리뷰 실측). */
+function padCells(/** @type {string} */ s, /** @type {number} */ width) {
+  return s + " ".repeat(Math.max(0, width - visibleLength(s)));
+}
+
+/*
+ * 구독 인증 경로는 로그인이 돼 있어야 돈다. 설치만 보고 ✓ 를 주면 첫 요청에서
+ * "Not logged in · Please run /login" 으로 실패한다(리뷰 실측 — /login 은 axnavi 명령도 아니다).
+ * macOS 는 키체인에 두므로 파일로는 알 수 없다 — 그때는 줄을 내지 않는다.
+ * @param {string} providerId
+ * @returns {{ ok: true | "warn", detail: string } | null}
+ */
+function loginState(providerId) {
+  if (providerId !== "agent-sdk" && providerId !== "claude-cli") return null;
+  if (process.env["CLAUDE_CODE_OAUTH_TOKEN"] || process.env["ANTHROPIC_API_KEY"] || process.env["ANTHROPIC_AUTH_TOKEN"]) return { ok: true, detail: "환경변수 토큰" };
+  if (process.platform === "darwin") return null;
+  const dir = process.env["CLAUDE_CONFIG_DIR"] || join(homedir(), ".claude");
+  if (existsSync(join(dir, ".credentials.json"))) return { ok: true, detail: "Claude 구독 로그인 기록 있음" };
+  return { ok: "warn", detail: "로그인 기록 없음 — 터미널에서 claude 를 한 번 실행해 로그인하세요" };
+}
+
 export async function cmdDoctor(root) {
   const paths = resolveProjectPaths(root);
   const state = inspectProject(paths);
@@ -100,7 +123,7 @@ export async function cmdDoctor(root) {
   rows.push([
     python ? true : "warn",
     "Python",
-    python ? `${python.bin} ${python.version}` : "없음 — wiki·validator 계열은 Phase 2라 MVP에는 영향 없음",
+    python ? `${python.bin} ${python.version}` : "없음 — harness-init 의 보조 스크립트(요약·검증·스킬 조립)와 wiki 생성을 건너뜁니다. Python 3 설치를 권장합니다",
   ]);
 
   const git = spawnSync("git", ["--version"], { encoding: "utf8" });
@@ -112,6 +135,8 @@ export async function cmdDoctor(root) {
    */
   const picked = selectProvider({ cwd: paths.root });
   rows.push(["error" in picked ? false : true, "실행 경로", "error" in picked ? "없음 — 아래 안내 참조" : picked.note]);
+  const login = "error" in picked ? null : loginState(/** @type {any} */ (picked.provider).id);
+  if (login) rows.push([login.ok, "로그인", login.detail]);
 
   rows.push([state.initialized ? true : "warn", "CLI 설정", state.initialized ? paths.configPath : "없음 — axnavi init"]);
 
@@ -131,12 +156,14 @@ export async function cmdDoctor(root) {
 
   rows.push([true, "인덱서", `v${INDEXER_VERSION}`]);
   rows.push([true, "에이전트", `${(await loadAllAgents(AGENTS_DIR, AGENT_ENV)).length}개`]);
-  rows.push([true, "스킬", `${(await loadAllSkills(SKILLS_DIR)).length}개`]);
+  const skills = await loadAllSkills(SKILLS_DIR);
+  const aliases = skills.filter((s) => s.delegatesTo).length;
+  rows.push([true, "스킬", `${skills.length - aliases}개${aliases ? ` (+ 별칭 ${aliases})` : ""}`]);
 
   process.stdout.write(`\n${ui.bold("진단")}  ${ui.dim(paths.root)}\n\n`);
   for (const [ok, label, detail] of rows) {
     const mark = ok === true ? ui.green("✓") : ok === "warn" ? ui.yellow("!") : ui.red("✗");
-    process.stdout.write(`  ${mark} ${label.padEnd(10)} ${ui.dim(detail)}\n`);
+    process.stdout.write(`  ${mark} ${padCells(label, 10)} ${ui.dim(detail)}\n`);
   }
   process.stdout.write("\n");
   // 실행 경로가 없으면 무엇을 하면 되는지까지 알려 준다.
