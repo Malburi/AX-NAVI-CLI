@@ -37,6 +37,7 @@ import { createNaviPersona } from "./persona.mjs";
 import { createTypeahead } from "./typeahead.mjs";
 import { createLineBurst } from "./line-burst.mjs";
 import { renderReplay, replayFrame } from "./replay.mjs";
+import { claudeTranscriptPath, renderClaudeSession } from "./session-replay.mjs";
 import { DEFAULT_MODE, MODES, modeOf, nextMode } from "./mode.mjs";
 
 const NL = String.fromCharCode(10);
@@ -145,6 +146,19 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
    * @returns {boolean} 실제로 보여 준 것이 있는지
    */
   const showReplay = (record) => {
+    /*
+     * Claude 가 남긴 전체 기록이 있으면 그것을 그린다 — 도구 호출까지 Claude Code /resume 과 같게.
+     * 없으면(API 키 경로 등) 우리가 쌓은 질문·답 글자로 대신한다.
+     */
+    const sessionId = record.conversation?.providerSessionId;
+    const full = sessionId
+      ? renderClaudeSession({ path: claudeTranscriptPath(record.root ?? paths.root, sessionId), root: record.root ?? paths.root, width: process.stdout.columns ?? 100, ui })
+      : null;
+    if (full && full.length) {
+      const { head, tail } = replayFrame({ title: record.title ?? "", turns: record.turns, width: process.stdout.columns ?? 100, ui });
+      process.stdout.write([""].concat(head, full, tail, "").join(NL) + NL);
+      return true;
+    }
     const messages = record.messages ?? [];
     if (!messages.length) {
       /*
