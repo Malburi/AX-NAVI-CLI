@@ -26,6 +26,19 @@ import { dirname, isAbsolute, resolve } from "node:path";
 const PATH =
   /(?:[A-Za-z]:)?[\\/]?(?:[\w.\- ]+[\\/])*_workspace[\\/]reports[\\/][^\s\\/:*?"'<>|`]+\.(?:md|json)/g;
 
+/*
+ * `reports/{impact,safety}_x.md` 같은 묶음 표기를 파일마다 푼다. 실측: 세 리포트를 모두 쓴 실행의
+ * 마지막 줄 "리포트: _workspace/reports/{impact,pattern_conformance,safety}_x.md" 를 글자 그대로
+ * 파일 이름으로 보고 "쓰이지 않았다" 고 잘못 경고했다.
+ * @param {string} path
+ * @returns {string[]}
+ */
+function expandBraces(path) {
+  const group = /\{([^{}]*,[^{}]*)\}/.exec(path);
+  if (!group) return [path];
+  return group[1].split(",").flatMap((part) => expandBraces(path.slice(0, group.index) + part + path.slice(group.index + group[0].length)));
+}
+
 /**
  * 답이 이름을 댄 산출물 중 이번 턴에 안 쓰인 것.
  *
@@ -37,7 +50,7 @@ const PATH =
 export function unwrittenClaims(answer, roots, since) {
   /** @type {Set<string>} */
   const claimed = new Set();
-  for (const hit of answer.match(PATH) ?? []) claimed.add(hit.trim());
+  for (const hit of answer.match(PATH) ?? []) for (const path of expandBraces(hit.trim())) claimed.add(path);
   if (!claimed.size) return [];
 
   /** @type {string[]} */

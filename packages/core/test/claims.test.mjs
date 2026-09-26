@@ -132,6 +132,18 @@ test("소스 파일 경로는 산출물로 세지 않는다 — 늘 뜨는 경�
   });
 });
 
+test("묶음 표기 {a,b} 는 파일마다 풀어서 본다 — 셋 다 썼으면 경고하지 않는다", () => {
+  withTemp((root) => {
+    const dir = join(root, "_workspace", "reports");
+    mkdirSync(dir, { recursive: true });
+    for (const n of ["impact", "safety"]) writeFileSync(join(dir, `${n}_x.md`), "ok");
+    const answer = "리포트: _workspace/reports/{impact,safety}_x.md";
+    assert.deepEqual(unwrittenClaims(answer, [root], Date.now() - 60_000), []);
+    const partial = "리포트: _workspace/reports/{impact,missing}_x.md";
+    assert.deepEqual(unwrittenClaims(partial, [root], Date.now() - 60_000), ["_workspace/reports/missing_x.md"]);
+  });
+});
+
 test("같은 경로를 여러 번 적어도 한 번만 센다", () => {
   withTemp((root) => {
     const p = join(root, "_workspace", "reports", "dup.md");
