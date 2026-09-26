@@ -8,7 +8,7 @@ description: 변경 대상(파일/함수/클래스/SQL/엔드포인트/DB 컬럼
 
 변경 대상이 주어지면 `impact-analyzer` 에이전트를 호출해 직간접 영향과 위험도를 평가한다.
 
-수정·개발·마이그레이션 작업의 *시작점*으로, 다른 작업 스킬(`safe-modify`, `scaffold-feature`, `plan-migration`)도 내부적으로 이 스킬을 호출한다.
+수정·개발·마이그레이션 작업의 *시작점*으로, 다른 작업 스킬(`scaffold-feature`, `plan-migration`, 규모 normal의 `safe-modify`)도 내부적으로 이 스킬을 호출한다. safe-modify는 규모 small이면 이 스킬 대신 오케스트레이터가 직접 확인한다.
 
 **모델 고정:** 영향 분석, 인덱스 부재 시 feature-scoped analyzer, general-purpose 폴백과 재시도 모두 `sonnet` 별칭을 사용한다. Opus로 자동 승격하지 않는다. 실제 모델은 조직이 `ANTHROPIC_DEFAULT_SONNET_MODEL`로 정한다(지정이 없으면 호스트의 기본 Sonnet). 모델 미지원·권한 거부가 확인되면 중단하고 알린다. 정적 추적의 누락 가능성과 추가 확인 항목은 기존대로 보고하며, 모델을 이유로 분석 범위를 줄이지 않는다.
 
@@ -129,7 +129,7 @@ DB 스키마 영향: [있음/없음]
 - 사용자 질문에 "영향", "영향도", "impact", "어디 영향", "어디서 쓰여" 키워드 포함
 - 사용자가 변경 의사를 표현 ("이거 바꿔도 돼", "수정 가능?")하며 대상이 식별 가능
 
-자동 실행 후 결과를 사용자에게 보여주고 다음 액션 (safe-modify 또는 진행 중단)을 묻는다.
+단독으로 불렸으면 결과를 보여 주고 다음 액션(safe-modify 또는 진행 중단)을 묻는다. safe-modify·cross-repo 같은 오케스트레이터 안에서 불렸으면 묻지 않고 리포트만 돌려준다.
 
 ---
 

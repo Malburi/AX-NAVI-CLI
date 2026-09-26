@@ -9,7 +9,7 @@ description: "코드 변경을 사전 영향 분석 → 적용 → 사후 안전
 변경을 적용하기 *전·중·후* 모두에 안전 게이트를 둔다.  
 ITO/SI에서 "수정 → 곧장 commit → 운영 사고"의 사이클을 끊는 것이 목적.
 
-**모델 고정:** 이 스킬과 영향 분석·패턴 검증·안전성 평가·선택적 테스트 생성/문서 동기화의 모든 Agent 호출 및 재시도는 `sonnet` 별칭을 사용한다. Opus로 자동 승격하지 않는다. 실제 모델은 조직이 `ANTHROPIC_DEFAULT_SONNET_MODEL`로 정한다(지정이 없으면 호스트의 기본 Sonnet). 미지원·권한 거부가 확인되면 중단하고 알린다. 기존 영향 분석 범위·사용자 확인·HOLD/STOP·실행 검증은 그대로 유지한다. 전역 모델 설정은 변경하지 않는다.
+**모델 고정:** 이 스킬과 영향 분석·패턴 검증·안전성 평가·선택적 테스트 생성/문서 동기화의 모든 Agent 호출 및 재시도는 `sonnet` 별칭을 사용한다. Opus로 자동 승격하지 않는다. 실제 모델은 조직이 `ANTHROPIC_DEFAULT_SONNET_MODEL`로 정한다(지정이 없으면 호스트의 기본 Sonnet). 미지원·권한 거부가 확인되면 중단하고 알린다. 모델을 이유로 영향 확인·HOLD/STOP·실행 검증 기준을 줄이지 않는다. 전역 모델 설정은 변경하지 않는다.
 
 ---
 
@@ -24,7 +24,7 @@ ITO/SI에서 "수정 → 곧장 commit → 운영 사고"의 사이클을 끊는
 
 ---
 
-## 에이전트 호출 신뢰성 원칙 (Phase 1·3-1·3-3 공통)
+## 에이전트 호출 신뢰성 원칙 (에이전트를 부르는 모든 단계 공통)
 
 이 스킬이 호출하는 `impact-analyzer`/`pattern-conformance`/`change-safety` 에이전트는 드물게
 실제 작업 없이 "백그라운드로 실행했습니다, 완료되면 알려드리겠습니다" 같은 자기참조적 대기
@@ -35,8 +35,10 @@ ITO/SI에서 "수정 → 곧장 commit → 운영 사고"의 사이클을 끊는
 3. 파일도 본문도 없거나 응답이 위와 같은 대기·연기 형태면, **같은 에이전트를 1회 재호출**하되 프롬프트에 "이전 시도는 실제 작업 없이 끝났다. 백그라운드 실행이나 대기 언급 없이 이번 턴 안에서 직접 파일을 읽고 분석해서 Write로 산출물을 생성하라"를 명시한다.
 4. 재시도까지 실패하면 진행을 멈추고 사용자에게 상황을 알린 뒤 지시를 기다린다(임의로 게이트를 건너뛰지 않는다).
 
+서브에이전트는 포그라운드로 실행한다(`run_in_background`를 쓰지 않는다). 아래는 호스트가 그래도 뒤에서 돌렸을 때만 적용한다.
+
 **잔여 백그라운드 에이전트 위생**: 같은 세션에서 이전에 백그라운드로 띄운 에이전트가 있다면(특히
-위 no-op 재시도 후 방치된 것), 새 Phase 1·3-1·3-3 호출을 시작하기 전에 남아 있는지 확인한다.
+위 no-op 재시도 후 방치된 것), 새 에이전트 호출을 시작하기 전에 남아 있는지 확인한다.
 방치된 에이전트가 뒤늦게 재개되면 이번 작업이 이미 검증·확정한 산출물(`pattern_profile.json` 등)을
 예고 없이 덮어쓸 수 있다. 남아 있으면 `TaskStop`으로 정리하고 나서 새 호출을 진행한다. 대기 중인
 에이전트가 "추가 작업/스크립트 실행 승인"을 요청하는 경우에도, 이번 작업 범위 밖이면 승인하지 않는다.
@@ -128,7 +130,7 @@ Phase 2 적용 뒤 같은 파일 끝에 `## 변경 내역`(파일별 요지, 정
 
 ## Phase 1: 사전 영향 분석
 
-**규모 `normal`** → `analyze-impact` 호출 (위의 analyze-impact 스킬 그대로):
+**규모 `normal`** → `analyze-impact` 스킬의 Phase 0–2만 수행한다(그 스킬의 "다음 액션을 묻는다"는 하지 않는다):
 - 변경 대상 정규화
 - 인덱스 준비
 - impact-analyzer 실행 → `_workspace/reports/impact_<slug>.md`. 프롬프트에 `맥락: _workspace/reports/context_<slug>.md`와 `규모: normal`을 넣는다.
@@ -141,6 +143,7 @@ Phase 2 적용 뒤 같은 파일 끝에 `## 변경 내역`(파일별 요지, 정
 | 같은 결과를 **순서(번호)로** 읽는 곳 — 컬럼 추가·삭제 시 값이 조용히 밀린다 | 위에서 나온 화면·코드에서 `getString(n)`·`get(n)`·배열 인덱스 사용 여부를 Grep |
 | 컬럼·테이블이 실제로 있는가 | `column --name <컬럼>`, `table --table <테이블>`, `schema --table <테이블>` |
 | 트랜잭션 경계 안인가 | `transaction --file <변경 파일>` |
+| 영향받는 테스트 | 위 `callers` 결과 중 테스트 경로(`test/`, `*Test.*`, `*_test.*`). 없으면 0 |
 | 짝 저장소 영향 | API 계약(엔드포인트 경로·요청/응답 필드)이 바뀔 때만. 아니면 "API 계약 변경 없음 — 파트너 영향 없음" |
 
 하나라도 예상과 다르면(쓰는 곳이 많거나, 트랜잭션·공통 모듈이 걸림) 규모를 `normal`로 올리고 impact-analyzer 를 부른다. 결과는 `_workspace/reports/impact_<slug>.md`에 짧게 Write 한다 — `직접 영향` · `순서로 읽는 곳` · `DB 확인` · `트랜잭션` · `파트너` · `위험도: N/10` · `확인하지 못한 사실`.
@@ -165,9 +168,7 @@ Phase 2 적용 뒤 같은 파일 끝에 `## 변경 내역`(파일별 요지, 정
 
 ## Phase 2: 변경 적용
 
-Phase 1 결과를 보여 준 뒤:
-- 사용자가 직접 변경을 작성하거나
-- 사용자가 변경 내용을 자연어로 설명 → 어시스턴트가 Edit/Write로 적용
+Phase 1 결과를 보여 준 뒤 요청대로 어시스턴트가 Edit/Write로 바로 적용한다. 사용자가 이미 diff를 작성해 두었으면 그것을 대상으로 한다. 사용자 입력을 기다리지 않는다.
 
 적용 후 변경 파일 목록 수집 (git diff 또는 작업 추적).
 
@@ -184,7 +185,7 @@ Phase 1 결과를 보여 준 뒤:
 | pattern-conformance | 최종 결정 |
 |---|---|
 | CONFORM | change-safety 결정 그대로 |
-| HOLD | 지적된 차이를 고치고 3-1만 한 번 재검증. 그래도 HOLD면 최소 HOLD |
+| HOLD | 지적된 차이를 고치고 3-1을 한 번 재검증한다. 고치며 코드가 바뀌었으면 3-2를 다시 실행하고, 바뀐 줄이 3-3 근거에 닿으면 3-3도 다시 부른다. 그래도 HOLD면 최소 HOLD |
 | FAIL | 고친 뒤 3-1·3-3 재실행. 그래도 FAIL이면 STOP |
 
 모든 호출 프롬프트에 `맥락: _workspace/reports/context_<slug>.md`를 넣는다.
@@ -234,7 +235,7 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝
 Agent(
   subagent_type="ax-navi:change-safety",
   description="변경 안전성 평가",
-  prompt="<변경 파일: [목록]. mode: [감지된 모드]. 맥락: _workspace/reports/context_<slug>.md. impact 리포트: _workspace/reports/impact_<slug>.md. 패턴 적합성: _workspace/reports/pattern_conformance_<slug>.md (small 병렬이면 '병렬 합산'). 검증 결과: verify-target run의 commands(cmd·exit·fail_lines)와 overall. 출력: _workspace/reports/safety_<slug>.md>",
+  prompt="<변경 파일: [목록]. mode: [감지된 모드]. 맥락: _workspace/reports/context_<slug>.md. impact 리포트: _workspace/reports/impact_<slug>.md. 어댑터: check-adapter-coverage 결과 JSON(READ면 원문 확인 목록은 맥락 파일). 패턴 적합성: _workspace/reports/pattern_conformance_<slug>.md (small 병렬이면 '병렬 합산'). 검증 결과: verify-target run의 commands(cmd·exit·fail_lines)와 overall, 검증 수단이 없으면 그 사유와 맥락 파일 `## 변경 내역`의 정적 대조. 출력: _workspace/reports/safety_<slug>.md>",
   model="sonnet"
 )
 ```
@@ -256,8 +257,10 @@ Agent(
 종합 위험도: X/10
 즉시 STOP 트리거: [있음/없음]
 
-패턴 적합성: [CONFORM / HOLD / FAIL]
-검증 증거: [명령·exit code / UNVERIFIED]
+패턴 적합성: [CONFORM / HOLD / FAIL] · 기준: [프로필 id 또는 이웃 파일 경로]
+원문 확인: [읽은 파일 — 어댑터 READ일 때]
+검증 증거: [명령·exit / 검증 수단 없음(사유) + 정적 대조 / UNVERIFIED]
+확인하지 못한 사실: [없음 또는 목록 — 무엇을 어디서 확인하면 되는지]
 결정: [GO / HOLD / STOP]
 
 [GO]
@@ -266,12 +269,14 @@ Agent(
 - 추가 권고:
   - doc-syncer 호출 ("문서 동기화") — 문서 영향 점검
   - (production mode) 단계적 배포
+배포 후 확인 권장: [있으면 — GO 조건은 아님]
 
 [HOLD]
 보완 필요 항목:
 1. [차원]: [구체 액션]
 2. ...
 보완 후 다시 호출하세요: "이 변경 다시 평가해줘"
+(재인덱싱으로 wiki가 stale이면) wiki 갱신: "위키 다시 만들어줘"
 
 [STOP]
 사유: [...]
@@ -282,7 +287,7 @@ Agent(
 전체 리포트: _workspace/reports/safety_<slug>.md
 ```
 
-GO는 `어댑터 FULL 또는 READ(원문 확인 완료) + 패턴 CONFORM + 검증 명령 exit 0 + change-safety GO`가 모두 충족될 때 사용한다. 어댑터가 READ인데 원문을 읽지 않았거나, UNSUPPORTED이거나, 있는 검증 명령을 실행하지 않았으면 HOLD(`UNVERIFIED`)로 보고한다. 실행할 검증 명령이 없거나(해당 명령 없음·도구 미설치) 그 사실을 보고에 밝히고 정적 대조를 마쳤으면, DB 스키마·트랜잭션·인증 같은 위험 변경이 아닌 한 GO로 진행한다. 배포 뒤에야 확인할 수 있는 것(실제 DB 값, 화면 표시)은 `배포 후 확인 권장`으로 따로 적되 GO 조건으로 삼지 않는다. Phase 0에서 이웃 파일을 기준으로 삼은 경우도 다른 조건이 충족되면 GO이며, 보고에 `기준: 이웃 파일 [경로]`를 남긴다.
+GO는 `어댑터 FULL 또는 READ(원문 확인 완료) + 패턴 CONFORM + (검증 명령 exit 0, 또는 검증 수단 없음 + 정적 대조) + change-safety GO`일 때다. 검증 수단 없음으로 GO를 내는 것은 DB 스키마 DDL·트랜잭션 경계·인증/인가·공통 모듈 변경이 아닐 때만이다. 어댑터가 READ인데 원문을 읽지 않았거나, UNSUPPORTED이거나, 바뀐 파일을 검사하는 실행 가능한 명령을 실행하지 않았으면 HOLD(`UNVERIFIED`)로 보고한다. 배포 뒤에야 확인할 수 있는 것(실제 DB 값, 화면 표시)은 `배포 후 확인 권장`으로 따로 적되 GO 조건으로 삼지 않는다. Phase 0에서 이웃 파일을 기준으로 삼은 경우도 다른 조건이 충족되면 GO이며, 보고에 `기준: 이웃 파일 [경로]`를 남긴다.
 
 ## Phase 5: 인덱스·위키 증분 갱신
 

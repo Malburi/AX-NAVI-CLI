@@ -96,7 +96,7 @@ tools: Read, Grep, Glob, Bash, Write
 ```
 종합 위험도 = (회귀 + 컨벤션 + 사이드이펙트 + 롤백 + 보안 × 2 + 테스트) / 7
 
-GO     : 종합 < 3, 보안 점수 < 5, pattern-conformance=CONFORM, 필수 검증 명령 exit 0
+GO     : 종합 < 3, 보안 점수 < 5, pattern-conformance=CONFORM(`병렬 합산`이면 오케스트레이터가 판정), 필수 검증 명령 exit 0 또는 `검증 수단 없음`+정적 대조(DB 스키마·트랜잭션·인증·공통 모듈 변경이 아닐 때)
 HOLD   : 종합 3~6, OR 보안 점수 5~7
 STOP   : 종합 > 6, OR 보안 점수 ≥ 8, OR 즉시 STOP 트리거 발견
 ```
@@ -153,7 +153,7 @@ git diff <branch>..<branch>  # 브랜치 간 비교
 
 | 결정 | 권고 |
 |------|------|
-| GO | 패턴 일치와 필수 검증 통과를 근거로 commit/PR 진행 가능. |
+| GO | 패턴 일치와 필수 검증 통과(또는 검증 수단 없음 + 정적 대조)를 근거로 commit/PR 진행 가능. |
 | HOLD | 차원별 점수가 높은 항목 보완 후 재평가. 구체적 보완 액션 제시. |
 | STOP | 변경 철회 또는 근본 재설계 권고. 사유와 함께 대안 제시. |
 
@@ -172,7 +172,9 @@ git diff <branch>..<branch>  # 브랜치 간 비교
 변경 파일 수: N
 입력 impact 리포트: [경로 또는 "없음 — 자체 분석"]
 입력 패턴 판정: [CONFORM / HOLD / FAIL / 없음]
-실행 검증: [명령어, exit code 요약 / UNVERIFIED]
+실행 검증: [명령어, exit code 요약 / 검증 수단 없음(사유) + 정적 대조 / UNVERIFIED]
+원문 확인: [어댑터 READ일 때 읽은 파일]
+배포 후 확인 권장: [있으면 — GO 조건은 아님]
 어댑터 커버리지: [대상별 FULL/PARTIAL/UNSUPPORTED + 근거]
 
 ## 차원별 점수

@@ -31,7 +31,7 @@ description: 추출된 프로젝트 컨벤션에 따라 신규 기능을 스캐�
 ### 패턴 로드
 
 `.claude/patterns/*.md` 확인:
-- 스켈레톤 상태 (pattern-extractor 미실행) → "패턴 추출 먼저 필요" 안내 후 pattern-extractor 호출
+- 스켈레톤 상태 (pattern-extractor 미실행) → 아래 `select`의 이웃 `reference_files`를 기준으로 진행하고 보고에 pattern-extractor 재실행을 권고한다. 이웃 파일도 없을 때만 pattern-extractor를 먼저 호출한다.
 - 본문 채워짐 → 계속 진행
 
 `.claude/patterns/pattern_profile.json`을 기계 검증한다.
@@ -41,7 +41,7 @@ python "${CLAUDE_PLUGIN_ROOT}/agents/lib/pattern_profile.py" validate --root "[�
 ```
 
 - 검증 PASS → 모듈·레이어별 기준 코드 선택 가능.
-- 파일 없음·검증 FAIL → pattern-extractor를 먼저 실행하고 다시 검증. 재실패하면 추측 생성 금지 후 중단.
+- 파일 없음·검증 FAIL → `select`가 돌려준 이웃 `reference_files`(생성 위치의 같은 폴더 → 상위 폴더 같은 종류 파일)를 기준으로 진행하고, 보고에 `기준: 이웃 파일`과 pattern-extractor 재실행 권고를 남긴다. 이웃 파일도 없을 때만 pattern-extractor를 먼저 실행하고, 그래도 기준이 없으면 추측 생성 없이 중단한다.
 
 ### 분석 리포트 로드
 
@@ -187,14 +187,14 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" detect --root "[프로
 node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝트 루트]" --cmd "[고른 명령]"
 ```
 
-테스트 골격만 생성되고 assertion이 비어 있으면 통과 증거가 아니므로 HOLD로 표시한다. 감지 `count: 0`이면 자동 검증이 없다는 뜻이다. 보고에 `검증 수단 없음`으로 밝히고, 유사 화면·설정 원문과 대조해 생성 결과를 확인했으면 GO로 보고한다.
+assertion이 빈 테스트 골격은 검증 증거로 세지 않는다(`검증 수단 없음`으로 취급). 바뀐 파일을 검사하는 명령이 없거나(감지 `count: 0` 포함), `run`이 `overall: "unavailable"`(exit 3, 도구 없음)이면 `검증 수단 없음`으로 밝히고, 유사 화면·설정 원문과 대조(정적 대조)해 생성 결과를 확인한다. 바뀐 파일을 검사하고 실행 가능한 명령을 실행하지 않았을 때만 `UNVERIFIED`(최소 HOLD)다.
 
 ### 4-3. 변경 안전성 평가
 
-`change-safety` 호출 (자동) — 생성 파일, 패턴 적합성 리포트, 실제 검증 명령 결과를 함께 전달해 보안·회귀 위험을 점검한다.
+`change-safety` 호출 (자동) — 생성 파일, 어댑터 판정(check-adapter-coverage 결과 JSON)과 원문 확인 목록(READ일 때 읽은 유사 화면·설정), 패턴 적합성 리포트, 검증 결과(명령·exit·overall, 검증 수단이 없으면 사유와 정적 대조)를 함께 전달해 보안·회귀 위험을 점검한다.
 
 결과:
-- GO → 패턴 CONFORM + 필수 검증 명령 exit 0 + change-safety GO가 모두 충족된 경우만 진행
+- GO → 패턴 CONFORM + (필수 검증 exit 0, 또는 검증 수단 없음 + 정적 대조) + change-safety GO. 검증 수단 없음으로 GO는 DB 스키마·트랜잭션·인증·공통 모듈 변경이 아닐 때만
 - HOLD → 보완 필요 항목 표시
 - STOP → 거의 발생 안 함 (보안 위험 자동 도입 시만)
 
@@ -249,6 +249,6 @@ GO일 때 변경된 프로젝트에서 인덱스를 incremental 모드로 갱신
 
 기존 파일/메서드/SQL ID와 충돌하면 *덮어쓰지 않고* 사용자에게 조정 요청.
 
-### 패턴 부재 시 거부
+### 패턴 부재 시
 
-`.claude/patterns/`가 비어 있거나 스켈레톤이면 → pattern-extractor 먼저 실행 권고. 컨벤션 없이 스캐폴딩하면 *추측에 기반한 잘못된 표준*을 도입할 위험.
+`.claude/patterns/`가 비어 있거나 스켈레톤이면 생성 위치에 가장 가까운 기존 파일(이웃 `reference_files`)을 기준으로 삼고 pattern-extractor 재실행을 권고한다. 이웃 파일까지 없으면 거부한다 — 컨벤션 없이 스캐폴딩하면 *추측에 기반한 잘못된 표준*을 도입할 위험이 있다.

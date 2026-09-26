@@ -10,8 +10,8 @@ analyze-impact / pattern-conformance / change-safety 에이전트 게이트를 *
 ## 규칙
 1. **외과적 변경 원칙 유지** — 요청된 부분만 건드린다. 인접 코드·주석·포맷 "개선" 금지.
 2. 변경 대상 경로가 정해지면 `pattern_profile.py validate`와 `select`를 실행하고 선택된 실제 `reference_files`를 읽는다. 기존 파일의 국소 수정은 그 파일 자체의 스타일도 함께 유지한다.
-3. 신규 파일인데 검증된 preferred 프로필·실제 기준 파일이 없으면 추측 생성하지 않고 `scaffold-feature`로 승격한다.
-4. 변경 범위에 해당하는 가장 작은 테스트·빌드·린트 명령을 실제 실행한다. `verify-target.mjs detect`로 명령을 확보하고 그중 가장 작은 것을 `run`으로 돌린 뒤 `overall`과 `fail_lines`만 확인한다. 실패하거나 실행하지 못하면(감지 `count: 0` 포함) 성공으로 보고하지 않는다.
+3. 신규 파일인데 preferred 프로필도 이웃 기준 파일도 없으면 추측 생성하지 않고 `scaffold-feature`로 승격한다.
+4. 변경 범위에 해당하는 가장 작은 테스트·빌드·린트 명령을 실제 실행한다. `verify-target.mjs detect`로 명령을 확보하고 그중 가장 작은 것을 `run`으로 돌린 뒤 `overall`과 `fail_lines`만 확인한다. 실패하거나 실행하지 못하면 성공으로 보고하지 않는다. 바뀐 파일을 검사하는 명령이 없거나(감지 `count: 0` 포함) `run`이 `overall: "unavailable"`이면 `검증 수단 없음`으로 밝히고 정적 대조(컬럼 순서 ↔ 화면 매핑, 태그 짝 등) 결과를 보고한다.
 
 ```powershell
 node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" detect --root "[프로젝트 루트]" --target "[변경 대상]"
@@ -26,7 +26,7 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝
 - 외부 API 계약 변경 (요청/응답 필드, 엔드포인트)
 - 트랜잭션 경계 변경
 - 3개 이상 파일에 걸친 수정
-- 구조화 패턴이 없거나 대상 모듈과 일치하는 preferred 프로필이 없음
+- `pattern_profile.py select`가 프로필도 이웃 `reference_files`도 돌려주지 않음(주변에 같은 종류 파일이 하나도 없음)
 
 작업 도중 승격 조건이 드러나면(예: 2개 파일을 이미 고친 뒤 3번째 파일이 필요해짐, 수정 중 트랜잭션 경계 변경임을 발견) 그 자리에서 멈추고 승격한다. 이때 **이미 적용한 변경은 되돌리지 않되, 승격된 스킬의 사전 영향 분석(safe-modify Phase 1) 대상에 포함**시켜 함께 재검증한다. 사용자에게 "여기까지 N개 파일을 수정했고, 승격 조건([조건])이 확인되어 [safe-modify/scaffold-feature]로 전환해 지금까지 변경분까지 검증하겠습니다"를 알린 뒤 진행한다.
 

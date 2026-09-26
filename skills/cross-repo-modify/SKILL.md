@@ -65,7 +65,7 @@ safe-modify Phase 0과 동일한 키워드 표 적용 (`production`/`hotfix`/`le
 
 ## Phase 1: 시작 측 영향 분석
 
-변경 대상이 명확하면 → `impact-analyzer`를 `initiating_root`에서 실행 (analyze-impact와 동일):
+`safe-modify` Phase 0의 규모 판정을 따른다. 규모 small(API 계약 변경 없음)이면 오케스트레이터가 safe-modify Phase 1 체크리스트로 직접 확인해 `impact_<slug>.md`를 쓰고, normal이면 `impact-analyzer`를 `initiating_root`에서 실행한다(analyze-impact와 동일, 다음 액션 질문은 하지 않는다):
 - 변경 대상 정규화 → 영향 리포트 `_workspace/reports/impact_<slug>.md`
 
 리포트에서 변경 대상이 **API 엔드포인트/컨트롤러/DTO/서비스 계층 중 파트너 노출 대상**인지 판별:
@@ -134,7 +134,7 @@ Agent(
 
 `safe-modify` Phase 2와 동일:
 - 변경 전에 `pattern_profile.py select`로 변경 경로·모듈·레이어에 맞는 preferred 프로필을 고르고 실제 `reference_files`를 읽는다.
-- 사용자가 직접 작성하거나, 자연어 설명 → 어시스턴트가 Edit/Write로 적용.
+- 요청대로 어시스턴트가 Edit/Write로 바로 적용한다(사용자가 diff를 작성해 두었으면 그것을 대상으로 한다).
 - 적용 후 변경 파일 목록 수집.
 
 변경이 API 계약 형태(엔드포인트 경로/메서드/DTO 필드)를 바꾸면, 적용 후 `api-bridge extract`로
@@ -178,7 +178,7 @@ Agent(
 
 ## Phase 6: 통합 패턴·실행·안전성 평가 + 드리프트 재검증
 
-시작 측과 Phase 5가 실행된 각 파트너에서 먼저 `pattern-conformance`를 실행한다. 이어서 각 저장소에서 실제 테스트·빌드·린트 명령을 실행하고 명령·exit code·핵심 출력을 수집한다. 이 두 증거를 아래 change-safety 입력에 반드시 포함한다. 미실행(`UNVERIFIED`)은 최소 HOLD, 패턴 FAIL 또는 필수 명령 실패는 STOP이다.
+시작 측과 Phase 5가 실행된 각 파트너에서 먼저 `pattern-conformance`를 실행한다. 이어서 각 저장소에서 실제 테스트·빌드·린트 명령을 실행하고 명령·exit code·핵심 출력을 수집한다. 이 두 증거를 아래 change-safety 입력에 반드시 포함한다. 바뀐 파일을 검사하고 이 환경에서 실행 가능한 명령을 실행하지 않았을 때만 `UNVERIFIED`(최소 HOLD)다. 해당 명령이 없거나 `verify-target run`이 `overall: "unavailable"`(exit 3)이면 `검증 수단 없음`으로 적고 정적 대조를 한 뒤, DB 스키마·트랜잭션·인증·공통 모듈 변경이 아니면 진행한다. 패턴 FAIL 또는 필수 명령 실패는 STOP이다.
 
 ### change-safety (시작 측 + 반영된 파트너(들) 전부, 같은 메시지에서 병렬)
 
@@ -187,7 +187,7 @@ Agent(
 Agent(
   subagent_type="ax-navi:change-safety",
   description="변경 안전성 평가 (시작 측)",
-  prompt="<변경 파일: [Phase 4 목록]. mode: [Phase 0 감지 모드]. impact 리포트: _workspace/reports/impact_<slug>.md. 패턴 판정: _workspace/reports/pattern_conformance_<slug>.md. 실행 검증: [명령/exit code/핵심 출력]. 출력: _workspace/reports/safety_<slug>.md>",
+  prompt="<변경 파일: [Phase 4 목록]. mode: [Phase 0 감지 모드]. impact 리포트: _workspace/reports/impact_<slug>.md. 어댑터: [check-adapter-coverage 결과 JSON]. 원문 확인: [READ일 때 읽은 파일:줄]. 패턴 판정: _workspace/reports/pattern_conformance_<slug>.md. 실행 검증: [명령/exit code/핵심 출력, 검증 수단이 없으면 사유와 정적 대조]. 출력: _workspace/reports/safety_<slug>.md>",
   model="sonnet"
 )
 ```
@@ -197,12 +197,12 @@ Agent(
 Agent(
   subagent_type="ax-navi:change-safety",
   description="[target.label] 변경 안전성 평가",
-  prompt="<프로젝트 루트: [target.root]. 변경 파일: [target.root]/_workspace/reports/cross_modify_partner.md 목록. mode: [Phase 0 감지 모드]. 패턴 판정: [target.root]/_workspace/reports/pattern_conformance_<slug>.md. 실행 검증: [명령/exit code/핵심 출력]. 출력: [target.root]/_workspace/reports/safety_<slug>.md>",
+  prompt="<프로젝트 루트: [target.root]. 변경 파일: [target.root]/_workspace/reports/cross_modify_partner.md 목록. mode: [Phase 0 감지 모드]. 어댑터: [해당 저장소 check-adapter-coverage 결과 JSON]. 원문 확인: [READ일 때 읽은 파일:줄]. 패턴 판정: [target.root]/_workspace/reports/pattern_conformance_<slug>.md. 실행 검증: [명령/exit code/핵심 출력, 검증 수단이 없으면 사유와 정적 대조]. 출력: [target.root]/_workspace/reports/safety_<slug>.md>",
   model="sonnet"
 )
 ```
 
-모든 대상 어댑터가 FULL이고, 패턴 CONFORM, 필수 검증 exit 0, change-safety GO이며 API 드리프트가 0건일 때만 전체 GO다. GO인 각 저장소는 analyzer incremental로 인덱스를 갱신한 후 `generate-wiki`를 실행한다.
+모든 대상 어댑터가 FULL 또는 READ(원문 확인 완료)이고, 패턴 CONFORM, 필수 검증 exit 0(또는 검증 수단 없음 + 정적 대조, 위험 변경 아님), change-safety GO이며 API 드리프트가 0건일 때 전체 GO다. GO인 각 저장소는 analyzer incremental로 인덱스를 갱신한 후 `generate-wiki`를 실행한다.
 
 ### API 드리프트 재검증 (Phase 5 실행된 대상마다, 병렬)
 

@@ -59,7 +59,7 @@ model: sonnet
 
 ### Step 1: 컨벤션 로드
 
-`pattern_profile.py validate` 후 대상 모듈·test 레이어로 프로필을 선택한다. 선택된 실제 `reference_files`와 `.claude/patterns/test_pattern.md`를 함께 읽는다. 기존 테스트가 전혀 없어 검증된 기준을 정할 수 없으면 테스트 프레임워크·명명·fixture 방식을 사용자에게 확인하기 전 생성하지 않는다.
+`pattern_profile.py validate` 후 대상 모듈·test 레이어로 프로필을 선택한다. 선택된 실제 `reference_files`와 `.claude/patterns/test_pattern.md`를 함께 읽는다. 기존 테스트가 전혀 없으면 빌드 파일(pom.xml·build.gradle·package.json·pyproject.toml 등)에 이미 선언된 테스트 의존성을 기준으로 삼는다. 그것도 없으면 임의 프레임워크를 들이지 않고 생성하지 않으며, `검증 수단 없음 — 테스트 기준 없음`으로 보고한다. 사용자에게 고르게 하지 않는다.
 
 ### Step 2: 대상 코드 분석
 

@@ -206,10 +206,10 @@ Agent(
 백엔드와 생성에 성공한 각 클라이언트에서 다음 순서를 독립적으로 실행한다:
 
 1. `pattern-conformance`: 변경 파일, `pattern_selection.json`, 실제 `reference_files`를 대조해 `CONFORM/HOLD/FAIL` 판정
-2. 해당 저장소의 실제 테스트·빌드·린트 명령 실행 — 명령과 exit code를 증거로 저장
-3. `change-safety`: 위 두 결과와 diff를 입력으로 `GO/HOLD/STOP` 판정
+2. 해당 저장소의 실제 테스트·빌드·린트 명령 실행 — 명령과 exit code를 증거로 저장(검증 수단이 없으면 사유와 정적 대조)
+3. `change-safety`: 위 두 결과, diff, 어댑터 판정(check-adapter-coverage 결과 JSON)과 원문 확인 목록(READ일 때 읽은 유사 화면·설정)을 입력으로 `GO/HOLD/STOP` 판정
 
-검증 명령 미실행은 `UNVERIFIED`이며 최소 HOLD다. 패턴 FAIL 또는 검증 명령 실패는 STOP이다.
+바뀐 파일을 검사하고 이 환경에서 실행 가능한 명령을 실행하지 않았을 때만 `UNVERIFIED`(최소 HOLD)다. 해당 명령이 없거나 `verify-target run`이 `overall: "unavailable"`(exit 3)이면 `검증 수단 없음`으로 적고 정적 대조를 한 뒤, DB 스키마·트랜잭션·인증·공통 모듈 변경이 아니면 진행한다. assertion이 빈 테스트 골격은 검증 증거로 세지 않는다. 패턴 FAIL 또는 검증 명령 실패는 STOP이다.
 
 ### API 계약 정합성 (선택된 `frontend_targets` 전체 — 병렬)
 
@@ -229,7 +229,7 @@ Agent(
 )
 ```
 
-모든 저장소의 대상 어댑터가 FULL이고, 패턴 CONFORM, 필수 검증 exit 0, change-safety GO이며 모든 클라이언트의 API 드리프트가 0건일 때만 전체 GO다. 그 외에는 가장 낮은 판정을 사용한다. GO인 저장소는 analyzer incremental로 인덱스를 갱신한 뒤 `generate-wiki`를 실행해 구조화 패턴 표와 변경된 계약을 반영한다.
+모든 저장소의 대상 어댑터가 FULL 또는 READ(원문 확인 완료)이고, 패턴 CONFORM, 필수 검증 exit 0(또는 검증 수단 없음 + 정적 대조, 위험 변경 아님), change-safety GO이며 모든 클라이언트의 API 드리프트가 0건일 때 전체 GO다. 그 외에는 가장 낮은 판정을 사용한다. GO인 저장소는 analyzer incremental로 인덱스를 갱신한 뒤 `generate-wiki`를 실행해 구조화 패턴 표와 변경된 계약을 반영한다.
 
 ---
 
