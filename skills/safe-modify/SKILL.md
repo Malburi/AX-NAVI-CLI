@@ -126,10 +126,22 @@ Phase 2 적용 뒤 같은 파일 끝에 `## 변경 내역`(파일별 요지, 정
 
 ## Phase 1: 사전 영향 분석
 
-변경 대상이 명확하면 → `analyze-impact` 호출 (위의 analyze-impact 스킬 그대로):
+**규모 `normal`** → `analyze-impact` 호출 (위의 analyze-impact 스킬 그대로):
 - 변경 대상 정규화
 - 인덱스 준비
-- impact-analyzer 실행 → `_workspace/reports/impact_<slug>.md`. 프롬프트에 `맥락: _workspace/reports/context_<slug>.md`와 `규모: small|normal`을 넣는다.
+- impact-analyzer 실행 → `_workspace/reports/impact_<slug>.md`. 프롬프트에 `맥락: _workspace/reports/context_<slug>.md`와 `규모: normal`을 넣는다.
+
+**규모 `small`** → impact-analyzer 를 부르지 않고 **오케스트레이터가 직접** 확인한다. 이미 Phase 0에서 대상 원문을 읽었으므로 새 대화의 에이전트가 같은 파일을 다시 파악할 이유가 없다(실측: 에이전트로 4분 50초·도구 18회). 아래 체크리스트를 인덱스 질의로 채운다 — 질의 결과로 좁혀진 파일의 필요한 줄만 연다.
+
+| 확인 | 방법 |
+|---|---|
+| 바꾸는 SQL·메서드를 쓰는 곳 전부 | `query-index.mjs sql --id <SQL id>`(used_by), `callers --id <심볼>` |
+| 같은 결과를 **순서(번호)로** 읽는 곳 — 컬럼 추가·삭제 시 값이 조용히 밀린다 | 위에서 나온 화면·코드에서 `getString(n)`·`get(n)`·배열 인덱스 사용 여부를 Grep |
+| 컬럼·테이블이 실제로 있는가 | `column --name <컬럼>`, `table --table <테이블>`, `schema --table <테이블>` |
+| 트랜잭션 경계 안인가 | `transaction --file <변경 파일>` |
+| 짝 저장소 영향 | API 계약(엔드포인트 경로·요청/응답 필드)이 바뀔 때만. 아니면 "API 계약 변경 없음 — 파트너 영향 없음" |
+
+하나라도 예상과 다르면(쓰는 곳이 많거나, 트랜잭션·공통 모듈이 걸림) 규모를 `normal`로 올리고 impact-analyzer 를 부른다. 결과는 `_workspace/reports/impact_<slug>.md`에 짧게 Write 한다 — `직접 영향` · `순서로 읽는 곳` · `DB 확인` · `트랜잭션` · `파트너` · `위험도: N/10` · `확인하지 못한 사실`.
 
 영향도 결과를 사용자에게 보여 주고 **묻지 않고 진행**한다 — 사용자는 이미 수정을 요청했다:
 

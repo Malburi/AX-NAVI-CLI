@@ -20,7 +20,7 @@
 | 단계 | 하는 일 | 호출 에이전트·스크립트 | 사용자 개입 |
 |------|---------|------------------------|-------------|
 | Phase 0 | 운영 모드 키워드 감지, 인덱스 신선도 확인, 어댑터 커버리지 게이트, 패턴 프로필 검증·선택. 확인한 파일과 사실을 `context_<slug>.md`에 적고 규모(small/normal)를 정한다. 이후 모든 에이전트가 이 파일을 먼저 읽어 같은 파일을 다시 탐색하지 않는다. | `build-index.mjs --check-stale`, `check-adapter-coverage.mjs`, `pattern_profile.py validate/select` | 재인덱싱 건너뛰기를 원하면 알린다. |
-| Phase 1 | 사전 영향 분석. [analyze-impact](/skills/analyze-impact.md) 절차 그대로 실행해 `impact_<slug>.md`를 만들고 결과를 보여 준 뒤 묻지 않고 진행한다. 확정 못 한 사실은 보고의 `확인하지 못한 사실`로 남긴다. | [impact-analyzer](/agents/impact-analyzer.md) | CRITICAL이거나, 데이터 변경·되돌리기 어려운 변경의 전제를 확인하지 못했거나, 요청 해석이 갈릴 때만 묻는다. |
+| Phase 1 | 사전 영향 분석. 규모 small이면 오케스트레이터가 인덱스 질의 체크리스트(쓰는 곳·순서로 읽는 곳·DB 확인·트랜잭션·파트너)로 직접 확인하고, normal이면 [analyze-impact](/skills/analyze-impact.md) 절차 그대로 실행한다. 어느 쪽이든 `impact_<slug>.md`를 만들고 결과를 보여 준 뒤 묻지 않고 진행한다. 확정 못 한 사실은 보고의 `확인하지 못한 사실`로 남긴다. | [impact-analyzer](/agents/impact-analyzer.md) | CRITICAL이거나, 데이터 변경·되돌리기 어려운 변경의 전제를 확인하지 못했거나, 요청 해석이 갈릴 때만 묻는다. |
 | Phase 2 | 변경 적용. 사용자가 직접 작성하거나 자연어 설명을 어시스턴트가 Edit/Write로 적용한다. `pattern_selection.json`의 선택 프로필과 `reference_files`를 먼저 읽는다. | Edit/Write | 변경 내용을 설명하거나 직접 작성한다. |
 | Phase 3-1 | 패턴 적합성 검증. FAIL이면 수정 후 재검증, HOLD면 기준 파일에 맞춰 고치고 한 번 재검증한다. | [pattern-conformance](/agents/pattern-conformance.md) | 없음 |
 | Phase 3-2 | 검증 명령 실행. `detect`로 lint/typecheck/test/build 후보를 확보하고, 변경 범위에 맞는 가장 작은 명령을 `run`으로 실제 실행한다. | `verify-target.mjs detect/run` | `detected` 목록을 보고 고른다. |
@@ -123,7 +123,7 @@ change-safety는 회귀 · 컨벤션 · 사이드이펙트 · 롤백 · 보안 �
 
 - **외과적 변경 원칙이 모든 Phase에서 최우선이다.** 요청된 부분만 수정하고 인접 코드·주석·포맷을 "개선"하지 않는다. 내가 만든 orphan만 정리하며 기존 dead code는 언급하되 삭제하지 않는다. 변경된 모든 줄은 사용자 요청에 직접 연결되어야 하고, 리팩터링은 변경 후 별도 제안으로만 언급한다.
 - **모델 고정.** 이 스킬과 영향 분석·패턴 검증·안전성 평가·선택적 테스트 생성/문서 동기화의 모든 Agent 호출 및 재시도는 `claude-sonnet-5`를 사용한다. `sonnet` 별칭이나 Opus 자동 승격을 사용하지 않는다.
-- **변경 적용은 사용자가 진행 의사를 명시한 경우에만 한다.** Phase 1 결과를 보고 사용자가 옵션을 고르기 전에는 코드를 건드리지 않는다.
+- **수정 요청 자체가 진행 의사다.** Phase 1 결과를 보여 주고 바로 적용한다. CRITICAL·데이터 변경 전제 미확인·해석이 갈리는 요청만 먼저 묻는다.
 - **에이전트 호출 신뢰성.** 지시한 출력 파일이 실제로 디스크에 생성됐는지 확인하고, 없거나 대기·연기 응답이면 같은 에이전트를 1회 재호출한다. 재시도까지 실패하면 진행을 멈추고 알린다. 임의로 게이트를 건너뛰지 않는다.
 - **잔여 백그라운드 에이전트 위생.** 이전에 방치된 에이전트가 뒤늦게 재개되어 `pattern_profile.json` 등을 덮어쓸 수 있으므로, 새 Phase 1·3-1·3-3 호출 전에 확인하고 남아 있으면 `TaskStop`으로 정리한다. 작업 범위 밖의 승인 요청은 승인하지 않는다.
 - **인덱스만 믿고 결론 내리지 않는다.** 인덱스 결과는 반드시 실물과 대조하며, stale일 수 있는 구간에서는 특히 그렇다.
