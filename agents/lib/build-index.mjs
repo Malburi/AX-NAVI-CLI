@@ -37,7 +37,7 @@ import {
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
 
-export const INDEXER_VERSION = "1.15.0"; // 업무 용어 수집을 C#(///·Designer·resx)·ASP·ASP.NET·Razor·Python·Nexacro·Swagger 표준 형식으로 넓힌다.
+export const INDEXER_VERSION = "1.16.0"; // 그리드 열(DevExpress·WinForms·ASP.NET·IBSheet·AUIGrid·RealGrid·SBGrid·Nexacro)·XtraReports 를 화면↔DB 컬럼으로 잇는다.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
 const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
@@ -2390,9 +2390,9 @@ export function extractTerms(text, rel, methods, classes = []) {
     for (const m of text.matchAll(/(?:ViewData\s*\[\s*"Title"\s*\]|ViewBag\.Title)\s*=\s*"([^"]*)"/g)) pushPieces(m[1], "title", m.index);
     for (const m of text.matchAll(/<PageTitle>([\s\S]*?)<\/PageTitle>/g)) pushPieces(m[1], "title", m.index);
     for (const m of text.matchAll(/<(th|label|legend|caption)\b[^>]*>([\s\S]*?)<\/\1>/gi)) pushPieces(m[2], "label", m.index);
-    // ASP.NET 서버 컨트롤 — <asp:Label Text="…"> / HeaderText="…"
-    for (const m of text.matchAll(/<asp:\w+\b[^>]*>/gi)) {
-      for (const name of ["Text", "HeaderText", "ToolTip"]) {
+    // ASP.NET 서버 컨트롤 — <asp:Label Text="…"> / HeaderText="…", DevExpress <dx:ASPxLabel Text="…"> / <dx:GridViewDataTextColumn Caption="…">
+    for (const m of text.matchAll(/<(?:asp|dx):\w+\b[^>]*>/gi)) {
+      for (const name of ["Text", "HeaderText", "Caption", "ToolTip"]) {
         const value = attrValue(m[0], name);
         if (value) pushPieces(value, "label", m.index);
       }
@@ -2421,6 +2421,24 @@ export function extractTerms(text, rel, methods, classes = []) {
     if (/\.Designer\.cs$/i.test(rel)) {
       for (const m of text.matchAll(/\bthis\.Text\s*=\s*"([^"]*)"/g)) pushPieces(m[1], "title", m.index);
       for (const m of text.matchAll(/\bthis\.\w+\.(?:Text|HeaderText|Caption)\s*=\s*"([^"]*)"/g)) pushPieces(m[1], "label", m.index);
+    }
+  }
+
+  if (ext === ".vb") {
+    /*
+     * VB.NET — ''' 문서 주석, 디자이너 Me.Text(창 제목)·Me.컨트롤.Text(라벨). VB 는 인덱서가 클래스·메서드를
+     * 뽑지 않아 주석의 주인을 모른다. 맨 위 블록만 머리말로, 나머지는 메서드 설명(중간 가중치)으로 둔다.
+     */
+    let first = true;
+    for (const m of text.matchAll(/(?:^[ \t]*'''.*(?:\r?\n|$))+/gm)) {
+      const body = m[0].split(/\r?\n/).map((l) => l.replace(/^\s*'''\s?/, "")).join("\n");
+      const summary = body.match(/<summary>([\s\S]*?)<\/summary>/i)?.[1] ?? body;
+      for (const t of docLines(summary.replace(/<[^>]+>/g, " "))) push(t, first ? "header" : "method_doc", m.index);
+      first = false;
+    }
+    if (/\.Designer\.vb$/i.test(rel)) {
+      for (const m of text.matchAll(/\bMe\.Text\s*=\s*"([^"]*)"/g)) pushPieces(m[1], "title", m.index);
+      for (const m of text.matchAll(/\bMe\.\w+\.(?:Text|HeaderText|Caption)\s*=\s*"([^"]*)"/g)) pushPieces(m[1], "label", m.index);
     }
   }
 
@@ -2512,6 +2530,174 @@ export function extractTerms(text, rel, methods, classes = []) {
   }).slice(0, TERMS_PER_FILE);
 }
 
+/*
+ * 화면 그리드 열 ↔ DB 컬럼.
+ *
+ * 열 정의 한 줄에 화면 용어(머리)와 DB 컬럼(필드)이 같이 들어 있다 — IBSheet {Header:"신청일자",
+ * SaveName:"APPL_DT"}, DevExpress this.col1.FieldName/Caption, Nexacro 머리 Cell ↔ 본문 bind:.
+ * 이것이 없으면 "APPL_DT 를 바꾸면 어느 화면이 영향받나"를 SQL 까지만 따라가고 화면에서 멈춘다.
+ * 머리 글자는 업무 용어(label)로도 쓴다.
+ */
+const GRID_SCRIPT_EXT = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".vue", ".jsp", ".jspf", ".html", ".htm", ".asp", ".aspx", ".ascx", ".cshtml", ".xjs"]);
+const COLUMN_ID = /^[A-Za-z_][\w$]*$/;
+
+/** 필드 위치를 감싸는 가장 가까운 { … } — 문자열 안의 중괄호는 무시하지 않는다(근사). */
+function enclosingObject(text, index, reach = 600) {
+  let start = -1;
+  for (let i = index - 1, depth = 0; i >= Math.max(0, index - reach); i -= 1) {
+    const ch = text[i];
+    if (ch === "}") depth += 1;
+    else if (ch === "{") { if (depth === 0) { start = i; break; } depth -= 1; }
+  }
+  if (start < 0) return null;
+  for (let j = index, depth = 0; j < Math.min(text.length, index + reach); j += 1) {
+    const ch = text[j];
+    if (ch === "{") depth += 1;
+    else if (ch === "}") { if (depth === 0) return text.slice(start, j + 1); depth -= 1; }
+  }
+  return null;
+}
+
+/**
+ * @param {string} text
+ * @param {string} rel
+ * @returns {Array<{ field: string, header?: string, lib: string, file: string, line: number }>}
+ */
+export function extractGridColumns(text, rel) {
+  const ext = extname(rel).toLowerCase();
+  const atLine = lineIndex(text);
+  /** @type {Array<{ field: string, header?: string, lib: string, file: string, line: number }>} */
+  const out = [];
+  const add = (field, header, lib, offset) => {
+    if (!field || !COLUMN_ID.test(field)) return;
+    out.push({ field, ...(header && header.trim() ? { header: header.trim() } : {}), lib, file: rel, line: atLine(offset) });
+  };
+
+  if (ext === ".cs" || ext === ".vb") {
+    /* 디자이너 코드는 속성을 컨트롤마다 따로 대입한다 — 같은 컨트롤 이름으로 필드와 머리를 짝짓는다. C# this. · VB Me. */
+    /** @type {Map<string, { field: string, at: number, lib: string }>} */
+    const fields = new Map();
+    /** @type {Map<string, string>} */
+    const captions = new Map();
+    for (const m of text.matchAll(/\b(?:this|Me)\.(\w+)\.FieldName\s*=\s*"([^"]+)"/g)) fields.set(m[1], { field: m[2], at: m.index, lib: "devexpress" });
+    for (const m of text.matchAll(/\b(?:this|Me)\.(\w+)\.DataPropertyName\s*=\s*"([^"]+)"/g)) fields.set(m[1], { field: m[2], at: m.index, lib: "winforms" });
+    for (const m of text.matchAll(/\b(?:this|Me)\.(\w+)\.(?:Caption|HeaderText)\s*=\s*"([^"]*)"/g)) captions.set(m[1], m[2]);
+    for (const [control, f] of fields) add(f.field, captions.get(control), f.lib, f.at);
+  }
+
+  if (MARKUP_TERM_EXT.has(ext)) {
+    /* <dx:GridViewDataTextColumn FieldName="" Caption=""> · <asp:BoundField DataField="" HeaderText=""> */
+    for (const m of text.matchAll(/<(dx|asp):\w+\b[^>]*>/gi)) {
+      const field = attrValue(m[0], "FieldName") ?? attrValue(m[0], "DataField");
+      if (field) add(field, attrValue(m[0], "Caption") ?? attrValue(m[0], "HeaderText"), m[1].toLowerCase() === "dx" ? "devexpress" : "aspnet", m.index);
+    }
+  }
+
+  if (GRID_SCRIPT_EXT.has(ext)) {
+    for (const m of text.matchAll(/\b(SaveName|Name|dataField|fieldName|ref)\s*:\s*["']([A-Za-z_][\w$]*)["']/g)) {
+      const object = enclosingObject(text, m.index);
+      if (!object) continue;
+      const header = object.match(/\b(?:Header|headerText)\s*:\s*["']([^"']+)["']/)?.[1]
+        ?? object.match(/\bheader\s*:\s*(?:\{[^}]*?\btext\s*:\s*)?["']([^"']+)["']/)?.[1]
+        ?? object.match(/\bcaption\s*:\s*\[?\s*["']([^"']+)["']/)?.[1];
+      // 머리가 없으면 그리드 열이 아니다 — name: 은 어디에나 있다.
+      if (!header) continue;
+      const lib = /\bHeader\s*:/.test(object) ? "ibsheet" : m[1] === "dataField" ? "auigrid" : m[1] === "ref" ? "sbgrid" : "realgrid";
+      add(m[2], header, lib, m.index);
+    }
+  }
+
+  if (ext === ".xfdl" || (ext === ".xml" && /<Format\b/i.test(text) && /<Band\b/i.test(text))) {
+    /* Nexacro·XPlatform Grid — 같은 Format 안에서 머리 Band 의 Cell 과 본문 Band 의 bind: Cell 을 col 번호로 짝짓는다. */
+    for (const format of text.matchAll(/<Format\b[\s\S]*?<\/Format>/gi)) {
+      /** @type {Map<string, string>} */
+      const heads = new Map();
+      for (const band of format[0].matchAll(/<Band\b([^>]*)>([\s\S]*?)<\/Band>/gi)) {
+        const id = attrValue(band[1], "id") ?? "";
+        for (const cell of band[2].matchAll(/<Cell\b[^>]*>/gi)) {
+          const col = attrValue(cell[0], "col") ?? "0";
+          const value = attrValue(cell[0], "text") ?? "";
+          if (/^head$/i.test(id)) heads.set(col, value);
+          else if (/^body$/i.test(id)) {
+            const bind = value.match(/^bind:(\w+)$/i)?.[1];
+            if (bind) add(bind, heads.get(col), "nexacro", format.index + band.index + cell.index);
+          }
+        }
+      }
+    }
+  }
+
+  const seen = new Set();
+  return out.filter((item) => {
+    const key = `${item.field}\u0000${item.header || ""}\u0000${item.line}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/*
+ * DevExpress XtraReports 보고서(.repx).
+ *
+ * 데이터 소스(SqlDataSource)는 대개 Base64 로 싼 XML 로 들어 있다 — <Item ObjectType="…SqlDataSource…"
+ * Base64="PFNxbERhdGFTb3VyY2…"/>. 풀면 <Query Type="CustomSqlQuery"><Sql>SELECT …</Sql></Query>,
+ * <Query Type="SelectQuery"><Tables><Table Name="TB_X"/>, <Query Type="StoredProcQuery"><ProcName>PR_X</ProcName>
+ * 가 나온다. 이게 없으면 보고서가 쓰는 테이블이 영향도에 안 잡힌다. 풀지 않은 채 들어 있는 판도 같이 본다.
+ */
+function unescapeXml(value) {
+  return String(value).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&apos;/g, "'").replace(/&#xD;|&#xA;|&#13;|&#10;/gi, "\n").replace(/&amp;/g, "&");
+}
+
+export function extractRepx(text, rel) {
+  const atLine = lineIndex(text);
+  /** @type {string[]} 데이터 소스 XML 조각들(풀어 낸 것 + 원문) */
+  const payloads = [];
+  for (const m of text.matchAll(/\bBase64\s*=\s*"([A-Za-z0-9+/=\s]{16,})"/g)) {
+    try {
+      const decoded = Buffer.from(m[1].replace(/\s+/g, ""), "base64").toString("utf8");
+      if (/<(SqlDataSource|Query)\b/.test(decoded)) payloads.push(decoded);
+    } catch { /* Base64 가 아니면 넘어간다 */ }
+  }
+  payloads.push(unescapeXml(text));
+  const reportName = text.match(/<XtraReportsLayoutSerializer\b[^>]*\bName\s*=\s*"([^"]+)"/)?.[1] || basename(rel, extname(rel));
+  const sqls = [];
+  const relations = [];
+  let n = 0;
+  for (const payload of payloads) {
+    for (const q of payload.matchAll(/<Query\b([^>]*)>([\s\S]*?)<\/Query>/gi)) {
+      const type = attrValue(q[1], "Type") || "";
+      const name = attrValue(q[1], "Name") || `Query${n}`;
+      const id = `${reportName}.${name}`;
+      n += 1;
+      if (/CustomSqlQuery/i.test(type)) {
+        const statement = unescapeXml(q[2].match(/<Sql>([\s\S]*?)<\/Sql>/i)?.[1] || "").trim();
+        const kind = sqlStatementType(statement);
+        if (!kind) continue;
+        sqls.push({ id, file: rel, line: 1, type: kind, tables: [...new Set(sqlTables(statement))], text_preview: statement.replace(/\s+/g, " ").slice(0, 240), origin: "deterministic-indexer", confidence: "HIGH" });
+        relations.push(...extractSqlRelations(statement, { sql_id: id, file: rel, line: 1 }));
+      } else if (/SelectQuery/i.test(type)) {
+        const tables = [...q[2].matchAll(/<Table\b[^>]*\bName\s*=\s*"([^"]+)"/gi)].map((t) => t[1].replace(/^.*\./, "").toUpperCase());
+        if (tables.length) sqls.push({ id, file: rel, line: 1, type: "select", tables: [...new Set(tables)], text_preview: `(SelectQuery) ${[...new Set(tables)].join(", ")}`, origin: "deterministic-indexer", confidence: "MEDIUM" });
+      } else if (/StoredProcQuery/i.test(type)) {
+        const proc = q[2].match(/<ProcName>([^<]+)<\/ProcName>/i)?.[1]?.trim();
+        if (proc) sqls.push({ id, file: rel, line: 1, type: "call", tables: [], text_preview: `{CALL ${proc}}`, procedure: proc.replace(/"/g, "").toUpperCase(), origin: "deterministic-indexer", confidence: "HIGH" });
+      }
+    }
+  }
+  /* 보고서 이름은 제목, 컨트롤 글자는 라벨, [필드] 바인딩은 컬럼 연결 */
+  const terms = [];
+  const displayName = text.match(/<XtraReportsLayoutSerializer\b[^>]*\bDisplayName\s*=\s*"([^"]+)"/)?.[1];
+  if (displayName) for (const t of termPieces(unescapeXml(displayName))) terms.push({ term: t, kind: "title", file: rel, line: 1 });
+  for (const m of text.matchAll(/<Item\d+\b[^>]*\bControlType\s*=\s*"(?:XRLabel|XRTableCell|XRRichText)"[^>]*>/gi)) {
+    const value = attrValue(m[0], "Text");
+    if (value) for (const t of termPieces(unescapeXml(value))) terms.push({ term: t, kind: "label", file: rel, line: atLine(m.index) });
+  }
+  const gridColumns = [];
+  for (const m of text.matchAll(/\bExpression\s*=\s*"\[([A-Za-z_][\w$]*)\]"/g)) gridColumns.push({ field: m[1], lib: "xtrareports", file: rel, line: atLine(m.index) });
+  for (const m of text.matchAll(/\bDataMember\s*=\s*"[\w$]+\.([A-Za-z_][\w$]*)"/g)) gridColumns.push({ field: m[1], lib: "xtrareports", file: rel, line: atLine(m.index) });
+  return { sqls, relations, terms: terms.slice(0, TERMS_PER_FILE), gridColumns };
+}
+
 function analyzeFile(file, root, config) {
   const buffer = readFileSync(file.full);
   const decoded = decodeSource(buffer);
@@ -2526,6 +2712,8 @@ function analyzeFile(file, root, config) {
   const embedded = symbolFacts.sqlFacts || (isPlsqlSource(ext, clean) ? extractPlsqlSql(text, clean, file.rel, symbolFacts.methods)
     : PROC_EXTENSIONS.has(ext) ? extractProcSql(text, clean, file.rel, symbolFacts.methods) : null);
   if (embedded) { sql.sqls.push(...embedded.sqls); sql.usages.push(...embedded.usages); sql.relations.push(...embedded.relations); }
+  const repx = ext === ".repx" ? extractRepx(text, file.rel) : null;
+  if (repx) { sql.sqls.push(...repx.sqls); sql.relations.push(...repx.relations); }
   return {
     rel: file.rel,
     /* 소스 지문이 같은 파일을 다시 열지 않도록 여기서 읽은 바이트의 해시를 넘긴다(Windows에서 open이 파일당 ~0.5ms). */
@@ -2556,8 +2744,20 @@ function analyzeFile(file, root, config) {
     tables: ext === ".sql" ? extractSchema(text, file.rel) : [],
     clientRefs: extractClientRefs(text, file.rel),
     springBeans: extractSpringBeans(text, file.rel),
-    terms: extractTerms(text, file.rel, symbolFacts.methods, symbolFacts.symbols.filter((item) => ["class", "interface", "enum", "record", "object"].includes(item.type))),
+    ...gridAndTerms(text, file.rel, symbolFacts, repx),
   };
+}
+
+/* 그리드 열과 업무 용어. 그리드 머리 글자도 라벨 용어가 된다(필드 이름을 주인으로). */
+function gridAndTerms(text, rel, symbolFacts, repx) {
+  const gridColumns = [...extractGridColumns(text, rel), ...(repx?.gridColumns || [])];
+  const terms = [...(repx?.terms || [])];
+  terms.push(...extractTerms(text, rel, symbolFacts.methods, symbolFacts.symbols.filter((item) => ["class", "interface", "enum", "record", "object"].includes(item.type))));
+  for (const column of gridColumns) {
+    if (!column.header || !HANGUL.test(column.header)) continue;
+    for (const term of termPieces(column.header)) terms.push({ term, kind: "label", file: rel, line: column.line, symbol: column.field });
+  }
+  return { gridColumns, terms };
 }
 
 function unique(items, key) {
@@ -3235,6 +3435,8 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   if (sqls.length || usages.length) output.sql_usage = { _meta: common, sqls, usages };
   const glossary = facts.flatMap((item) => item.terms || []);
   if (glossary.length) output.glossary = { _meta: common, entries: glossary };
+  const uiColumns = facts.flatMap((item) => item.gridColumns || []);
+  if (uiColumns.length) output.ui_columns = { _meta: common, columns: uiColumns };
   if (boundaries.length) output.transactions = { _meta: common, boundaries };
   if (communications.length) output.external_io = { _meta: common, communications };
   if (branches.length) output.env_branches = { _meta: common, profiles, branches };
@@ -4054,7 +4256,7 @@ export function buildIndex(options) {
       globalMeta.ai_enrichment = { applied_at: generatedAt, applied: 0, rejected: 0, error: error.message, patch: slash(relative(root, stalePatch)) };
     }
   }
-  const managed = new Set(["symbols", "call_graph", "sql_usage", "transactions", "external_io", "env_branches", "schema", "api_contract", "dead_code", "ui_flow", "client_index", "data_flow", "glossary"]);
+  const managed = new Set(["symbols", "call_graph", "sql_usage", "transactions", "external_io", "env_branches", "schema", "api_contract", "dead_code", "ui_flow", "client_index", "data_flow", "glossary", "ui_columns"]);
   for (const name of managed) {
     const path = join(indexDir, `${name}.json`);
     /*

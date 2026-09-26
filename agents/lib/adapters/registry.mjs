@@ -8,7 +8,7 @@ import { basename, extname } from "node:path";
 export const ADAPTERS = [
   { id: "jvm", label: "Java/Kotlin/Spring", extensions: [".java", ".kt", ".kts"], level: "FULL" },
   { id: "dotnet", label: ".NET/C#", extensions: [".cs"], level: "FULL" },
-  { id: "dotnet-project", label: ".NET project metadata", extensions: [".csproj", ".vbproj", ".fsproj", ".resx", ".config"], level: "PARTIAL" },
+  { id: "dotnet-project", label: ".NET project metadata", extensions: [".csproj", ".vbproj", ".fsproj", ".resx", ".config", ".repx"], level: "PARTIAL" },
   { id: "javascript", label: "JavaScript/TypeScript/Vue/React", extensions: [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".vue"], level: "FULL" },
   { id: "nexacro", label: "Nexacro", extensions: [".xjs"], level: "FULL" },
   { id: "nexacro-form", label: "Nexacro Form", extensions: [".xfdl"], level: "PARTIAL" },
