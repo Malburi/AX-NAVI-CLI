@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ui_columns.json",
+  "description": "화면 그리드 열 정의 — DB 컬럼(field)과 화면 머리(header). DevExpress·WinForms·ASP.NET·IBSheet·AUIGrid·RealGrid·SBGrid·Nexacro 의 표준 형식에서 모은다. query-index column 이 컬럼 변경의 화면 영향을 이것으로 찾는다.",
+  "type": "object",
+  "required": ["_meta", "columns"],
+  "properties": {
+    "_meta": { "$ref": "_meta.schema.json" },
+    "columns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["field", "lib", "file", "line"],
+        "properties": {
+          "field": { "type": "string" },
+          "header": { "type": "string" },
+          "lib": { "type": "string", "enum": ["devexpress", "winforms", "aspnet", "ibsheet", "auigrid", "realgrid", "sbgrid", "nexacro", "xtrareports"] },
+          "file": { "type": "string" },
+          "line": { "type": ["integer", "null"] }
+        }
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applyAiPatch, buildIndex } from "../build-index.mjs";
 import { assessTargetCoverage } from "../adapters/registry.mjs";
+import { COMMANDS } from "../query-index.mjs";
 
 function write(root, rel, content) {
   const path = join(root, rel);
@@ -1541,6 +1542,106 @@ public class ApplyController {
       has("src/app/ApplyController.java", "desc", "수강신청 등록");
       const classDoc = entries.find((e) => e.file === "Svc/ApplyService.cs" && e.kind === "class_doc");
       assert.ok(classDoc?.symbol?.endsWith("ApplyService"), `C# 클래스 설명의 주인: ${classDoc?.symbol}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /*
+   * 그리드 열 ↔ DB 컬럼, XtraReports 보고서. 실제 샘플이 없어 각 라이브러리의 표준 형식으로 고정한다.
+   * 이것이 없으면 "APPL_DT 를 바꾸면 어느 화면이 영향받나"가 SQL 에서 멈춘다.
+   */
+  register("그리드 열 정의(DevExpress·WinForms·ASP.NET·IBSheet·AUIGrid·RealGrid·SBGrid·Nexacro·VB)와 XtraReports 를 컬럼·SQL 로 잇는다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-grid-"));
+    try {
+      write(root, "Forms/FrmApply.Designer.cs", `partial class FrmApply {
+  private void InitializeComponent() {
+    this.colApplDt.FieldName = "APPL_DT";
+    this.colApplDt.Caption = "신청일자";
+    this.dgvCol1.DataPropertyName = "USER_NM";
+    this.dgvCol1.HeaderText = "성명";
+  }
+}
+`);
+      write(root, "Forms/FrmOld.Designer.vb", `Partial Class FrmOld
+  Private Sub InitializeComponent()
+    Me.Text = "수강 이력"
+    Me.colSeq.FieldName = "APPL_SEQ"
+    Me.colSeq.Caption = "신청순번"
+  End Sub
+End Class
+`);
+      write(root, "web/Apply.aspx", `<%@ Page Title="수강신청 조회" %>
+<dx:ASPxGridView ID="grid" runat="server"><Columns>
+  <dx:GridViewDataTextColumn FieldName="APPL_DT" Caption="신청일자" />
+</Columns></dx:ASPxGridView>
+<asp:BoundField DataField="USER_NM" HeaderText="성명" />
+`);
+      write(root, "web/js/ibsheet.js", `var cols = [
+  {Header:"신청일자", Type:"Date", SaveName:"APPL_DT", Width:80},
+  {Header:"상태|상태", Type:"Combo", SaveName:"STAT_CD"}
+];
+var option = { name: "notAGridColumn" };
+`);
+      write(root, "web/js/auigrid.js", `var columnLayout = [{ dataField: "APPL_DT", headerText: "신청일자" }];
+`);
+      write(root, "web/js/realgrid.js", `grid.setColumns([
+  { name: "applDt", fieldName: "applDt", header: { text: "신청일자" } },
+  { header: { text: "승인여부" }, name: "aprvYn", fieldName: "aprvYn" }
+]);
+`);
+      write(root, "web/js/sbgrid.js", `SBGridProperties.columns = [ {caption: ["신청일자"], ref: "APPL_DT", type: "output"} ];
+`);
+      write(root, "nx/MA00001.xfdl", `<FDL><Form id="MA00001" titletext="수강신청 관리"><Layouts><Layout><Grid id="grd"><Formats><Format id="default">
+<Band id="head"><Cell col="0" text="신청일자"/><Cell col="1" text="성명"/></Band>
+<Band id="body"><Cell col="0" text="bind:APPL_DT"/><Cell col="1" text="bind:USER_NM"/></Band>
+</Format></Formats></Grid></Layout></Layouts></Form></FDL>
+`);
+      const source = Buffer.from(`<SqlDataSource Name="sqlDataSource1"><Query Type="CustomSqlQuery" Name="Apply"><Sql>SELECT APPL_DT, USER_NM FROM TB_APPL WHERE STAT_CD = 'A'</Sql></Query><Query Type="SelectQuery" Name="Users"><Tables><Table Name="TB_USER" /></Tables></Query><Query Type="StoredProcQuery" Name="Close"><ProcName>PR_APPL_CLOSE</ProcName></Query></SqlDataSource>`).toString("base64");
+      write(root, "Reports/RptApply.repx", `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="22.1" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="RptApply" DisplayName="수강신청 현황 보고서">
+  <Bands><Item1 Ref="2" ControlType="DetailBand"><Controls>
+    <Item1 Ref="3" ControlType="XRLabel" Text="신청일자" />
+    <Item2 Ref="4" ControlType="XRLabel"><ExpressionBindings><Item1 Ref="5" EventName="BeforePrint" PropertyName="Text" Expression="[APPL_DT]" /></ExpressionBindings></Item2>
+  </Controls></Item1></Bands>
+  <ComponentStorage><Item1 Ref="0" ObjectType="DevExpress.DataAccess.Sql.SqlDataSource,DevExpress.DataAccess" Name="sqlDataSource1" Base64="${source}" /></ComponentStorage>
+</XtraReportsLayoutSerializer>
+`);
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const columns = json(root, "ui_columns.json").columns;
+      const col = (file, field, header, lib) => assert.ok(columns.some((c) => c.file === file && c.field === field && (header === undefined || c.header === header) && c.lib === lib), `${file} ${field}/${header}/${lib} 없음: ${JSON.stringify(columns.filter((c) => c.file === file))}`);
+      col("Forms/FrmApply.Designer.cs", "APPL_DT", "신청일자", "devexpress");
+      col("Forms/FrmApply.Designer.cs", "USER_NM", "성명", "winforms");
+      col("Forms/FrmOld.Designer.vb", "APPL_SEQ", "신청순번", "devexpress");
+      col("web/Apply.aspx", "APPL_DT", "신청일자", "devexpress");
+      col("web/Apply.aspx", "USER_NM", "성명", "aspnet");
+      col("web/js/ibsheet.js", "APPL_DT", "신청일자", "ibsheet");
+      col("web/js/auigrid.js", "APPL_DT", "신청일자", "auigrid");
+      col("web/js/realgrid.js", "applDt", "신청일자", "realgrid");
+      col("web/js/realgrid.js", "aprvYn", "승인여부", "realgrid");
+      col("web/js/sbgrid.js", "APPL_DT", "신청일자", "sbgrid");
+      col("nx/MA00001.xfdl", "APPL_DT", "신청일자", "nexacro");
+      col("nx/MA00001.xfdl", "USER_NM", "성명", "nexacro");
+      col("Reports/RptApply.repx", "APPL_DT", undefined, "xtrareports");
+      assert.ok(!columns.some((c) => c.field === "notAGridColumn"), "머리 없는 name: 을 그리드 열로 잡았다");
+
+      const sqls = json(root, "sql_usage.json").sqls.filter((s) => s.file === "Reports/RptApply.repx");
+      assert.ok(sqls.some((s) => s.id === "RptApply.Apply" && s.tables.includes("TB_APPL")), `보고서 CustomSqlQuery: ${JSON.stringify(sqls)}`);
+      assert.ok(sqls.some((s) => s.id === "RptApply.Users" && s.tables.includes("TB_USER")), "보고서 SelectQuery");
+      assert.ok(sqls.some((s) => s.type === "call" && s.procedure === "PR_APPL_CLOSE"), "보고서 StoredProcQuery");
+
+      const terms = json(root, "glossary.json").entries;
+      assert.ok(terms.some((e) => e.file === "Reports/RptApply.repx" && e.kind === "title" && e.term === "수강신청 현황 보고서"), "보고서 이름을 제목으로");
+      assert.ok(terms.some((e) => e.file === "web/js/ibsheet.js" && e.kind === "label" && e.term === "신청일자" && e.symbol === "APPL_DT"), "그리드 머리를 라벨 용어로");
+      assert.ok(terms.some((e) => e.file === "Forms/FrmOld.Designer.vb" && e.kind === "title" && e.term === "수강 이력"), "VB 디자이너 창 제목");
+
+      const impact = COMMANDS.column({ root, name: "APPL_DT", limit: 50 });
+      const screenFiles = new Set(impact.screens.items.map((s) => s.file));
+      for (const file of ["Forms/FrmApply.Designer.cs", "web/Apply.aspx", "web/js/ibsheet.js", "web/js/auigrid.js", "web/js/sbgrid.js", "nx/MA00001.xfdl", "Reports/RptApply.repx", "web/js/realgrid.js"]) {
+        assert.ok(screenFiles.has(file), `APPL_DT 를 보여 주는 화면에서 ${file} 이 빠졌다: ${[...screenFiles]}`);
+      }
+      assert.equal(impact.screens.items.find((s) => s.file === "web/js/realgrid.js")?.match, "normalized", "applDt 는 밑줄·대소문자를 빼고 맞춘 것이다");
+      assert.ok(impact.sql_mentions.items.some((s) => s.id === "RptApply.Apply"), "컬럼이 보이는 SQL");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

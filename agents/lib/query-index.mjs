@@ -288,6 +288,41 @@ const COMMANDS = {
     };
   },
 
+  /*
+   * DB 컬럼을 보여 주는 화면(그리드 열)과, 그 컬럼이 앞부분에 보이는 SQL — 컬럼 변경의 화면 영향.
+   * 화면 필드는 camelCase(applDt)로 적히기도 해서 밑줄·대소문자를 빼고도 맞춘다(normalized).
+   */
+  column({ root, indexDir, name, limit }) {
+    if (!name) throw new Error("column에는 --name(컬럼명)이 필요합니다.");
+    const flat = (value) => String(value).replace(/_/g, "").toUpperCase();
+    let columns = [];
+    const missing = [];
+    try {
+      columns = loadIndex(root, "ui_columns", indexDir).columns || [];
+    } catch (error) {
+      if (!error.missingIndex) throw error;
+      missing.push("ui_columns");
+    }
+    const screens = columns
+      .filter((item) => item.field.toUpperCase() === name.toUpperCase() || flat(item.field) === flat(name))
+      .map(({ field, header, lib, file, line }) => ({ field, header, lib, file, line, match: field.toUpperCase() === name.toUpperCase() ? "exact" : "normalized" }));
+    const word = new RegExp(`(^|[^\\w$])${name.replace(/[$]/g, "\\$")}($|[^\\w$])`, "i");
+    let sqls = [];
+    try {
+      sqls = (loadIndex(root, "sql_usage", indexDir).sqls || []).filter((item) => word.test(item.text_preview || ""));
+    } catch (error) {
+      if (!error.missingIndex) throw error;
+      missing.push("sql_usage");
+    }
+    return {
+      query: { name },
+      screens: cap(screens, limit),
+      sql_mentions: cap(sqls.map(({ id, type, tables, file, line }) => ({ id, type, tables, file, line })), limit),
+      ...(missing.length ? { missing_indexes: missing } : {}),
+      note: "sql_mentions 는 SQL 앞부분(240자)에서만 찾는다 — 여기 없다고 안 쓰는 것은 아니다. 테이블 단위는 table 명령으로 본다.",
+    };
+  },
+
   /* HTTP 엔드포인트 조회 */
   endpoint({ root, indexDir, path: pathQuery, limit }) {
     const contract = loadIndex(root, "api_contract", indexDir);
@@ -416,6 +451,7 @@ function printHelp() {
 
   summary                                   규모와 인덱스별 크기 먼저 확인
   search      --q <말> [--kind <종류>]        업무 용어로 전체 검색 (SQL 본문·설명까지)
+  column      --name <컬럼명>                 그 DB 컬럼을 보여 주는 화면(그리드 열)과 SQL
   symbol      --name <이름> [--file <경로>]  심볼 위치
   callers     --id <심볼>                    이 심볼을 부르는 곳
   callees     --id <심볼>                    이 심볼이 부르는 곳

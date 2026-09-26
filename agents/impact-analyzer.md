@@ -59,6 +59,7 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/query-index.mjs" summary --root "[프로�
 - 파일 경로 → `symbol --file [경로]`로 포함된 심볼 추출 → 각각을 변경 대상으로 분기
 - SQL 텍스트 → 영향받는 테이블·컬럼 추출
 - DB 컬럼 → `table --table [테이블]`로 해당 컬럼을 SELECT/UPDATE/INSERT/WHERE에 쓰는 SQL ID Set 수집
+  - 그리고 `column --name [컬럼]`으로 그 컬럼을 **직접 보여 주는 화면(그리드 열)**을 수집한다(DevExpress·IBSheet·AUIGrid·RealGrid·SBGrid·Nexacro 열 정의). SQL 경로로 이어지지 않아도 화면 영향은 여기서 잡힌다 — 컬럼 이름·길이·형식 변경은 화면 그리드도 고쳐야 한다.
 
 ### Step 2: 직접 호출자(Direct Callers) 식별
 
