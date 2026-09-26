@@ -1,12 +1,12 @@
 {
   "name": "axnavi",
-  "version": "0.1.0-alpha.26",
+  "version": "0.1.0-alpha.27",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "axnavi",
-      "version": "0.1.0-alpha.26",
+      "version": "0.1.0-alpha.27",
       "license": "MIT",
       "workspaces": [
         "packages/*"
@@ -1654,7 +1654,7 @@
     },
     "packages/cli": {
       "name": "ax-navi",
-      "version": "0.1.0-alpha.26",
+      "version": "0.1.0-alpha.27",
       "license": "MIT",
       "dependencies": {
         "@ax-navi/core": "*",
@@ -1668,7 +1668,7 @@
     },
     "packages/core": {
       "name": "@ax-navi/core",
-      "version": "0.1.0-alpha.26",
+      "version": "0.1.0-alpha.27",
       "dependencies": {
         "@ax-navi/indexer": "*"
       }
