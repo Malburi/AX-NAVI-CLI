@@ -1,6 +1,6 @@
 {
   "name": "ax-navi",
-  "version": "0.1.0-alpha.22",
+  "version": "0.1.0-alpha.23",
   "private": true,
   "type": "module",
   "description": "AX-NAVI CLI — 엔터프라이즈·레거시 코드베이스를 위한 AI Engineering CLI.",
