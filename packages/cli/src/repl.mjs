@@ -15,6 +15,7 @@ import {
   loadAllSkills,
   appendMessage,
   loadSession,
+  sessionIsCorrupt,
   newSessionId,
   saveSession,
   toTitle,
@@ -906,7 +907,8 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       if (wanted) {
         const record = await loadSession(paths, wanted);
         if (!record) {
-          process.stderr.write(`  ${ui.yellow("그런 세션이 없습니다")} ${ui.dim(`— ${wanted} (/sessions 로 확인)`)}${NL}`);
+          const why = sessionIsCorrupt(paths, wanted) ? "세션 파일이 손상돼 열 수 없습니다" : "그런 세션이 없습니다";
+          process.stderr.write(`  ${ui.yellow(why)} ${ui.dim(`— ${wanted} (/sessions 로 확인)`)}${NL}`);
           return 2;
         }
         onResume?.(record);

@@ -7,8 +7,9 @@
  */
 import { appendFile, mkdir } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureAxnaviIgnore } from "../../core/src/context/sessions.mjs";
 import { askText, pick } from "./picker.mjs";
 import { DEFAULT_MODE } from "./mode.mjs";
 
@@ -71,7 +72,7 @@ export const ui = {
 export function createAuditSink(paths) {
   const file = join(paths.logsDir, "audit.jsonl");
   /** @type {Promise<unknown>} */
-  let chain = mkdir(paths.logsDir, { recursive: true });
+  let chain = mkdir(paths.logsDir, { recursive: true }).then(() => ensureAxnaviIgnore(dirname(paths.logsDir)));
   return {
     /** @param {AuditRecord} entry */
     record(entry) {

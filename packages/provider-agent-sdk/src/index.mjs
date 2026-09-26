@@ -12,15 +12,17 @@
  */
 import { readFileSync } from "node:fs";
 import {
+  ENCODING_TOOLS,
   MODEL_BY_TIER,
   RESPONSE_STYLE,
+  encodingHookEvents,
   createBackgroundWatch,
   delegatedEnv,
   toDisallowedTools,
   toolBriefing,
   translateEvent,
 } from "../../provider-claude-cli/src/index.mjs";
-import { encodingPostToolUse, encodingPreToolUse } from "../../provider-claude-cli/src/legacy-encoding.mjs";
+import { encodingCleanup, encodingPostToolUse, encodingPreToolUse, restoreAll } from "../../provider-claude-cli/src/legacy-encoding.mjs";
 import { noAnswerText } from "../../cli/src/mcp/answers.mjs";
 
 /**
@@ -139,6 +141,7 @@ export class AgentSdkProvider {
     const abort = new AbortController();
     const onAbort = () => abort.abort();
     signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) abort.abort(); // 시작하기 전에 이미 중단됐으면 리스너가 불리지 않는다
     const background = createBackgroundWatch();
 
     /** @type {import("@anthropic-ai/claude-agent-sdk").CanUseTool} */
@@ -178,10 +181,10 @@ export class AgentSdkProvider {
         hooks: {
           PreToolUse: [
             { matcher: "Agent", hooks: [foregroundAgents] },
-            // EUC-KR 등 레거시 인코딩 파일은 UTF-8 사본으로 읽고 고친 뒤 원래 인코딩으로 되돌려 쓴다.
-            { matcher: "Read|Edit|Write|MultiEdit", hooks: [async (input) => encodingPreToolUse(input)] },
+            // EUC-KR 등 레거시 인코딩 파일은 도구가 도는 동안만 UTF-8 로 바꿨다가 원래 인코딩으로 되돌린다.
+            { matcher: ENCODING_TOOLS, hooks: [async (input) => encodingPreToolUse(input)] },
           ],
-          PostToolUse: [{ matcher: "Edit|Write|MultiEdit", hooks: [async (input) => encodingPostToolUse(input)] }],
+          ...encodingHookEvents((phase) => [async (/** @type {any} */ input) => (phase === "post" ? encodingPostToolUse(input) : encodingCleanup(input))]),
         },
         env: delegatedEnv(process.env, this.options.pluginDir ? { pluginDir: this.options.pluginDir } : {}),
         abortController: abort,
@@ -207,6 +210,10 @@ export class AgentSdkProvider {
       yield { type: "error", error: { kind: /auth|login|credential/i.test(message) ? "auth" : "unknown", message, retryable: false } };
     } finally {
       signal?.removeEventListener("abort", onAbort);
+      // 중단·오류로 뒷정리 훅이 못 돌았어도 UTF-8 로 바꿔 둔 레거시 파일을 되돌린다.
+      try {
+        restoreAll(this.options.cwd ?? process.cwd());
+      } catch { /* 정리는 최선만 */ }
     }
   }
 

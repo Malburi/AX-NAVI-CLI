@@ -27,6 +27,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { restoreAll } from "./legacy-encoding.mjs";
 
 const NEWLINE = String.fromCharCode(10);
 
@@ -585,6 +586,10 @@ export class ClaudeCliProvider {
       signal?.removeEventListener("abort", onAbort);
       rl.close();
       if (!finished) terminateTree(child);
+      // 중단·오류로 뒷정리 훅이 못 돌았어도 UTF-8 로 바꿔 둔 레거시 파일을 되돌린다.
+      try {
+        restoreAll(this.options.cwd ?? process.cwd());
+      } catch { /* 정리는 최선만 */ }
     }
   }
 
@@ -794,6 +799,25 @@ export function delegatedPayload(preamble, prompt, resumeFrom, sent = sentPreamb
   return [known ? "" : preamble, prompt].filter(Boolean).join("\n\n");
 }
 
+/* 인코딩 보존 훅이 보는 도구. 읽기도 포함한다 — 모델이 한글을 깨진 채 보지 않게. */
+export const ENCODING_TOOLS = "Read|Edit|Write|MultiEdit";
+
+/**
+ * 인코딩 보존 훅의 뒷정리 이벤트들(PreToolUse 는 따로 건다). 도구가 성공하면 PostToolUse, 실패하거나
+ * 거부되면 PostToolUseFailure·PermissionDenied, 그래도 남은 것은 Stop·SessionEnd 에서 되돌린다.
+ * @template T
+ * @param {(phase: "post" | "cleanup") => T[]} hooks
+ */
+export function encodingHookEvents(hooks) {
+  return {
+    PostToolUse: [{ matcher: ENCODING_TOOLS, hooks: hooks("post") }],
+    PostToolUseFailure: [{ matcher: ENCODING_TOOLS, hooks: hooks("cleanup") }],
+    PermissionDenied: [{ matcher: ENCODING_TOOLS, hooks: hooks("cleanup") }],
+    Stop: [{ hooks: hooks("cleanup") }],
+    SessionEnd: [{ hooks: hooks("cleanup") }],
+  };
+}
+
 /**
  * 위임 실행에 얹는 설정. 순수 함수로 꺼내 테스트가 모양을 고정한다.
  * @param {string[]} pluginNames  끌 호스트 플러그인
@@ -806,9 +830,9 @@ export function delegatedSettings(pluginNames, hookCommand, encodingCommand) {
     hooks: {
       PreToolUse: [
         { matcher: "Agent", hooks: [{ type: "command", command: hookCommand }] },
-        ...(encodingCommand ? [{ matcher: "Read|Edit|Write|MultiEdit", hooks: [{ type: "command", command: `${encodingCommand} pre` }] }] : []),
+        ...(encodingCommand ? [{ matcher: ENCODING_TOOLS, hooks: [{ type: "command", command: `${encodingCommand} pre` }] }] : []),
       ],
-      ...(encodingCommand ? { PostToolUse: [{ matcher: "Edit|Write|MultiEdit", hooks: [{ type: "command", command: `${encodingCommand} post` }] }] } : {}),
+      ...(encodingCommand ? encodingHookEvents((phase) => [{ type: "command", command: `${encodingCommand} ${phase}` }]) : {}),
     },
   };
 }

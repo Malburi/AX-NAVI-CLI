@@ -9,4 +9,4 @@ export { runAgent } from "./loop.mjs";
 export { loadSkill, resolveSkill, loadAllSkills } from "./skills/loader.mjs";
 export { estimateTokens, compactTurns } from "./context/compaction.mjs";
 export { buildProjectContext, indexAgeNote } from "./context/project.mjs";
-export { newSessionId, toTitle, saveSession, loadSession, listSessions, latestSession, appendMessage } from "./context/sessions.mjs";
+export { newSessionId, toTitle, saveSession, loadSession, listSessions, latestSession, appendMessage, sessionIsCorrupt, ensureAxnaviIgnore } from "./context/sessions.mjs";
