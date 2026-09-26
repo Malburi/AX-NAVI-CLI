@@ -117,6 +117,7 @@ npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0
 
 > `npm i -g github:Malburi/AX-NAVI-CLI` 대신 위의 주소를 쓰세요.
 > 위 주소는 평범한 HTTPS 다운로드라 git 프로토콜이 막힌 사내망에서도 설치됩니다.
+> 의존성 버전은 `npm-shrinkwrap.json` 으로 고정돼 있어 언제 설치해도 같은 판이 깔립니다.
 
 **폐쇄망**에서는 파일 하나로 옮깁니다. 태그를 체크아웃한 깨끗한 폴더에서 만들어야 받는 쪽이 태그와 같은 판을 받습니다.
 

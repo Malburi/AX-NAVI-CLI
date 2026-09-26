@@ -36,7 +36,8 @@
     "agents/",
     "skills/",
     "docs/index-schema/",
-    "README.md"
+    "README.md",
+    "npm-shrinkwrap.json"
   ],
   "optionalDependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
