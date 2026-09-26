@@ -21,7 +21,8 @@ import {
 } from "../../core/src/index.mjs";
 import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, setPanelMode, takeFolded, sessionMode, sessionModel, setLineReader, setSessionMode, setSessionModel, setTypingProbe, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
-import { buildCommands, menuItems, renderCommandMenu } from "./completion.mjs";
+import { buildCommands, firstSentence, menuItems, renderCommandMenu } from "./completion.mjs";
+import { clipToWidth, visibleLength } from "./width.mjs";
 import { attachAutocomplete } from "./autocomplete.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
@@ -1038,12 +1039,17 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       process.stdout.write(renderCommandMenu(commands, ui));
       return 0;
 
+    /*
+     * 목록에는 무엇을 하는지가 먼저 보여야 한다. 예전에는 이름 옆에 쓰는 에이전트·도구만 찍어
+     * "스킬 설명이 안 되어 있다" 는 지적을 받았다. 설명 한 줄을 넣고, 에이전트는 자리가 남을 때만 흐리게 붙인다.
+     */
     case "agents": {
       const agents = await loadAllAgents(AGENTS_DIR, { pluginRoot: REPO_ROOT, projectRoot: paths.root });
+      const width = process.stdout.columns ?? 100;
       process.stdout.write("\n");
       for (const a of agents) {
-        const tools = a.role.allowedTools ? a.role.allowedTools.filter((t) => t !== "TaskUpdate").join(",") : "(전체)";
-        process.stdout.write(`  ${ui.cyan(a.name.padEnd(22))} ${ui.dim(a.tier.padEnd(9))} ${ui.dim(tools)}\n`);
+        const summary = fitLine(firstSentence(a.description, 200), Math.max(20, width - 36));
+        process.stdout.write(`  ${ui.cyan(a.name.padEnd(22))} ${ui.dim(a.tier.padEnd(9))} ${summary}\n`);
       }
       process.stdout.write("\n");
       return 0;
@@ -1051,9 +1057,14 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
 
     case "skills": {
       const skills = await loadAllSkills(SKILLS_DIR);
+      const width = process.stdout.columns ?? 100;
       process.stdout.write("\n");
       for (const s of skills.filter((x) => !x.delegatesTo)) {
-        process.stdout.write(`  ${ui.cyan(s.name.padEnd(22))} ${ui.dim(s.agents.join(",") || "-")}\n`);
+        const room = Math.max(20, width - 27);
+        const summary = fitLine(firstSentence(s.description, 200), room);
+        const left = room - visibleLength(summary) - 3;
+        const agents = s.agents.length && left >= 12 ? ui.dim(` · ${clipToWidth(s.agents.join(","), left)}`) : "";
+        process.stdout.write(`  ${ui.cyan(s.name.padEnd(22))} ${summary}${agents}\n`);
       }
       const alias = skills.filter((s) => s.delegatesTo);
       if (alias.length) {
@@ -1123,6 +1134,15 @@ const MODEL_CHOICES = [
 ];
 
 /** @returns {string} */
+/**
+ * 한 줄에 맞게 자르고, 잘랐으면 … 를 붙인다. 말이 끊긴 채로 끝나면 설명이 덜 쓰인 것처럼 보인다.
+ * @param {string} text
+ * @param {number} max  보이는 칸 수
+ */
+function fitLine(text, max) {
+  return visibleLength(text) <= max ? text : `${clipToWidth(text, max - 1)}…`;
+}
+
 function describeModel() {
   const tier = sessionModel();
   if (!tier) return "기본 — 에이전트 선언을 따릅니다";
