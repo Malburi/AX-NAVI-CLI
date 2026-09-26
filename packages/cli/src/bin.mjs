@@ -13,8 +13,7 @@ import { executeAgent } from "./execute.mjs";
 import { startRepl } from "./repl.mjs";
 import { cmdUpgrade } from "./commands.mjs";
 import { readVersion } from "./upgrade.mjs";
-import { REPO_ROOT, ui } from "./runtime.mjs";
-import { launchClaude } from "../../launcher/src/launch.mjs";
+import { ui } from "./runtime.mjs";
 import { renderBanner } from "./banner.mjs";
 
 /*
@@ -117,16 +116,6 @@ async function main() {
   }
 
   switch (command) {
-    case "launch":
-      // 사전 시험: Claude Code 대화 화면을 axnavi 설정과 함께 띄운다(packages/launcher).
-      return launchClaude({
-        pluginRoot: REPO_ROOT,
-        projectRoot: resolveProjectPaths(args.root).root,
-        passthrough: [
-          ...(args.continueLatest ? ["--continue"] : []),
-          ...(args.resumeId ? ["--resume", args.resumeId] : []),
-        ],
-      });
     case "init":
       return cmdInit(args.root);
     case "keys":

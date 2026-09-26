@@ -11,7 +11,7 @@
 import { AnthropicProvider } from "../../provider-anthropic/src/index.mjs";
 import { ClaudeCliProvider, probeClaudeCli } from "../../provider-claude-cli/src/index.mjs";
 import { AgentSdkProvider } from "../../provider-agent-sdk/src/index.mjs";
-import { hostPlugins, pluginSkillNames } from "../../launcher/src/launch.mjs";
+import { hostPlugins, pluginSkillNames } from "../../provider-agent-sdk/src/host-settings.mjs";
 import { ui, REPO_ROOT } from "./runtime.mjs";
 
 /** @typedef {"anthropic" | "claude-cli" | "agent-sdk" | "auto"} ProviderName */
