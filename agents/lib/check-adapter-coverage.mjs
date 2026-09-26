@@ -46,4 +46,5 @@ try {
 
 const result = { target, ...assessTargetCoverage(meta.adapter_coverage, target) };
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-process.exitCode = result.decision === "GO" ? 0 : 2;
+// READ(원문 확인 후 진행)는 막지 않는다. HOLD 만 멈춘다.
+process.exitCode = result.decision === "HOLD" ? 2 : 0;

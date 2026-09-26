@@ -273,4 +273,4 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/query-index.mjs" summary --root "[프로�
 - 프록시/AOP 어드바이스로 추가되는 동작
 - 동적 import (`import()` JS, `__import__` Python)
 
-리포트 끝에 **"리플렉션/동적 호출 가능성 — 수동 확인 필요"** 한 줄 추가.
+위 패턴은 대상 심볼 이름(문자열 리터럴 포함)으로 Grep 해 직접 확인하고, 리포트 끝에 **"동적 호출 확인: [찾은 위치 또는 없음]"** 한 줄을 추가한다. 사용자에게 확인을 떠넘기지 않는다.

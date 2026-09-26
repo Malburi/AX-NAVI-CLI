@@ -516,7 +516,7 @@ OWASP Top 10 (2021) 카테고리별 매핑. 정적 분석 증거 기반 — 증�
 }
 ```
 
-`adapter_coverage.status`가 `PARTIAL`/`WARN`이거나 대상 확장자가 레지스트리에 없으면, 이 인덱스가 일부 존재해도 변경 안전성 판정은 자동으로 `HOLD`다.
+대상 파일이 `PARTIAL`이면 변경 판정은 `READ`(에이전트가 원문을 읽어 확인한 뒤 진행)이고, 대상 확장자가 레지스트리에 없거나 discovery-only면 `HOLD`다.
 
 ---
 

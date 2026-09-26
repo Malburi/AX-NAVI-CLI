@@ -38,7 +38,7 @@ def build_support_status(meta_json):
     parts = [
         "# 유지보수 지원 현황\n",
         f"> 전체 상태: **{status}** · 자동 변경 게이트: **{decision}**\n",
-        "이 페이지의 지원은 제품명 선언이 아니라 실제 인덱싱 결과입니다. PARTIAL/UNSUPPORTED 대상은 빌드·UI·통합 시나리오의 명시적 검증 전까지 HOLD입니다.\n",
+        "이 페이지의 지원은 제품명 선언이 아니라 실제 인덱싱 결과입니다. PARTIAL 대상은 인덱스만으로 확정하지 않고 에이전트가 원문을 직접 읽어 확인한 뒤 변경합니다(READ). UNSUPPORTED 대상은 HOLD입니다.\n",
         "## 활성 어댑터\n",
         "| 어댑터 | 파일 수 |\n|---|---:|",
     ]
@@ -52,10 +52,10 @@ def build_support_status(meta_json):
     unsupported = coverage.get("unsupported_files") or []
     partial_targets = coverage.get("partial_targets") or []
     if partial_targets:
-        parts.extend(["\n## 파일 단위 PARTIAL 대상\n", *[f"- `{item.get('path')}` — {item.get('reason', '수동 검증 필요')}" for item in partial_targets]])
+        parts.extend(["\n## 파일 단위 PARTIAL 대상\n", *[f"- `{item.get('path')}` — {item.get('reason', '원문 확인 대상')}" for item in partial_targets]])
     if unsupported:
         parts.extend(["\n## Discovery-only / 미지원 파일\n", *[f"- `{path}`" for path in unsupported]])
-    parts.extend(["\n## 판정 규칙\n", f"- {coverage.get('rule', 'PARTIAL 또는 미지원 대상은 HOLD')}\n", "- FULL도 동적 reflection, UI 시각 배치, 운영 환경 연동까지 자동 보증하지 않습니다.\n"])
+    parts.extend(["\n## 판정 규칙\n", f"- {coverage.get('rule', 'PARTIAL 대상은 원문 확인 후 진행(READ), 미지원 대상은 HOLD')}\n", "- FULL도 동적 reflection, UI 시각 배치, 운영 환경 연동까지 자동 보증하지 않습니다.\n"])
     return "\n".join(parts)
 
 

@@ -36,7 +36,7 @@ HOLD : 종합 3~6, 또는 보안 5~7
 STOP : 종합 > 6, 또는 보안 ≥ 8, 또는 즉시 STOP 트리거 발견
 ```
 
-점수와 무관한 하드 게이트가 있다. 어댑터가 `PARTIAL`/`UNSUPPORTED`이거나 판정 자체가 없으면 최소 HOLD, pattern-conformance HOLD 또는 검증 `UNVERIFIED`면 최소 HOLD, pattern-conformance FAIL 또는 검증 명령 실패면 STOP이다. "테스트가 없어 실행하지 않음"은 PASS가 아니며 근거를 기록하고 HOLD를 반환한다. 즉시 STOP 트리거는 평문 비밀번호/API 키 추가, SQL 인젝션 가능 패턴, 인증/인가 우회 코드, 데이터 손실 가능 변경(TRUNCATE·DROP·WHERE 없는 DELETE), 검증 없는 운영 전용 분기다.
+점수와 무관한 하드 게이트가 있다. 어댑터가 `UNSUPPORTED`이거나 판정 자체가 없으면 최소 HOLD다. `PARTIAL`(`READ`)은 대상과 연결 파일 원문을 읽은 `원문 확인` 목록이 있으면 통과하고, 없으면 HOLD로 두고 원문 확인을 보완 액션으로 낸다. pattern-conformance HOLD 또는 있는 검증 명령을 실행하지 않았으면(`UNVERIFIED`) 최소 HOLD, pattern-conformance FAIL 또는 검증 명령 실패면 STOP이다. "테스트가 없어 실행하지 않음"은 PASS가 아니며 `검증 수단 없음`으로 기록한다. 이때 DB 스키마·트랜잭션·인증·공통 모듈 변경이면 HOLD, 그 밖은 점수로 판정한다. 즉시 STOP 트리거는 평문 비밀번호/API 키 추가, SQL 인젝션 가능 패턴, 인증/인가 우회 코드, 데이터 손실 가능 변경(TRUNCATE·DROP·WHERE 없는 DELETE), 검증 없는 운영 전용 분기다.
 
 리포트는 `=== CHANGE SAFETY REPORT ===`로 시작해 변경 라인·파일 수·입력 impact 리포트·입력 패턴 판정·실행 검증·어댑터 커버리지 헤더, 차원별 점수 표, 즉시 STOP 트리거, `## 결정: [GO / HOLD / STOP]`과 근거, 결정별 후속 조치, diff 요약, 영향 요약으로 이어진다.
 

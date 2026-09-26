@@ -17,7 +17,7 @@ description: 페어 연동된 백엔드·프론트엔드(1:1) 또는 백엔드+�
 
 ## Phase 0: 사전 조건 확인
 
-시작 저장소와 후보 파트너에서 변경 대상별 `check-adapter-coverage.mjs`를 실행한다. PARTIAL/UNSUPPORTED 저장소는 스택별 빌드·UI·통합 검증을 명시적으로 확보하기 전 최소 HOLD이며, 결과를 각 change-safety 입력에 포함한다.
+시작 저장소와 후보 파트너에서 변경 대상별 `check-adapter-coverage.mjs`를 실행한다. PARTIAL(`READ`) 저장소는 대상과 연결 파일 원문을 직접 읽어 확인한 뒤 진행하고, UNSUPPORTED 저장소는 HOLD다. 결과와 원문 확인 목록을 각 change-safety 입력에 포함한다.
 
 ### 페어 설정 확인 및 대상 파트너 결정
 

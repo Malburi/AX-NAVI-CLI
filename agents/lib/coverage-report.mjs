@@ -123,7 +123,7 @@ function renderMarkdown(s) {
   table(["항목", "파일", "비율"], [
     ["인덱싱한 파일", String(f.indexed), "100%"],
     ["자동 변경 가능 (FULL → GO)", String(f.full), percent(f.full, f.indexed)],
-    ["수동 검증 후 변경 (PARTIAL → HOLD)", String(f.partial), percent(f.partial, f.indexed)],
+    ["원문 확인 후 변경 (PARTIAL → READ, 에이전트가 원문을 읽어 확인)", String(f.partial), percent(f.partial, f.indexed)],
     ["분석 불가, 존재만 확인 (discovery-only)", String(f.discovery_only), "-"],
     ["인덱서가 읽지 않는 코드 후보", String(f.unindexed_code_candidates), "-"],
     ["제외 (벤더·미니파이·테스트)", String(f.excluded), "-"],

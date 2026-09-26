@@ -693,7 +693,7 @@ export function Order() { return <button onClick={saveOrder}>Save</button>; }
       assert.ok(edges.some((item) => item.type === "ui_event" && item.to.endsWith("MainForm.btnSave_Click")), JSON.stringify(edges));
       assert.ok(edges.some((item) => item.type === "ui_event" && item.to.endsWith("saveOrder")), JSON.stringify(edges));
       const coverage = json(root, "_meta.json").adapter_coverage;
-      assert.equal(assessTargetCoverage(coverage, "Desktop/MainForm.Designer.cs").decision, "HOLD", "generated Designer는 수동 UI 검증 전 HOLD");
+      assert.equal(assessTargetCoverage(coverage, "Desktop/MainForm.Designer.cs").decision, "READ", "generated Designer는 원문 확인 후 진행(READ)");
       assert.equal(coverage.full_files + coverage.partial_files, 2, "파일별 coverage 합계가 중복되지 않음");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -720,7 +720,7 @@ this.fnCallback = function(svcId,errCode,errMsg) {};
       assert.ok(json(root, "api_contract.json").consumers.some((item) => item.call_type === "nexacro-transaction" && item.path_pattern === "/orders/save.do"));
       assert.ok(json(root, "call_graph.json").edges.some((item) => item.type === "ui_event" && item.to.endsWith("btnSave_onclick")), "XFDL event→Script handler 연결");
       const target = assessTargetCoverage(json(root, "_meta.json").adapter_coverage, "forms/Order.xfdl");
-      assert.equal(target.decision, "HOLD", "XFDL 부분 해석은 수동 검증 전 HOLD");
+      assert.equal(target.decision, "READ", "XFDL 부분 해석은 원문 확인 후 진행(READ)");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -2229,7 +2229,7 @@ public class OrderDao {
       const coverage = json(root, "_meta.json").adapter_coverage;
       assert.equal(coverage.extensions.find((item) => item.extension === ".pkb")?.level, "PARTIAL");
       assert.ok(!coverage.unsupported_files.some((file) => file.endsWith(".pkb")), "더 이상 discovery-only가 아니다");
-      assert.equal(assessTargetCoverage(coverage, "db/install.sql").decision, "HOLD", "PL/SQL이 든 .sql은 HOLD");
+      assert.equal(assessTargetCoverage(coverage, "db/install.sql").decision, "READ", "PL/SQL이 든 .sql은 원문 확인 후 진행(READ)");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

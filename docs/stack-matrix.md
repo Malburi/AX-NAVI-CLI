@@ -53,7 +53,7 @@ analyzer Step 1~2 에서 다음 파일/문자열로 자동 탐지:
 | Vue Router | `vue-router` | HIGH |
 | Vite | `vite.config.*` + `vite` | HIGH |
 | Vue CLI (webpack) | `vue.config.js` + `@vue/cli-service` | MEDIUM (Vite 마이그레이션 대상) |
-| React | `react`, `react-dom`, `*.jsx`/`*.tsx` | HIGH (JSX 이벤트 결선 포함, 런타임 동적 route는 수동 검증) |
+| React | `react`, `react-dom`, `*.jsx`/`*.tsx` | HIGH (JSX 이벤트 결선 포함, 런타임 동적 route는 원문 확인) |
 | Angular (15+) | `@angular/core`, `angular.json` | HIGH |
 | AngularJS (1.x) | `angular@^1`, `ng-app` | LOW (마이그레이션 대상) |
 | Svelte / SvelteKit | `svelte`, `@sveltejs/kit` | MEDIUM |
@@ -78,7 +78,7 @@ analyzer Step 1~2 에서 다음 파일/문자열로 자동 탐지:
 | ASP.NET Core | `Microsoft.AspNetCore.*`, `ControllerBase` | HIGH (Route token·생성자 DI·트랜잭션) |
 | Entity Framework | `EntityFramework`, `Microsoft.EntityFrameworkCore` | HIGH |
 | Classic ASP.NET MVC | `System.Web.Mvc` | MEDIUM (마이그레이션 대상) |
-| WinForms | `System.Windows.Forms`, `Application.Run`, `*.Designer.cs` | MEDIUM (partial class·event 결선, 시각 Designer는 수동 검증) |
+| WinForms | `System.Windows.Forms`, `Application.Run`, `*.Designer.cs` | MEDIUM (partial class·event 결선, 시각 Designer는 원문 확인) |
 | DevExpress WinForms | `DevExpress.*` + WinForms | MEDIUM (기본 event/call은 지원, Grid designer·repository item은 PARTIAL) |
 
 ### Nexacro
@@ -86,16 +86,16 @@ analyzer Step 1~2 에서 다음 파일/문자열로 자동 탐지:
 | 스택 | 탐지 | 깊이 |
 |------|------|------|
 | Nexacro XJS | `*.xjs`, `nexacro.*`, `this.transaction()` | HIGH (함수·호출·transaction) |
-| Nexacro XFDL | `*.xfdl`, `<FDL>`, `<Form>` | MEDIUM (화면·이벤트·Dataset·transaction, 혼합 XML/Script는 변경 전 수동 검증) |
+| Nexacro XFDL | `*.xfdl`, `<FDL>`, `<Form>` | MEDIUM (화면·이벤트·Dataset·transaction, 혼합 XML/Script는 변경 전 원문 확인) |
 
 ### 데이터베이스
 
 | DB | 탐지 | 깊이 |
 |----|------|------|
 | Oracle | `ojdbc*`, `oracle.jdbc.*` | HIGH |
-| Oracle PL/SQL | `*.pks`·`*.pkb`·`*.pck`·`*.prc`·`*.fnc`·`*.trg`, `.sql` 안의 `CREATE PROCEDURE`·`PACKAGE`·`TRIGGER` | MEDIUM (패키지·프로시저·함수·트리거 심볼, 호출 관계, 본문 정적 SQL, Java `{call}`·MyBatis CALLABLE 연결. 동적 SQL 변수·오버로드·중첩 프로시저는 근사, 변경은 HOLD) |
-| Oracle Pro*C | `*.pc` (`EXEC SQL`) | MEDIUM (C 함수·호출, EXEC SQL 정적 SQL·커서, `EXEC SQL EXECUTE BEGIN ... END-EXEC`·`CALL`의 PL/SQL 프로시저 연결. 매크로·함수 포인터·전처리 분기는 해석하지 않음, 변경은 HOLD. 일반 `.c`는 discovery-only) |
-| PowerBuilder (텍스트 내보내기) | `*.srw`·`*.sru`·`*.srf`·`*.srm`·`*.sra`·`*.srd` | MEDIUM (이벤트·함수·서브루틴, `parent.`·`this.`·`TriggerEvent` 호출, 임베디드 SQL, `DECLARE ... PROCEDURE FOR`의 PL/SQL 연결, DataWindow retrieve(PBSELECT 포함)·update 테이블과 `dw.Retrieve()`·`Update()` 사용처. 동적 SQL·동적 dataobject 문자열 조합은 못 따라감, 변경은 HOLD. `.pbl` 바이너리는 discovery-only) |
+| Oracle PL/SQL | `*.pks`·`*.pkb`·`*.pck`·`*.prc`·`*.fnc`·`*.trg`, `.sql` 안의 `CREATE PROCEDURE`·`PACKAGE`·`TRIGGER` | MEDIUM (패키지·프로시저·함수·트리거 심볼, 호출 관계, 본문 정적 SQL, Java `{call}`·MyBatis CALLABLE 연결. 동적 SQL 변수·오버로드·중첩 프로시저는 근사, 변경은 원문 확인 후 진행) |
+| Oracle Pro*C | `*.pc` (`EXEC SQL`) | MEDIUM (C 함수·호출, EXEC SQL 정적 SQL·커서, `EXEC SQL EXECUTE BEGIN ... END-EXEC`·`CALL`의 PL/SQL 프로시저 연결. 매크로·함수 포인터·전처리 분기는 해석하지 않음, 변경은 원문 확인 후 진행. 일반 `.c`는 discovery-only) |
+| PowerBuilder (텍스트 내보내기) | `*.srw`·`*.sru`·`*.srf`·`*.srm`·`*.sra`·`*.srd` | MEDIUM (이벤트·함수·서브루틴, `parent.`·`this.`·`TriggerEvent` 호출, 임베디드 SQL, `DECLARE ... PROCEDURE FOR`의 PL/SQL 연결, DataWindow retrieve(PBSELECT 포함)·update 테이블과 `dw.Retrieve()`·`Update()` 사용처. 동적 SQL·동적 dataobject 문자열 조합은 못 따라감, 변경은 원문 확인 후 진행. `.pbl` 바이너리는 discovery-only) |
 | PostgreSQL | `postgresql-*`, `pg`, `psycopg` | HIGH |
 | MySQL / MariaDB | `mysql-connector-*`, `mariadb-java-client`, `mysql2` | HIGH |
 | SQL Server | `mssql-jdbc`, `System.Data.SqlClient`, `tedious` | MEDIUM |
@@ -124,7 +124,7 @@ analyzer Step 1~2 에서 다음 파일/문자열로 자동 탐지:
 | 깊이 | 의미 |
 |------|------|
 | HIGH | 결정적 어댑터 범위는 자동 분석·컨벤션 추출 가능. 동적 런타임 동작은 별도 검증 |
-| MEDIUM | 핵심 구조는 추출하지만 일부 파일/shape가 PARTIAL. 실제 빌드·UI/통합 시나리오 전까지 HOLD |
+| MEDIUM | 핵심 구조는 추출하지만 일부 파일/shape가 PARTIAL. 변경 시 에이전트가 원문을 읽어 확인한다(`READ`) |
 | LOW | 발견·구조 파악 중심. 자동 코드 변경 금지, 전문 어댑터 또는 수동 분석 필요 |
 
 ---

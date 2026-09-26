@@ -12,7 +12,7 @@ AX Navi가 자동 탐지하는 스택과 각 스택에서 기대할 수 있는 �
 | 분석 깊이 | 의미 |
 |-----------|------|
 | `HIGH` | 결정적 어댑터 범위는 자동 분석·컨벤션 추출 가능. 동적 런타임 동작은 별도 검증 |
-| `MEDIUM` | 핵심 구조는 추출하지만 일부 파일·shape가 PARTIAL. 실제 빌드·UI/통합 시나리오 전까지 HOLD |
+| `MEDIUM` | 핵심 구조는 추출하지만 일부 파일·shape가 PARTIAL. 변경 시 에이전트가 원문을 읽어 확인한다(`READ`) |
 | `LOW` | 발견·구조 파악 중심. 자동 코드 변경 금지, 전문 어댑터 또는 수동 분석 필요 |
 
 ## 어댑터 커버리지 (확장자 기준)
@@ -32,7 +32,7 @@ AX Navi가 자동 탐지하는 스택과 각 스택에서 기대할 수 있는 �
 | SQL/DDL | `.sql` | `FULL` |
 | JSP/Struts/WebForms/markup | `.xml` `.jsp` `.jspx` `.tag` `.asp` `.aspx` `.ascx` `.ashx` `.asmx` `.xaml` `.cshtml` `.vbhtml` `.razor` `.html` `.htm` | `PARTIAL` |
 
-WinForms `.Designer.cs`와 DevExpress 컴포넌트는 `.cs`가 `FULL`이어도 개별 파일이 `PARTIAL`로 표시됩니다. 변경 대상이 `PARTIAL`이나 `UNSUPPORTED`면 change-safety는 명시적 수동 검증 전까지 최소 `HOLD`이고, 어댑터 판정 자체가 없으면 `UNVERIFIED/HOLD`입니다. 대상별 판정은 `check-adapter-coverage.mjs --target <파일>`로 확인할 수 있습니다.
+WinForms `.Designer.cs`와 DevExpress 컴포넌트는 `.cs`가 `FULL`이어도 개별 파일이 `PARTIAL`로 표시됩니다. 변경 대상이 `PARTIAL`이면 에이전트가 원문을 읽어 확인한 뒤 진행(`READ`)하고, `UNSUPPORTED`면 change-safety는 최소 `HOLD`이며, 어댑터 판정 자체가 없으면 `UNVERIFIED/HOLD`입니다. 대상별 판정은 `check-adapter-coverage.mjs --target <파일>`로 확인할 수 있습니다.
 
 ## 탐지 시그니처와 분석 깊이
 
@@ -62,7 +62,7 @@ WinForms `.Designer.cs`와 DevExpress 컴포넌트는 `.cs`가 `FULL`이어도 �
 | Sequelize / Mongoose | `sequelize`, `mongoose` | MEDIUM |
 | Vue 3 / Nuxt 3 / Pinia / Vue Router / Vite | `vue@^3`, `*.vue`, `nuxt@^3`, `pinia`, `vue-router`, `vite.config.*` | HIGH |
 | Vue 2 / Nuxt 2 / Vuex / Vue CLI | `vue@^2`, `nuxt@^2`, `vuex`, `vue.config.js` | MEDIUM (마이그레이션 대상) |
-| React | `react`, `react-dom`, `*.jsx`/`*.tsx` | HIGH (런타임 동적 route는 수동 검증) |
+| React | `react`, `react-dom`, `*.jsx`/`*.tsx` | HIGH (런타임 동적 route는 원문 확인) |
 | Angular 15+ | `@angular/core`, `angular.json` | HIGH |
 | AngularJS 1.x | `angular@^1`, `ng-app` | LOW |
 | Svelte / SvelteKit | `svelte`, `@sveltejs/kit` | MEDIUM |
@@ -77,7 +77,7 @@ WinForms `.Designer.cs`와 DevExpress 컴포넌트는 `.cs`가 `FULL`이어도 �
 | .NET Core / 5+ | `<TargetFramework>net*`·`netcoreapp*` | MEDIUM (`.cs` FULL, 프로젝트 메타데이터 PARTIAL) |
 | ASP.NET Core / Entity Framework | `Microsoft.AspNetCore.*`, `ControllerBase`, `EntityFrameworkCore` | HIGH |
 | Classic ASP.NET MVC | `System.Web.Mvc` | MEDIUM |
-| WinForms / DevExpress WinForms | `System.Windows.Forms`, `*.Designer.cs`, `DevExpress.*` | MEDIUM (Designer·Grid는 수동 검증) |
+| WinForms / DevExpress WinForms | `System.Windows.Forms`, `*.Designer.cs`, `DevExpress.*` | MEDIUM (Designer·Grid는 원문 확인) |
 | Nexacro XJS | `*.xjs`, `this.transaction()` | HIGH |
 | Nexacro XFDL | `*.xfdl`, `<FDL>` | MEDIUM |
 
@@ -85,9 +85,9 @@ WinForms `.Designer.cs`와 DevExpress 컴포넌트는 `.cs`가 `FULL`이어도 �
 
 | 스택 | 탐지 시그니처 | 분석 깊이 |
 |------|---------------|-----------|
-| Oracle PL/SQL | `*.pks`·`*.pkb`·`*.pck`·`*.prc`·`*.fnc`·`*.trg`, `.sql` 안의 `CREATE PROCEDURE`·`PACKAGE`·`TRIGGER` | MEDIUM (패키지·프로시저·함수·트리거 심볼, 호출 관계, 본문 정적 SQL, Java `{call}`·MyBatis CALLABLE 연결. 동적 SQL 변수·오버로드·중첩 프로시저는 근사, 변경은 HOLD) |
-| Oracle Pro*C | `*.pc` (`EXEC SQL`) | MEDIUM (C 함수·호출, EXEC SQL 정적 SQL·커서, `EXEC SQL EXECUTE BEGIN ... END-EXEC`·`CALL`의 PL/SQL 프로시저 연결. 매크로·함수 포인터·전처리 분기는 해석하지 않음, 변경은 HOLD. 일반 `.c`는 discovery-only) |
-| PowerBuilder (텍스트 내보내기) | `*.srw`·`*.sru`·`*.srf`·`*.srm`·`*.sra`·`*.srd` | MEDIUM (이벤트·함수·서브루틴, `parent.`·`this.`·`TriggerEvent` 호출, 임베디드 SQL, `DECLARE ... PROCEDURE FOR`의 PL/SQL 연결, DataWindow retrieve(PBSELECT 포함)·update 테이블과 `dw.Retrieve()`·`Update()` 사용처. 동적 SQL·동적 dataobject 문자열 조합은 못 따라감, 변경은 HOLD. `.pbl` 바이너리는 discovery-only) |
+| Oracle PL/SQL | `*.pks`·`*.pkb`·`*.pck`·`*.prc`·`*.fnc`·`*.trg`, `.sql` 안의 `CREATE PROCEDURE`·`PACKAGE`·`TRIGGER` | MEDIUM (패키지·프로시저·함수·트리거 심볼, 호출 관계, 본문 정적 SQL, Java `{call}`·MyBatis CALLABLE 연결. 동적 SQL 변수·오버로드·중첩 프로시저는 근사, 변경은 원문 확인 후 진행) |
+| Oracle Pro*C | `*.pc` (`EXEC SQL`) | MEDIUM (C 함수·호출, EXEC SQL 정적 SQL·커서, `EXEC SQL EXECUTE BEGIN ... END-EXEC`·`CALL`의 PL/SQL 프로시저 연결. 매크로·함수 포인터·전처리 분기는 해석하지 않음, 변경은 원문 확인 후 진행. 일반 `.c`는 discovery-only) |
+| PowerBuilder (텍스트 내보내기) | `*.srw`·`*.sru`·`*.srf`·`*.srm`·`*.sra`·`*.srd` | MEDIUM (이벤트·함수·서브루틴, `parent.`·`this.`·`TriggerEvent` 호출, 임베디드 SQL, `DECLARE ... PROCEDURE FOR`의 PL/SQL 연결, DataWindow retrieve(PBSELECT 포함)·update 테이블과 `dw.Retrieve()`·`Update()` 사용처. 동적 SQL·동적 dataobject 문자열 조합은 못 따라감, 변경은 원문 확인 후 진행. `.pbl` 바이너리는 discovery-only) |
 | Oracle / PostgreSQL / MySQL·MariaDB | `ojdbc*`, `postgresql-*`·`pg`, `mysql-connector-*`·`mysql2` | HIGH |
 | SQL Server / Tibero / MongoDB / Redis | `mssql-jdbc`, `tibero-jdbc`, `mongoose`, `jedis` 등 | MEDIUM |
 | Altibase | `altibase-jdbc` | LOW |

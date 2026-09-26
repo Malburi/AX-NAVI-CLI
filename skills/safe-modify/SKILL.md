@@ -86,8 +86,8 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/check-adapter-coverage.mjs" --root "[프�
 ```
 
 - `FULL/GO`: 다음 단계 진행 가능.
-- `PARTIAL/HOLD`: 코드·설정·디자이너 파일을 함께 읽고 스택별 빌드/수동 시나리오까지 확보하기 전 GO 금지.
-- `UNSUPPORTED/HOLD`: 지원되는 어댑터를 추가하거나 사용자가 지정한 전문 도구/수동 검증 절차를 확보하기 전 변경 금지.
+- `PARTIAL/READ`: 인덱스만으로 확정하지 않는다. 대상 파일과 연결된 설정·화면·스크립트·SQL 원문을 **직접 읽어** 변경 지점과 호출 관계를 확인한 뒤 진행한다. 사용자에게 수동 검증을 요구하지 않는다. 읽은 파일 목록을 `원문 확인` 항목으로 change-safety 입력과 최종 보고에 남긴다.
+- `UNSUPPORTED/HOLD`: 내용을 읽을 수 없는 형식(바이너리 등)이다. 지원되는 어댑터를 추가하기 전 변경 금지.
 - 여러 파일이면 가장 낮은 커버리지를 전체 변경의 커버리지로 사용한다. `change-safety` 입력에도 결과 JSON을 포함한다.
 
 변경 대상 경로가 정해지면 `.claude/patterns/pattern_profile.json`을 검증하고 해당 모듈·레이어의 기준 패턴을 선택한다.
@@ -171,7 +171,7 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" detect --root "[프로
 node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝트 루트 절대 경로]" --cmd "[detected에서 고른 명령]"
 ```
 
-`run`은 성공 시 요약만, 실패 시 `fail_lines`(명령당 상한)만 돌려준다 — 코드 전체를 다시 LLM에 넣지 않는다. 반환된 `commands[].cmd`·`exit`·`fail_lines`와 `overall`을 그대로 change-safety 입력에 넘긴다. `detected`가 비어 있으면(`count: 0`) 자동 검증이 없다는 뜻이므로 수동 검증 시나리오를 확보하기 전 PASS로 간주하지 않는다. 실행할 수 없거나 assertion까지 도달하지 못한 검사도 PASS로 간주하지 않는다.
+`run`은 성공 시 요약만, 실패 시 `fail_lines`(명령당 상한)만 돌려준다 — 코드 전체를 다시 LLM에 넣지 않는다. 반환된 `commands[].cmd`·`exit`·`fail_lines`와 `overall`을 그대로 change-safety 입력에 넘긴다. `detected`가 비어 있으면(`count: 0`) 자동 검증이 없다는 뜻이다. PASS로 적지 않고 `검증 수단 없음`으로 적는다 — 위험 변경이 아니면 원문 확인 근거로 진행한다(Phase 4 GO 조건). 실행할 수 없거나 assertion까지 도달하지 못한 검사도 PASS로 간주하지 않는다.
 
 ### 3-3. 변경 안전성 평가
 
@@ -229,7 +229,7 @@ Agent(
 전체 리포트: _workspace/reports/safety_<slug>.md
 ```
 
-GO는 `어댑터 FULL + 패턴 CONFORM + 필수 검증 exit 0 + change-safety GO`가 모두 충족될 때만 사용한다. 검증을 실행하지 못했거나 어댑터가 PARTIAL/UNSUPPORTED면 위험 점수가 낮아도 HOLD(`UNVERIFIED`)로 보고한다. Phase 0에서 `구조화 패턴 미검증`으로 폴백한 경우도 자동 GO 대상이 아니다 — 다른 조건이 모두 충족돼도 HOLD(`구조화 패턴 미검증`)로 보고하고, 진행하려면 사용자에게 "패턴 근거가 없는 상태로 적용할까요?"를 명시적으로 확인받은 뒤에만 GO로 올린다.
+GO는 `어댑터 FULL 또는 READ(원문 확인 완료) + 패턴 CONFORM + 검증 명령 exit 0 + change-safety GO`가 모두 충족될 때 사용한다. 어댑터가 READ인데 원문을 읽지 않았거나, UNSUPPORTED이거나, 있는 검증 명령을 실행하지 않았으면 HOLD(`UNVERIFIED`)로 보고한다. 프로젝트에 실행할 검증 명령이 아예 없으면 그 사실을 보고에 밝히고, DB 스키마·트랜잭션·인증 같은 위험 변경이 아니면 GO로 진행한다. Phase 0에서 `구조화 패턴 미검증`으로 폴백한 경우도 자동 GO 대상이 아니다 — 다른 조건이 모두 충족돼도 HOLD(`구조화 패턴 미검증`)로 보고하고, 진행하려면 사용자에게 "패턴 근거가 없는 상태로 적용할까요?"를 명시적으로 확인받은 뒤에만 GO로 올린다.
 
 ## Phase 5: 인덱스·위키 증분 갱신
 

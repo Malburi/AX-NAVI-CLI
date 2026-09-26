@@ -34,7 +34,7 @@ AX Navi 문서와 에이전트 리포트에 반복해서 나오는 용어를 모
 | 스코프 좁히기 | 후보가 둘 이상일 때 `same_file`→`same_package`→`same_workspace` 순으로 걸러 하나로 줄면 `confidence: MEDIUM`으로 확정하는 인덱서 규칙 |
 | dangling 엣지 | `from`/`to`가 존재하지 않는 노드를 가리키는 엣지. 인덱서 계약상 구조적으로 생기지 않으며 validator가 검증 |
 | 벤더 제외 | 라이브러리 배포 디렉터리·미니파이 파일을 인덱싱하지 않는 규칙. `_meta.excluded_sources`에 기록, `vendor_exclude: false`로 해제 |
-| 어댑터 커버리지 | 확장자별 결정적 추출 수준. 파일 단위 `FULL`/`PARTIAL`/`UNSUPPORTED`, 전체 상태 `FULL`/`PARTIAL`/`WARN`. `PARTIAL`·`UNSUPPORTED` 대상 변경은 최소 HOLD |
+| 어댑터 커버리지 | 확장자별 결정적 추출 수준. 파일 단위 `FULL`/`PARTIAL`/`UNSUPPORTED`, 전체 상태 `FULL`/`PARTIAL`/`WARN`. `PARTIAL` 대상은 원문을 읽어 확인한 뒤 진행(`READ`), `UNSUPPORTED` 대상 변경은 HOLD |
 | `query-index.mjs` | 인덱스를 통째로 읽지 않고 `symbol`·`callers`·`callees`·`trace`·`sql`·`table` 등으로 필요한 줄만 조회하는 도구. 상한과 `truncated`를 함께 반환 |
 | `verify-target.mjs` | 프로젝트 매니페스트에서 lint/typecheck/test 명령을 `detect`하고 `run`으로 실행해 실패 라인만 압축 반환하는 도구 |
 

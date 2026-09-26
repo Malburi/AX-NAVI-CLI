@@ -627,7 +627,7 @@ axnavi 는 모델을 `haiku` · `sonnet` · `opus` 세 등급으로 부르고, �
 | PowerBuilder 텍스트 내보내기 (`.srw` · `.srd` 등) | **PARTIAL** — 이벤트 · 함수 · 임베디드 SQL · DataWindow 연결 (`.pbl` 바이너리는 불가) |
 
 인덱서는 파일마다 `FULL` / `PARTIAL` / `UNSUPPORTED` 를 기록합니다.
-PARTIAL 대상은 빌드 · UI · 통합 검증 전까지 자동 변경을 보류(`HOLD`)합니다.
+PARTIAL 대상은 에이전트가 원문을 직접 읽어 확인한 뒤 수정합니다(`READ`). 읽을 수 없는 UNSUPPORTED 대상만 보류(`HOLD`)합니다.
 
 ---
 

@@ -52,7 +52,7 @@ Phase 6 보고에서 엔드포인트 수와 드리프트 건수(MISSING/MISMATCH
 주문 취소 기능 전체 만들어줘
 ```
 
-`cross-repo-scaffold`가 Phase 0에서 백엔드와 클라이언트 모두에 대해 어댑터 커버리지·`pattern_profile.py validate`·API 계약 로드를 확인한다. 어느 한쪽이라도 PARTIAL/UNSUPPORTED이거나 패턴이 미추출이면 그 저장소의 판정은 최소 HOLD이고 전체 GO로 올라가지 않는다. 1:N에서 클라이언트가 2개 이상이면 포함할 클라이언트를 체크리스트로 묻는다.
+`cross-repo-scaffold`가 Phase 0에서 백엔드와 클라이언트 모두에 대해 어댑터 커버리지·`pattern_profile.py validate`·API 계약 로드를 확인한다. PARTIAL인 쪽은 원문을 직접 읽어 확인한 뒤 진행한다. 어느 한쪽이라도 UNSUPPORTED이거나 패턴이 미추출이면 그 저장소의 판정은 최소 HOLD이고 전체 GO로 올라가지 않는다. 1:N에서 클라이언트가 2개 이상이면 포함할 클라이언트를 체크리스트로 묻는다.
 
 Phase 1에서 한 번에 묻는다.
 

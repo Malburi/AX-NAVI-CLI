@@ -127,7 +127,7 @@ node "$CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" callers --id OrderService.
 | 수준 | 어댑터 | 의미 |
 |------|------|------|
 | `FULL` | Java/Kotlin, C#, JavaScript/TypeScript/Vue/React, Nexacro XJS, Python, Go, SQL | 구조를 결정적으로 추출한다 |
-| `PARTIAL` | .NET 프로젝트 메타(`.csproj`·`.config`), Nexacro Form(`.xfdl`), JSP/Struts/WebForms/markup, DevExpress·WinForms Designer, Django/Flask 엔드포인트 | 일부만 추출하므로 수동 의미 검증이 필요하다 |
+| `PARTIAL` | .NET 프로젝트 메타(`.csproj`·`.config`), Nexacro Form(`.xfdl`), JSP/Struts/WebForms/markup, DevExpress·WinForms Designer, Django/Flask 엔드포인트 | 일부만 추출하므로 변경 전에 에이전트가 원문을 직접 읽어 확인한다(`READ`) |
 | `UNSUPPORTED` | discovery-only 확장자(`.sln`·`.fmb`·`.pbl`·`.c`·`.cpp`·`.rs`·`.scala` 등), 레지스트리에 없는 확장자 | 존재만 기록하고 인덱싱하지 않는다 |
 
 전체 요약은 `_meta.json`의 `adapter_coverage`에, 변경 대상별 판정은 다음 명령으로 얻는다.
@@ -136,7 +136,7 @@ node "$CLAUDE_PLUGIN_ROOT/agents/lib/query-index.mjs" callers --id OrderService.
 node "$CLAUDE_PLUGIN_ROOT/agents/lib/check-adapter-coverage.mjs" --root <프로젝트 루트> --target src/main/webapp/order/list.jsp
 ```
 
-결과는 `{target, decision, level, reason}` JSON이며 `FULL`이면 `GO`(exit 0), `PARTIAL`·`UNSUPPORTED`면 `HOLD`(exit 2)다. `_meta.json`이 없거나 손상돼 있어도 크래시 대신 `HOLD`로 강등한다. 변경 파일이 여럿이면 가장 낮은 커버리지가 전체 판정이 된다. 게이트에서의 동작은 [판정과 게이트](/concepts/gates.md)를 참조한다.
+결과는 `{target, decision, level, reason}` JSON이며 `FULL`이면 `GO`(exit 0), `PARTIAL`이면 `READ`(exit 0, 원문 확인 후 진행), `UNSUPPORTED`면 `HOLD`(exit 2)다. `_meta.json`이 없거나 손상돼 있어도 크래시 대신 `HOLD`로 강등한다. 변경 파일이 여럿이면 가장 낮은 커버리지가 전체 판정이 된다. 게이트에서의 동작은 [판정과 게이트](/concepts/gates.md)를 참조한다.
 
 ## 테스트·배포 인벤토리
 

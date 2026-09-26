@@ -7,7 +7,7 @@ AX Navi의 코드 작업은 "수정 → 곧장 commit → 운영 사고" 사이�
 | 게이트 | 담당 | 판정값 | 쓰이는 곳 |
 |------|------|------|------|
 | 인덱스 신선도 | `build-index.mjs --check-stale` | exit 0 / 1 | 모든 작업 시작 |
-| 어댑터 커버리지 | `check-adapter-coverage.mjs` | FULL/GO, PARTIAL/HOLD, UNSUPPORTED/HOLD | `safe-modify`, `scaffold-feature`, cross-repo |
+| 어댑터 커버리지 | `check-adapter-coverage.mjs` | FULL/GO, PARTIAL/READ, UNSUPPORTED/HOLD | `safe-modify`, `scaffold-feature`, cross-repo |
 | 변경 영향도 | `impact-analyzer` | 위험도 0~10, LOW/MEDIUM/HIGH/CRITICAL | `analyze-impact`, `safe-modify` |
 | 패턴 적합성 | `pattern-conformance` | CONFORM / HOLD / FAIL | `safe-modify`, `scaffold-feature`, cross-repo |
 | 실행 증거 | `verify-target.mjs run` | `overall` pass/fail, exit 0/2 | `safe-modify`, `scaffold-feature`, `vibe` |
@@ -46,10 +46,10 @@ AX Navi의 코드 작업은 "수정 → 곧장 commit → 운영 사고" 사이�
 | 판정 | 동작 |
 |------|------|
 | `FULL/GO` | 다음 단계 진행 가능 |
-| `PARTIAL/HOLD` | 코드·설정·디자이너 파일을 함께 읽고 스택별 빌드·수동 시나리오까지 확보하기 전 GO 금지 |
-| `UNSUPPORTED/HOLD` | 지원되는 어댑터를 추가하거나 사용자가 지정한 전문 도구·수동 검증 절차를 확보하기 전 변경 금지 |
+| `PARTIAL/READ` | 인덱스만으로 확정하지 않는다. 에이전트가 대상과 연결된 설정·화면·스크립트·SQL 원문을 직접 읽어 확인한 뒤 진행한다. 읽은 파일은 `원문 확인` 목록으로 보고에 남는다. 사람에게 수동 검증을 요구하지 않는다 |
+| `UNSUPPORTED/HOLD` | 내용을 읽을 수 없는 형식이다. 지원되는 어댑터를 추가하기 전 변경 금지 |
 
-여러 파일이면 가장 낮은 커버리지가 전체 변경의 커버리지다. `_meta.json`이 없거나 손상돼 있으면 크래시 대신 `HOLD`(`index_meta_missing` 등)로 강등하고 재인덱싱을 안내한다. change-safety도 어댑터 판정 자체가 없으면 `UNVERIFIED/HOLD`로 본다. JSP·WebForms·Nexacro Form·DevExpress Designer처럼 PARTIAL인 스택에서는 위험 점수가 낮아도 자동 GO가 나오지 않는다는 뜻이다.
+여러 파일이면 가장 낮은 커버리지가 전체 변경의 커버리지다. `_meta.json`이 없거나 손상돼 있으면 크래시 대신 `HOLD`(`index_meta_missing` 등)로 강등하고 재인덱싱을 안내한다. change-safety도 어댑터 판정 자체가 없으면 `UNVERIFIED/HOLD`로 본다. JSP·WebForms·Nexacro Form·DevExpress Designer처럼 PARTIAL인 스택에서도 원문 확인 목록과 검증 결과가 갖춰지면 GO가 나온다. 원문을 읽지 않았으면 HOLD다.
 
 ## 패턴 적합성 — CONFORM / HOLD / FAIL
 
@@ -75,7 +75,7 @@ node "$CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" run --root <프로젝트
 
 - `detect`는 `package.json` scripts, `pom.xml`, `build.gradle`, `.csproj`/`.sln` 등 매니페스트에서 lint/typecheck/test/build 후보를 읽기만 한다(부작용 0). 무엇을 돌릴지 사용자에게 먼저 보이기 위한 것이다.
 - `run`은 감지된 명령을 실행하고 성공이면 요약만, 실패면 `fail_lines`(명령당 기본 15줄 상한, `truncated` 명시)만 돌려준다. `overall`이 `pass`면 exit 0, 아니면 exit 2다.
-- `detected`가 비어 있으면(`count: 0`) 자동 검증이 없다는 뜻이므로 수동 검증 시나리오를 확보하기 전 PASS로 간주하지 않는다. 실행할 수 없거나 assertion까지 도달하지 못한 검사도 PASS가 아니다.
+- `detected`가 비어 있으면(`count: 0`) 자동 검증이 없다는 뜻이다. PASS로 적지 않고 `검증 수단 없음`으로 적는다. 위험 변경이 아니면 원문 확인 근거로 진행한다. 실행할 수 없거나 assertion까지 도달하지 못한 검사도 PASS가 아니다.
 
 스킬은 `commands[].cmd`·`exit`·`fail_lines`와 `overall`을 그대로 change-safety 입력에 넘긴다. 필수 검증이 exit 0이 아니면 GO는 나올 수 없다.
 
@@ -97,7 +97,7 @@ node "$CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" run --root <프로젝트
 | 결정 | 조건 |
 |------|------|
 | `GO` | 종합 < 3, 보안 < 5, pattern-conformance CONFORM, 필수 검증 exit 0, 어댑터 FULL |
-| `HOLD` | 종합 3~6, 또는 보안 5~7, 또는 pattern-conformance HOLD, 또는 검증 미실행(`UNVERIFIED`), 또는 어댑터 PARTIAL/UNSUPPORTED, 또는 실행 가능한 검증 명령이 정말 없음 |
+| `HOLD` | 종합 3~6, 또는 보안 5~7, 또는 pattern-conformance HOLD, 또는 있는 검증 명령 미실행(`UNVERIFIED`), 또는 어댑터 UNSUPPORTED, 또는 PARTIAL인데 원문 확인 없음, 또는 검증 수단이 없는 위험 변경(DB 스키마·트랜잭션·인증·공통 모듈) |
 | `STOP` | 종합 > 6, 또는 보안 ≥ 8, 또는 pattern-conformance FAIL, 또는 필수 검증 실패, 또는 즉시 STOP 트리거 |
 
 즉시 STOP 트리거는 평문 비밀번호·API 키 추가, SQL 인젝션 가능 패턴, 인증·인가 우회 코드, 데이터 손실 가능 변경(TRUNCATE·DROP·WHERE 없는 DELETE), 검증 없는 운영 전용 분기다. 한 항목이라도 발견되면 점수와 무관하게 STOP이다.
@@ -140,8 +140,8 @@ node "$CLAUDE_PLUGIN_ROOT/agents/lib/verify-target.mjs" run --root <프로젝트
 HOLD는 "진행 불가"가 아니라 "보완 후 재평가"다. 리포트의 보완 필요 항목이 우선순위 순으로 나열되므로 위에서부터 처리한다.
 
 1. `_workspace/reports/safety_<slug>.md`에서 어느 차원의 점수가 높은지, 어떤 하드 게이트에 걸렸는지 확인한다.
-2. `UNVERIFIED`면 `verify-target.mjs detect` 결과에서 명령을 골라 실제로 실행한다. 자동 검증이 없는 프로젝트면 수동 검증 시나리오를 문서로 확보한다.
-3. 어댑터 PARTIAL·UNSUPPORTED면 해당 스택의 빌드·수동 시나리오를 실행하고 그 증거를 첨부한다.
+2. `UNVERIFIED`면 `verify-target.mjs detect` 결과에서 명령을 골라 실제로 실행한다. 자동 검증이 없는 프로젝트면 `검증 수단 없음`으로 기록한다.
+3. 어댑터 PARTIAL이면 대상과 연결 파일 원문을 읽고 `원문 확인` 목록을 첨부한다. UNSUPPORTED면 어댑터를 먼저 추가한다.
 4. pattern-conformance HOLD면 리포트의 "필요한 조치"를 보고 의도적 차이인지 결정한다. 의도적이면 그 결정을 명시하고, 아니면 기준 파일에 맞춰 고친다.
 5. `구조화 패턴 미검증`으로 HOLD면 `"패턴 추출해줘"`로 프로필을 만들거나, 패턴 근거 없이 적용하겠다고 명시적으로 답한다.
 6. 보완 후 `"이 변경 다시 평가해줘"`로 change-safety를 재실행한다.

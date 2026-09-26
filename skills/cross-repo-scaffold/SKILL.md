@@ -13,7 +13,7 @@ description: 페어 연동된 백엔드+프론트엔드(1:1) 또는 백엔드+�
 
 ## Phase 0: 사전 조건 확인
 
-백엔드와 선택된 모든 클라이언트에서 생성 예정 확장자별 `check-adapter-coverage.mjs`를 실행한다. 어느 한 저장소라도 PARTIAL/UNSUPPORTED이면 해당 저장소와 전체 판정은 수동 스택 검증 전까지 최소 HOLD다. 지원 수준이 다른 저장소의 GO를 합쳐 전체 GO로 올리지 않는다.
+백엔드와 선택된 모든 클라이언트에서 생성 예정 확장자별 `check-adapter-coverage.mjs`를 실행한다. PARTIAL(`READ`) 저장소는 유사 화면·설정 원문을 직접 읽어 확인한 뒤 생성한다. 어느 한 저장소라도 UNSUPPORTED이면 해당 저장소와 전체 판정은 HOLD다. 원문을 확인하지 않은 저장소의 GO를 합쳐 전체 GO로 올리지 않는다.
 
 ### 페어 설정 확인
 

@@ -263,7 +263,7 @@ function main() {
       target: args.target || null,
       detected: commands,
       count: commands.length,
-      note: commands.length === 0 ? "검증 명령을 찾지 못했습니다 — 수동 검증 시나리오가 필요합니다." : null,
+      note: commands.length === 0 ? "검증 명령을 찾지 못했습니다 — 보고에 '검증 수단 없음'으로 밝히고, 위험 변경이 아니면 원문 확인으로 진행합니다." : null,
     };
     process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     process.exitCode = 0;

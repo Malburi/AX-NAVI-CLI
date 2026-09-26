@@ -74,7 +74,7 @@ Struts forward의 JSP 경로 집합 F와 실제 JSP 파일 집합 J를 정규화
 1. `_workspace/validator_mechanical.json`의 check 7b 표본 수·일치율·불일치 좌표를 읽는다.
 2. 불일치 좌표와 Boundary 1~4에서 사용한 핵심 API/DTO/Dataset/SQL shape를 우선 교차 확인한다.
 3. check 7b가 없을 때만 `symbol --name [핵심 클래스]`로 대상 심볼을 잡고 각 심볼에 `callees --id`를 돌려 얻은 call edge 중 최대 10개를 결정론적으로(정렬 후 균등 간격) 표본화한다. 무작위 표본은 금지한다.
-4. 일치율 < 80% 또는 핵심 경계 불일치 → analyzer incremental 재실행 후에도 같으면 어댑터 PARTIAL/HOLD.
+4. 일치율 < 80% 또는 핵심 경계 불일치 → analyzer incremental 재실행 후에도 같으면 어댑터 PARTIAL(원문 확인 대상).
 
 **리포트:**
 ```

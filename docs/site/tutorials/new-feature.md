@@ -43,7 +43,7 @@
 
 `scaffold-feature`가 Phase 0에서 사전 조건을 확인한다.
 
-1. 생성 예정 확장자마다 `check-adapter-coverage.mjs` 실행 — `FULL`만 자동 생성 가능, `PARTIAL`은 HOLD, `UNSUPPORTED`는 추측 스캐폴딩 금지.
+1. 생성 예정 확장자마다 `check-adapter-coverage.mjs` 실행 — `FULL`은 자동 생성, `PARTIAL`은 유사 화면 원문을 읽어 확인한 뒤 생성(`READ`), `UNSUPPORTED`는 추측 스캐폴딩 금지.
 2. `_workspace/pair_config.md` 확인 — 있으면 "프론트엔드도 함께 생성할까요?"를 추가로 묻고 Y면 `cross-repo-scaffold`로 위임한다.
 3. 패턴 로드와 `pattern_profile.py validate` — 실패하면 pattern-extractor 재실행 후 재검증, 재실패 시 중단.
 4. `_workspace/01_analyzer_report.md`에서 레이어 목록·빌드 명령·모듈 분류 방식 로드.
@@ -117,7 +117,7 @@ Phase 5 보고에는 생성 파일, 패턴 적합성(기준 프로필·파일 �
 ## 막혔을 때
 
 - **"패턴 추출 먼저 필요"라고 멈췄다** — 준비 절의 "패턴 추출해줘"를 실행한다. 재검증에도 실패하면 `_workspace/pattern_profile_validation.json`의 `profile_missing` 항목을 확인한다.
-- **어댑터 커버리지가 PARTIAL이다** — XFDL 혼합 XML/Script, Designer 파일처럼 실제 유사 화면과 실행 검증 절차를 사용자가 확인해야 하는 스택이다. 확인 전까지 HOLD다. UNSUPPORTED면 어댑터와 회귀 픽스처를 먼저 추가해야 한다.
+- **어댑터 커버리지가 PARTIAL이다** — XFDL 혼합 XML/Script, Designer 파일처럼 인덱스만으로 구조를 확정할 수 없는 스택이다. 에이전트가 유사 화면 원문을 읽어 확인한 뒤 생성하고, 읽은 파일을 보고에 남긴다. UNSUPPORTED면 어댑터와 회귀 픽스처를 먼저 추가해야 한다.
 - **패턴 후보가 충돌한다거나 LOW 신뢰도라 생성이 중단됐다** — 서로 다른 모듈의 패턴을 평균내지 않는 설계다. 어떤 기준 파일을 따를지 직접 고르면 진행된다.
 - **같은 엔드포인트가 이미 있다고 한다** — Phase 2 사전 충돌 체크 결과다. 경로를 바꾸거나 기존 기능을 수정하는 쪽(`safe-modify`)으로 전환한다.
 - **`scaffolder`와 무엇이 다른가** — 로컬 `scaffolder` 스킬은 체크리스트만 보여 주고, `scaffold-feature`는 실제 파일 생성과 컨벤션 준수, 테스트 골격, 사전 영향 체크까지 한다.

@@ -83,11 +83,11 @@ node "$env:CLAUDE_PLUGIN_ROOT/agents/lib/build-index.mjs" --root "D:\work\order-
 
 ## HOLD/STOP이 나왔을 때 하지 말 것
 
-`safe-modify`는 `어댑터 FULL + 패턴 CONFORM + 필수 검증 exit 0 + change-safety GO`가 모두 충족될 때만 GO를 냅니다. 검증을 실행하지 못했거나 어댑터가 PARTIAL/UNSUPPORTED면 위험 점수가 낮아도 HOLD(`UNVERIFIED`)입니다. HOLD/STOP은 실패가 아니라 사람이 결정할 차례라는 신호입니다.
+`safe-modify`는 `어댑터 FULL 또는 READ(원문 확인 완료) + 패턴 CONFORM + 검증 exit 0 + change-safety GO`가 충족되면 GO를 냅니다. 있는 검증 명령을 실행하지 못했거나 어댑터가 UNSUPPORTED면 HOLD(`UNVERIFIED`)입니다. HOLD/STOP은 실패가 아니라 사람이 결정할 차례라는 신호입니다.
 
 - 판정을 무시하고 "그냥 적용해줘"로 밀어붙이지 마세요. 자동 수정을 우회하는 경로는 의도적으로 제공되지 않으며, 같은 요청을 `vibe`로 돌려도 승격 조건에 걸리면 다시 안전 워크플로우로 돌아옵니다.
 - HOLD 사유를 읽기 전에 재실행하지 마세요. Claude가 이유와 권고 조치를 함께 알려 주므로 그 항목(빌드·수동 시나리오·패턴 근거)을 먼저 확보하는 것이 빠릅니다.
-- WinForms Designer·DevExpress·XFDL·JSP/Struts XML 같은 PARTIAL 대상은 실제 빌드·UI·통합 검증 전까지 자동 변경 판정이 HOLD입니다. 이 경우 수동 검증 절차를 준비한 뒤 다시 요청하세요.
+- WinForms Designer·DevExpress·XFDL·JSP/Struts XML 같은 PARTIAL 대상은 에이전트가 원문을 직접 읽어 확인한 뒤 수정합니다(`READ`). 따로 준비할 것은 없고, 보고의 `원문 확인` 목록에서 무엇을 읽었는지 볼 수 있습니다.
 - STOP은 현재 방식으로 진행하지 않기를 권고하는 것입니다. 대안을 논의하세요.
 - HOLD/STOP으로 끝났고 그 사이 재인덱싱이 있었다면 wiki도 낡은 상태입니다. 종료 보고의 `generate-wiki` 재실행 안내를 따르세요.
 

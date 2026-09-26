@@ -42,7 +42,7 @@ AX Navi를 쓰다 마주치는 증상을 원인과 조치로 정리했습니다.
 
 | 증상 | 원인 | 조치 |
 |------|------|------|
-| safe-modify가 시작부터 HOLD | 변경 대상 확장자의 어댑터가 `PARTIAL`(`.jsp`·`.xml`·`.cshtml`·`.xfdl`·`.csproj` 등)이거나 `UNSUPPORTED` | 정상 동작. 스택별 수동·통합 검증 결과를 첨부하면 진행. `check-adapter-coverage.mjs --target <파일>`로 사유 확인 |
+| safe-modify가 시작부터 HOLD | 변경 대상 확장자의 어댑터가 `PARTIAL`(`.jsp`·`.xml`·`.cshtml`·`.xfdl`·`.csproj` 등)이거나 `UNSUPPORTED` | PARTIAL이면 원문을 읽지 않고 멈춘 것이다. "원문 읽고 진행해줘"로 다시 요청. UNSUPPORTED면 어댑터 추가가 필요. `check-adapter-coverage.mjs --target <파일>`로 사유 확인 |
 | `_meta.json` 없음으로 HOLD | 인덱싱되지 않았거나 구버전 인덱스 | `build-index.mjs --mode init` |
 | Rust·COBOL·ABAP 등에서 코드 변경 자동화가 거부됨 | 분석 깊이 LOW, discovery-only | 의도된 제한. `legacy-decoder`로 구조 파악 후 수동 작업 |
 

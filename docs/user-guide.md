@@ -313,7 +313,7 @@ flowchart TD
 | ⚠️ **HOLD** | 주의 후 진행 | 트랜잭션 경계 변경, 외부 시스템 연동 |
 | 🛑 **STOP** | 현재 방식 중단 | 운영 DB 직접 수정, 인증 우회 위험 |
 
-GO는 `pattern-conformance=CONFORM`, 필수 테스트·빌드·린트 exit 0, `change-safety=GO`가 모두 충족될 때만 가능하다. 검증 미실행은 HOLD다.
+GO는 `pattern-conformance=CONFORM`, 테스트·빌드·린트 exit 0, `change-safety=GO`가 충족될 때 가능하다. 있는 검증 명령을 실행하지 않았으면 HOLD다. 부분 지원(PARTIAL) 파일은 에이전트가 원문을 읽어 확인한 뒤 진행한다.
 
 > Claude는 HOLD/STOP 상황에서도 **자동 수정하지 않습니다.** 판단은 항상 사람이 합니다.
 

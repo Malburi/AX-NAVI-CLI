@@ -239,7 +239,7 @@ export async function cmdIndex(root, sub, opts) {
     const rate = (/** @type {number | null} */ v) => (v === null ? "-" : `${Math.round(v * 1000) / 10}%`);
     process.stdout.write(
       `${ui.bold("커버리지 진단")}  ${paths.root}\n` +
-        `  인덱싱 ${f.indexed}개 · 자동 변경 가능 ${f.full}개(${pct(f.full)}) · 수동 검증 ${f.partial}개(${pct(f.partial)})\n` +
+        `  인덱싱 ${f.indexed}개 · 자동 변경 가능 ${f.full}개(${pct(f.full)}) · 원문 확인 후 변경 ${f.partial}개(${pct(f.partial)})\n` +
         `  분석 불가 ${f.discovery_only}개 · 읽지 않는 코드 후보 ${f.unindexed_code_candidates}개 · 제외 ${f.excluded}개\n` +
         `  호출 확정률 ${rate(summary.quality.call_resolution)} · SQL 연결률 ${rate(summary.quality.sql_linked)}\n` +
         ui.dim(`  ${out}\n`),

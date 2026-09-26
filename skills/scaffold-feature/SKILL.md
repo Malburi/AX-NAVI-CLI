@@ -17,8 +17,8 @@ description: 추출된 프로젝트 컨벤션에 따라 신규 기능을 스캐�
 
 생성 예정 경로의 확장자마다 `agents/lib/check-adapter-coverage.mjs`를 실행한다. 기존 파일이 아직 없더라도 같은 확장자의 `_meta.json.adapter_coverage` 항목으로 판정한다.
 
-- `FULL`만 자동 생성 가능.
-- `PARTIAL`(예: XFDL 혼합 XML/Script, 프로젝트 메타데이터)은 실제 유사 화면/Designer/설정 파일과 실행 검증 절차를 사용자가 확인할 때까지 HOLD.
+- `FULL`은 자동 생성 가능.
+- `PARTIAL`(예: XFDL 혼합 XML/Script, 프로젝트 메타데이터)은 `READ` — 실제 유사 화면·Designer·설정 파일 원문을 직접 읽어 구조를 확인한 뒤 생성한다. 사용자에게 확인을 떠넘기지 않고, 읽은 파일을 보고에 남긴다.
 - `UNSUPPORTED`는 추측 스캐폴딩 금지. 먼저 어댑터와 회귀 픽스처를 추가한다.
 
 ### pair_config 확인 (Type B 지원)
@@ -187,7 +187,7 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" detect --root "[프로
 node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝트 루트]" --cmd "[고른 명령]"
 ```
 
-테스트 골격만 생성되고 assertion이 비어 있으면 통과 증거가 아니므로 HOLD로 표시한다. 감지 `count: 0`이면 자동 검증이 없다는 뜻이므로 수동 검증을 확보하기 전 GO로 보고하지 않는다.
+테스트 골격만 생성되고 assertion이 비어 있으면 통과 증거가 아니므로 HOLD로 표시한다. 감지 `count: 0`이면 자동 검증이 없다는 뜻이다. 보고에 `검증 수단 없음`으로 밝히고, 유사 화면·설정 원문과 대조해 생성 결과를 확인했으면 GO로 보고한다.
 
 ### 4-3. 변경 안전성 평가
 

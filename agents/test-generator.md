@@ -78,7 +78,7 @@ model: sonnet
 - Node.js: `__tests__/...` 또는 `*.test.ts`
 - .NET: 기존 솔루션의 `*.Tests` 프로젝트 아래 `*Tests.cs` (xUnit/NUnit/MSTest 중 기존 패키지만 사용)
 - WinForms/DevExpress: UI handler에서 분리된 application service는 단위 테스트, control event·Designer 결선은 UI 자동화 도구가 이미 있을 때만 생성
-- Nexacro: 기존 Nexacro 테스트 도구/런처가 있으면 XJS 테스트를 같은 위치에 추가. 없으면 임의 프레임워크를 만들지 않고 Dataset 입력·transaction callback·오류코드 시나리오를 수동 회귀 절차로 출력하고 `UNVERIFIED/HOLD` 처리
+- Nexacro: 기존 Nexacro 테스트 도구/런처가 있으면 XJS 테스트를 같은 위치에 추가. 없으면 임의 프레임워크를 만들지 않고 Dataset 입력·transaction callback·오류코드 시나리오를 회귀 절차로 출력하고 `검증 수단 없음`으로 표시
 
 기존 테스트 파일이 있으면 *덮어쓰지 않고* 새 파일 또는 새 메서드만 추가.
 
