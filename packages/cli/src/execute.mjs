@@ -211,10 +211,15 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * TTY 에서 Ctrl+C 을 가로채 자기 close() 로 처리하고 프로세스 시그널을 올리지 않기
    * 때문이다(실측: 중단해도 턴이 끝까지 돌았다). 단발 실행에는 여전히 필요하므로 둘 다 건다.
    */
-  const controller = beginTurn();
+  /*
+   * 백그라운드 작업은 전역 손잡이를 잡지 않는다. 잡으면 도는 동안 빈 입력창에서 ESC(메뉴 닫기)나
+   * Ctrl+C(줄 지우기)를 누르는 순간 그 작업이 중단됐다(리뷰 지적). 끊는 길은 /tasks stop 의 signal 뿐이다.
+   */
+  const controller = background ? new AbortController() : beginTurn();
   if (signal) signal.addEventListener("abort", () => controller.abort(), { once: true });
+  if (signal?.aborted) controller.abort();
   const onSigint = () => controller.abort();
-  process.on("SIGINT", onSigint);
+  if (!background) process.on("SIGINT", onSigint);
 
   /** @type {import("@ax-navi/core").ToolContext} */
   const ctx = {
@@ -776,7 +781,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
    * 중단은 실패가 아니라 사용자의 결정이다. 다만 **끝난 것처럼 보이면 안 된다** —
    * 여기까지의 산출물은 절차 중간이라 불완전하기 때문이다. 그 사실을 그대로 적는다.
    */
-  process.stderr.write(
+  // 백그라운드 작업의 마무리 줄은 입력 중인 프롬프트 위에 끼어든다. /tasks 에서 본다.
+  if (!background) process.stderr.write(
     controller.signal.aborted
       ? `${ui.yellow("  ⛔ 중단됨")} ${ui.dim(`— 여기까지만 진행됐다 · ${seconds}${cost}${asked}`)}\n`
       : ui.dim(`  ${seconds}${cost}${recovered}${asked}\n`),

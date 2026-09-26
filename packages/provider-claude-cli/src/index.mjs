@@ -710,7 +710,7 @@ export function createBackgroundWatch() {
  *
  * @param {import("node:child_process").ChildProcess} child
  */
-function terminateTree(child) {
+export function terminateTree(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === "win32" && child.pid) {
     try {

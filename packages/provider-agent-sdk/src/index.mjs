@@ -10,6 +10,7 @@
  * 이벤트 형식은 stream-json 과 같아서 claude-cli 의 translateEvent 를 그대로 쓴다.
  * 스킬 본문과 플러그인은 플러그인 모드와 같은 경로(plugins 옵션)로 실린다.
  */
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import {
   ENCODING_TOOLS,
@@ -20,6 +21,7 @@ import {
   encodingHookEvents,
   createBackgroundWatch,
   delegatedEnv,
+  terminateTree,
   toDisallowedTools,
   toolBriefing,
   translateEvent,
@@ -109,6 +111,15 @@ export function sdkMcpServers(configPath, env = {}) {
   }
 }
 
+/*
+ * 이 프로세스가 띄운 claude 전부. axnavi 가 도중에 끝나면(창 닫기·두 번째 Ctrl+C) 남기지 않는다.
+ * @type {Set<import("node:child_process").ChildProcess>}
+ */
+const LIVE = new Set();
+process.once("exit", () => {
+  for (const child of LIVE) terminateTree(child);
+});
+
 export class AgentSdkProvider {
   /**
    * @param {{ cwd?: string, pluginDir?: string, mcpConfigPath?: string, mcpEnv?: Record<string, string>, settings?: string, host: Host }} options
@@ -140,10 +151,19 @@ export class AgentSdkProvider {
       RESPONSE_STYLE,
     ].filter(Boolean).join("\n\n");
 
+    /** @type {Set<import("node:child_process").ChildProcess>} */
+    const children = new Set();
     const abort = new AbortController();
-    const onAbort = () => abort.abort();
+    /*
+     * 중단하면 claude 가 살아 있을 때 곧바로 트리째 끝낸다. SDK 는 stdin 을 닫아 claude 를 곱게 내리는데,
+     * claude 가 먼저 끝나면 그 아래 bash → 명령(ping 등)은 부모를 잃어 taskkill /T 로도 찾을 수 없다(실측).
+     */
+    const onAbort = () => {
+      abort.abort();
+      for (const child of children) terminateTree(child);
+    };
     signal?.addEventListener("abort", onAbort, { once: true });
-    if (signal?.aborted) abort.abort(); // 시작하기 전에 이미 중단됐으면 리스너가 불리지 않는다
+    if (signal?.aborted) onAbort(); // 시작하기 전에 이미 중단됐으면 리스너가 불리지 않는다
     const background = createBackgroundWatch();
 
     /** @type {import("@anthropic-ai/claude-agent-sdk").CanUseTool} */
@@ -190,6 +210,21 @@ export class AgentSdkProvider {
         },
         env: delegatedEnv(process.env, this.options.pluginDir ? { pluginDir: this.options.pluginDir } : {}),
         abortController: abort,
+        /*
+         * claude 프로세스를 우리가 띄워 손잡이를 쥔다. SDK 기본 경로는 중단 때 직계 자식만 끝내서,
+         * Bash 도구가 띄운 node·python·MCP 서버가 윈도에서 고아로 남을 수 있었다(리뷰 지적).
+         * SDK 가 넘기는 signal 은 stdin 을 닫고 약 2초 기다린 뒤에야 켜지므로, 그때 트리째 끝낸다.
+         */
+        spawnClaudeCodeProcess: (/** @type {any} */ opts) => {
+          const child = spawn(opts.command, opts.args, { cwd: opts.cwd, env: opts.env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+          children.add(child);
+          LIVE.add(child);
+          child.stderr?.on("data", () => {}); // 비워 두지 않으면 버퍼가 차서 멈춘다
+          child.once("exit", () => { children.delete(child); LIVE.delete(child); });
+          if (abort.signal.aborted) terminateTree(child);
+          opts.signal?.addEventListener("abort", () => terminateTree(child), { once: true });
+          return child;
+        },
         extraArgs: {
           ...(allowDelegation ? { "forward-subagent-text": null } : {}),
           ...(this.options.settings ? { settings: this.options.settings } : {}),
@@ -213,6 +248,8 @@ export class AgentSdkProvider {
       yield { type: "error", error: { kind: login || /auth|credential/i.test(message) ? "auth" : "unknown", message: login ? LOGIN_HELP : message, retryable: false } };
     } finally {
       signal?.removeEventListener("abort", onAbort);
+      // 중단했는데 아직 살아 있으면 트리째 끝낸다(SDK 의 유예를 기다리지 않는 마지막 정리).
+      if (signal?.aborted) for (const child of children) terminateTree(child);
       // 중단·오류로 뒷정리 훅이 못 돌았어도 UTF-8 로 바꿔 둔 레거시 파일을 되돌린다.
       try {
         restoreAll(this.options.cwd ?? process.cwd());

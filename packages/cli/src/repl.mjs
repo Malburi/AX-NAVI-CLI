@@ -6,7 +6,8 @@
  * 하나 더 붙는데, MVP에서 그 비용을 정당화할 근거가 없다.
  */
 import { createInterface } from "node:readline";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
+import { existsSync } from "node:fs";
 import { indexStaleness } from "../../indexer/index.mjs";
 import {
   latestSession,
@@ -641,6 +642,8 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
               }
             : null),
         });
+        // 슬래시로 돌린 스킬도 대화에 얹혔으면 저장한다 — 안 그러면 /harness-init 뒤 /resume 으로 돌아갈 수 없었다.
+        if (thread) await persist();
       } else {
         const agent = route(line);
         const t = threadFor(agent, line);
@@ -1081,6 +1084,11 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       const prompt = rest.slice(1).join(" ");
       if (!name || !prompt) {
         process.stderr.write(`사용법: /agent <이름> <요청>   ${ui.dim("(Tab 으로 이름 자동완성)")}\n`);
+        return 2;
+      }
+      // 없는 이름이면 설치 경로가 드러나는 ENOENT 대신 목록을 안내한다(리뷰 실측).
+      if (!/^[\w-]+$/.test(name) || !existsSync(join(AGENTS_DIR, `${name}.md`))) {
+        process.stderr.write(`  ${ui.yellow("그런 에이전트가 없습니다")} ${ui.dim(`— ${name} (/agents 로 목록 확인)`)}\n`);
         return 2;
       }
       return executeAgent({ root: paths.root, agentName: name, prompt });

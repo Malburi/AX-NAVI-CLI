@@ -34,7 +34,7 @@ const BUILTINS = [
   { name: "sessions", kind: "builtin", summary: "저장된 대화 목록" },
   { name: "resume", kind: "builtin", summary: "이전 대화로 돌아가기" },
   { name: "model", kind: "builtin", summary: "모델 바꾸기 (haiku | sonnet | opus)" },
-  { name: "mode", kind: "builtin", summary: "실행 모드 보기·바꾸기 (기본 | 계획 | 빠름)" },
+  { name: "mode", kind: "builtin", summary: "실행 모드 보기·바꾸기 (자동 | 매번 묻기 | 계획 | 빠름 | 전부승인)" },
   { name: "bg", kind: "builtin", summary: "백그라운드로 돌리기 — 도는 동안 계속 대화합니다", usage: "/bg <요청>" },
   { name: "tasks", kind: "builtin", summary: "백그라운드 작업 목록 · /tasks stop <번호>" },
   { name: "log", kind: "builtin", summary: "지나간 작업 되짚어 보기 (서브에이전트별)" },
