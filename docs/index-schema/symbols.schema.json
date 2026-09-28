@@ -31,7 +31,8 @@
                 "name": { "type": "string" },
                 "id": { "type": "string" },
                 "line": { "type": ["integer", "null"] },
-                "visibility": { "type": "string" }
+                "visibility": { "type": "string" },
+                "abstract": { "type": "boolean" }
               }
             }
           }

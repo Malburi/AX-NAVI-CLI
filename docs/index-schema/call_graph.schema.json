@@ -17,6 +17,7 @@
           "line": { "type": ["integer", "null"] },
           "visibility": { "type": "string" },
           "static": { "type": "boolean" },
+          "abstract": { "type": "boolean" },
           "annotations": { "type": "array", "items": { "type": "string" } },
           "signature": { "type": "string" }
           ,"workspace": { "type": "string" }

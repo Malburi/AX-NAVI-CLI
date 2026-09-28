@@ -59,7 +59,9 @@ export function buildCoverageReport(rootArg, indexDirArg) {
   const decidableCalls = decidable.filter((item) => item.kind === "ambiguous_call").length;
   const groups = (() => { try { return JSON.parse(readFileSync(join(indexDir, "_unresolved_groups.json"), "utf8")).groups?.length ?? null; } catch { return null; } })();
   const unresolved = meta.unresolved_count || 0;
-  const codeUsage = new Set(sqlUsage.usages.filter((item) => item.method && item.method !== "unknown" && item.method !== item.sql_id).map((item) => item.sql_id));
+  /* MyBatis Mapper 는 SQL id 가 곧 인터페이스 메서드 id 다 — 그 메서드를 부르는 코드가 있으면 연결된 것이다. */
+  const calledMethods = new Set(graph.edges.filter((item) => item.type === "call").map((item) => item.to));
+  const codeUsage = new Set(sqlUsage.usages.filter((item) => item.method && item.method !== "unknown" && (item.method !== item.sql_id || calledMethods.has(item.sql_id))).map((item) => item.sql_id));
   const linkedSqls = sqlUsage.sqls.filter((item) => codeUsage.has(item.id)).length;
 
   const summary = {

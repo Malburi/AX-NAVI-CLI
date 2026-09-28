@@ -37,7 +37,7 @@ import {
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
 
-export const INDEXER_VERSION = "1.16.0"; // 그리드 열(DevExpress·WinForms·ASP.NET·IBSheet·AUIGrid·RealGrid·SBGrid·Nexacro)·XtraReports 를 화면↔DB 컬럼으로 잇는다.
+export const INDEXER_VERSION = "1.17.0"; // 본문 없는 interface·abstract 메서드 선언을 노드로 잡아 Service → Mapper → SQL 을 잇는다.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
 const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
@@ -1186,6 +1186,52 @@ function procedureTarget(raw) {
 }
 
 /*
+ * 본문 없이 `;`로 끝나는 메서드 선언 — interface 멤버와 `abstract` 메서드(Java·C#).
+ *
+ * 메서드 정규식은 본문 `{`가 있어야 잡는다. 그래서 `void insertSample(SampleVO vo);` 같은
+ * MyBatis Mapper 인터페이스 메서드가 통째로 빠져 `sampleMapper.insertSample(vo)` 호출이 갈 곳이
+ * 없었고, Service → Mapper → SQL 연결이 끊겨 SQL 연결률이 0%였다(2026-09-28 전자정부 표준
+ * 샘플 egovframe-web-sample 실측). Mapper 는 구현 클래스가 없어 호출의 종착점이 이 선언이다.
+ *
+ * 클래스 본문의 최상위만 본다. 중첩 블록(default 메서드 본문 · 중첩 클래스 · 초기화 블록)은
+ * 지우고 그 끝을 문장 경계로 삼아, 본문 안의 `return foo(x);`를 선언으로 읽지 않는다.
+ */
+const ABSTRACT_DECLARATION = /^\s*((?:(?:public|protected|private|internal|abstract|static|default|virtual|new|unsafe)\s+)*)(?:<[^>;{}]*>\s*)?[\w$.]+(?:\s*<[^;=(){}]*>)?(?:\s*\[\s*\])*\??\s+(\w+)\s*\([^;{}]*\)\s*(?:throws\s+[\w.,\s]+)?$/d;
+const DECLARATION_ANNOTATION = /@[\w.]+(?:\s*\((?:[^()]|\([^()]*\))*\))?/g;
+
+function abstractMethodDeclarations(clean, classes) {
+  const found = [];
+  const text = clean.replace(/"(?:\\.|[^"\\\n])*"/g, (literal) => `"${" ".repeat(literal.length - 2)}"`);
+  for (const item of classes) {
+    if (item.type !== "interface" && item.type !== "class") continue;
+    const open = text.indexOf("{", item.start);
+    if (open < 0 || open >= item.end) continue;
+    let top = "";
+    let depth = 0;
+    for (let i = open + 1; i < item.end && i < text.length; i += 1) {
+      const c = text[i];
+      if (c === "{") { depth += 1; top += " "; }
+      else if (c === "}") { depth -= 1; top += depth === 0 ? ";" : " "; }
+      else top += depth > 0 && c !== "\n" ? " " : c;
+    }
+    let segmentStart = 0;
+    for (let i = 0; i < top.length; i += 1) {
+      if (top[i] !== ";") continue;
+      const segment = top.slice(segmentStart, i)
+        .replace(DECLARATION_ANNOTATION, (annotation) => " ".repeat(annotation.length))
+        .replace(/^(\s*)((?:\[[^\]]*\]\s*)+)/, (_, lead, attributes) => lead + " ".repeat(attributes.length));
+      const match = segment.match(ABSTRACT_DECLARATION);
+      if (match && (item.type === "interface" || /\babstract\b/.test(match[1]))) {
+        const visibility = match[1].match(/\b(public|protected|private|internal)\b/)?.[1] || (item.type === "interface" ? "public" : "package");
+        found.push({ name: match[2], index: open + 1 + segmentStart + match.indices[2][0], visibility });
+      }
+      segmentStart = i + 1;
+    }
+  }
+  return found;
+}
+
+/*
  * multiline 정규식에서 `^\s*`를 쓰면 안 된다 — `\s`는 개행을 포함하므로 `^`가 **앞쪽 빈 줄**에서
  * 매치된 뒤 `\s*`가 그 개행을 삼켜, `match.index`가 실제 정의보다 위쪽 빈 줄을 가리킨다.
  * 파이썬처럼 정의 사이에 빈 줄을 두는 것이 표준인 언어에서는 사실상 모든 심볼의 줄 번호가
@@ -1273,6 +1319,16 @@ function extractSymbols(text, clean, rel, workspace) {
      */
     const methodRegex = /\b(public|protected|private|internal)?\s*(?:static\s+|final\s+|abstract\s+|synchronized\s+|override\s+|open\s+|suspend\s+|async\s+)*(?:fun\s+)?(?:[\w<>,.?\[\]]+\s+)?(?<!@)\b(\w+)\s*\([^;{}]*\)\s*(?:throws\s+[^\n{]+)?\s*\{/gm;
     for (const match of clean.matchAll(methodRegex)) pushMethod(match[2], match.index, clean.indexOf("{", match.index), match[1] || "package");
+    if (ext === ".java" || ext === ".cs") {
+      for (const item of abstractMethodDeclarations(clean, classes)) {
+        const owner = ownerAt(item.index);
+        const id = symbolId(pkg, owner, item.name);
+        const line = atLine(item.index);
+        if (!owner || CALL_KEYWORDS.has(item.name) || seenMethods.has(`${id}@${line}`)) continue;
+        seenMethods.add(`${id}@${line}`);
+        methods.push({ id, name: item.name, owner, package: pkg, file: rel, line, start: item.index, end: item.index, visibility: item.visibility, abstract: true, workspace: workspace.id });
+      }
+    }
   } else if (JS_FAMILY_EXTENSIONS.includes(ext)) {
     /*
      * TypeScript 반환 타입 주석(`): Promise<Order> {`)을 허용한다.
@@ -1343,7 +1399,7 @@ function extractSymbols(text, clean, rel, workspace) {
   const symbols = classes.map((item) => ({
     id: symbolId(pkg, "", item.name), type: item.type, file: rel, line: item.line, package: pkg,
     ...(item.extends ? { extends: item.extends } : {}), ...(item.implements.length ? { implements: item.implements } : {}),
-    methods: (methodsByOwner.get(item.name) || []).map((method) => ({ name: method.name, id: method.id, line: method.line, visibility: method.visibility })),
+    methods: (methodsByOwner.get(item.name) || []).map((method) => ({ name: method.name, id: method.id, line: method.line, visibility: method.visibility, ...(method.abstract ? { abstract: true } : {}) })),
     workspace: workspace.id, origin: "deterministic-indexer", confidence: "HIGH",
   }));
   for (const method of methods.filter((item) => !item.owner)) {
@@ -1351,7 +1407,7 @@ function extractSymbols(text, clean, rel, workspace) {
   }
   const nodes = [
     ...classes.map((item) => ({ id: symbolId(pkg, "", item.name), type: item.type, file: rel, line: item.line, workspace: workspace.id, origin: "deterministic-indexer", confidence: "HIGH" })),
-    ...methods.map((item) => ({ id: item.id, type: "method", file: rel, line: item.line, visibility: item.visibility, workspace: workspace.id, origin: "deterministic-indexer", confidence: "HIGH" })),
+    ...methods.map((item) => ({ id: item.id, type: "method", file: rel, line: item.line, visibility: item.visibility, ...(item.abstract ? { abstract: true } : {}), workspace: workspace.id, origin: "deterministic-indexer", confidence: "HIGH" })),
   ];
   const callSites = [];
   const callRegex = /\b([A-Za-z_$][\w$]*)(?:\s*\.\s*([A-Za-z_$][\w$]*))?\s*\(/g;
@@ -3147,7 +3203,7 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   const edges = [];
   const unresolved = [];
   for (const binding of bindings) {
-    let candidates = (nodeBySimple.get(binding.handler_name) || []).filter((item) => item.type !== "trigger");
+    let candidates = preferConcrete((nodeBySimple.get(binding.handler_name) || []).filter((item) => item.type !== "trigger"));
     if (MARKUP_PAGE.test(binding.file || "")) candidates = pageCandidates(binding.file, binding.handler_name, candidates);
     /*
      * 템플릿 이벤트 핸들러(@click 등)·markup 이벤트는 반드시 같은 파일의 스크립트 블록에
@@ -3196,8 +3252,10 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
          * 그 타입을 implements·extends한 우리 클래스의 메서드로 간다 — `User user; user.getLoginId()`는
          * 런타임에 `UserSession implements User`로 디스패치된다. 구현이 없으면 외부 호출이라 버린다.
          */
-        if (!candidates.length) {
-          candidates = (implementorsOf.get(declaredType) || []).flatMap((classId) => nodeByOwnerId.get(`${classId}\u0000${call.name}`) || []);
+        if (candidates.every((item) => item.abstract)) {
+          /* 본문 없는 선언만 있으면 구현 쪽이 먼저다. 구현이 없을 때만(MyBatis Mapper) 선언이 종착점이다. */
+          const implemented = (implementorsOf.get(declaredType) || []).flatMap((classId) => nodeByOwnerId.get(`${classId}\u0000${call.name}`) || []);
+          if (implemented.length) candidates = implemented;
           if (!candidates.length) continue;
         }
       } else {
@@ -3239,6 +3297,8 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
      * `setup()` 안에서 지역 함수 `setPassword`를 바로 호출하는 경우가 정확히 이 패턴이었고,
      * 실제로 같은 파일의 그 함수를 가리키는 게 맞았다).
      */
+    /* 선언과 구현이 함께 후보면 구현이다 — 인터페이스 선언이 생긴 뒤에도 기존 해석 결과를 바꾸지 않는다. */
+    candidates = preferConcrete(candidates);
     /* `new QueryUpdateException(...)`는 클래스 노드와 생성자 노드(`X.X`)가 함께 후보가 된다 — 생성자다. */
     if (candidates.length > 1) {
       const constructors = (nodeByOwnerSimple.get(`${call.name}\u0000${call.name}`) || []).filter((item) => item.type === "method" && candidates.includes(item));
@@ -3698,6 +3758,13 @@ const TRIGGER_EDGE_TYPES = new Set(["ui_event", "markup_event", "scheduler", "pr
  * 화이트리스트를 여기서 적용한다 — 확실한 진입점은 제외하고, 파일만 겹쳐 애매한 것은
  * 버리지 않고 entrypoint_suspect로 표시해 판단을 사람/LLM에게 남긴다.
  */
+/* 후보에 본문 있는 메서드가 하나라도 있으면 본문 없는 선언(interface · abstract)은 뺀다. */
+function preferConcrete(candidates) {
+  if (candidates.length < 2 || !candidates.some((item) => item.abstract)) return candidates;
+  const concrete = candidates.filter((item) => !item.abstract);
+  return concrete.length ? concrete : candidates;
+}
+
 function deadCodeCandidates(nodes, inDegree, edges, endpoints) {
   const triggerTargets = new Set(edges.filter((item) => TRIGGER_EDGE_TYPES.has(item.type)).map((item) => item.to));
   const handlerKeys = new Set();
@@ -3717,7 +3784,8 @@ function deadCodeCandidates(nodes, inDegree, edges, endpoints) {
     if (endpoint.file) handlerFiles.add(endpoint.file);
   }
   return nodes
-    .filter((item) => item.type === "method" && item.visibility !== "private" && (inDegree.get(item.id) || 0) === 0)
+    /* 본문 없는 선언은 구현을 통해 불리므로 들어오는 엣지가 없어도 죽은 코드가 아니다. */
+    .filter((item) => item.type === "method" && !item.abstract && item.visibility !== "private" && (inDegree.get(item.id) || 0) === 0)
     .filter((item) => {
       const name = item.id.split(".").at(-1);
       if (triggerTargets.has(item.id)) return false;

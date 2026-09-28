@@ -651,6 +651,72 @@ CREATE UNIQUE INDEX IF NOT EXISTS IDX_ORDER_USER ON TBL_ORDER (USER_ID);
     }
   });
 
+  register("본문 없는 Mapper 인터페이스 메서드가 호출 종착점이 되고, 구현이 있는 인터페이스는 구현으로 간다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-interface-methods-"));
+    try {
+      write(root, "src/main/java/com/acme/SampleMapper.java", `package com.acme;
+@EgovMapper("sampleMapper")
+public interface SampleMapper {
+  void insertSample(SampleVO vo);
+  List<?> selectSampleList(SampleVO vo);
+  @Options(useGeneratedKeys = true)
+  int countSample(@Param("vo") SampleVO vo) throws Exception;
+  int MAX = 10;
+  default String label(SampleVO vo) { return helper(vo); }
+}
+`);
+      write(root, "src/main/java/com/acme/SampleService.java", `package com.acme;
+public interface SampleService {
+  void insertSample(SampleVO vo);
+  void unusedDeclaration();
+}
+`);
+      write(root, "src/main/java/com/acme/SampleServiceImpl.java", `package com.acme;
+public class SampleServiceImpl implements SampleService {
+  @Resource(name = "sampleMapper")
+  private SampleMapper sampleMapper;
+  public void insertSample(SampleVO vo) { sampleMapper.insertSample(vo); }
+  public void unusedDeclaration() {}
+}
+`);
+      write(root, "src/main/java/com/acme/SampleController.java", `package com.acme;
+public class SampleController {
+  @Resource(name = "sampleService")
+  private SampleService sampleService;
+  public String addSample(SampleVO vo) { sampleService.insertSample(vo); return "ok"; }
+}
+`);
+      write(root, "src/main/java/com/acme/BaseJob.java", `package com.acme;
+public abstract class BaseJob {
+  protected abstract void doRun(String arg);
+  public void run() { doRun("x"); }
+}
+`);
+      write(root, "src/main/resources/mapper/Sample.xml", `<mapper namespace="com.acme.SampleMapper">
+  <insert id="insertSample">INSERT INTO SAMPLE (ID) VALUES (#{id})</insert>
+</mapper>`);
+
+      buildIndex({ root, mode: "init", tier: "Full", config: null });
+      const graph = json(root, "call_graph.json");
+      const mapper = json(root, "symbols.json").symbols.find((item) => item.id === "com.acme.SampleMapper");
+      assert.equal(mapper.methods.map((item) => item.name).sort().join(","), "countSample,insertSample,label,selectSampleList", JSON.stringify(mapper.methods));
+      assert.ok(mapper.methods.filter((item) => item.name !== "label").every((item) => item.abstract), "본문 없는 선언은 abstract로 표시");
+      assert.ok(!graph.nodes.some((item) => item.id.endsWith(".helper") && item.abstract), "default 메서드 본문의 return 문을 선언으로 읽지 않는다");
+      const calls = graph.edges.filter((item) => item.type === "call").map((item) => `${item.from} -> ${item.to}`);
+      assert.ok(calls.includes("com.acme.SampleServiceImpl.insertSample -> com.acme.SampleMapper.insertSample"), calls.join("\n"));
+      assert.ok(calls.includes("com.acme.SampleController.addSample -> com.acme.SampleServiceImpl.insertSample"), calls.join("\n"));
+      assert.ok(calls.includes("com.acme.BaseJob.run -> com.acme.BaseJob.doRun"), calls.join("\n"));
+      const unresolvedPath = join(root, "_workspace", "index", "_unresolved.jsonl");
+      const unresolved = existsSync(unresolvedPath) ? readFileSync(unresolvedPath, "utf8").trim() : "";
+      assert.ok(!unresolved.includes("insertSample"), `선언과 구현이 함께 있어도 모호한 호출로 남지 않는다: ${unresolved}`);
+      const deadPath = join(root, "_workspace", "index", "dead_code.json");
+      const dead = (existsSync(deadPath) ? json(root, "dead_code.json").unused_methods : []).map((item) => item.id);
+      assert.ok(!dead.includes("com.acme.SampleService.unusedDeclaration"), "본문 없는 선언은 죽은 코드 후보가 아니다");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("ASP.NET Core의 controller route·생성자 DI·트랜잭션 경계를 추출한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-dotnet-"));
     try {
