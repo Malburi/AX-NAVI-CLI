@@ -118,7 +118,7 @@ Phase가 끝나면 `_workspace/migration/checkpoints/phase[N].md`를 연다. 모
 
 ## "자동 변환 금지" 원칙
 
-`plan-migration`과 `migration-planner`는 계획만 만든다. 코드 변환은 사람이 매핑 테이블에 따라 수행한다. 검토 없는 자동 변환은 ITO/SI 사고의 주범이라는 전제이며, 자동 변환은 별도 도구·스크립트 영역으로 남겨 두었다. 하네스가 변환 단계에서 하는 일은 빈 구조 생성(`scaffold-feature`), 테스트 골격(`test-generator`), 변환 결과의 안전성 평가(`safe-modify`)까지다. "이 Action 전부 Controller로 바꿔줘"라고 요청하면 계획 산출물이 아니라 일반 수정 요청으로 처리되어 `safe-modify` 게이트를 타게 되므로, 모듈 단위로 나눠 위 순서를 지킨다.
+`plan-migration`과 `migration-planner`는 계획만 만든다. 코드 변환은 사람이 매핑 테이블에 따라 수행한다. 검토 없는 자동 변환은 ITO/SI/SM 사고의 주범이라는 전제이며, 자동 변환은 별도 도구·스크립트 영역으로 남겨 두었다. 하네스가 변환 단계에서 하는 일은 빈 구조 생성(`scaffold-feature`), 테스트 골격(`test-generator`), 변환 결과의 안전성 평가(`safe-modify`)까지다. "이 Action 전부 Controller로 바꿔줘"라고 요청하면 계획 산출물이 아니라 일반 수정 요청으로 처리되어 `safe-modify` 게이트를 타게 되므로, 모듈 단위로 나눠 위 순서를 지킨다.
 
 ## 결과 확인
 

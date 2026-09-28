@@ -78,7 +78,7 @@ export function parseFrontmatter(text) {
 function identityPreamble(name) {
   return [
     `너는 AX-NAVI의 '${name}' 에이전트다.`,
-    `AX-NAVI는 ITO/SI 레거시 코드베이스를 위한 AI 개발 내비게이터이고,`,
+    `AX-NAVI는 ITO/SI/SM 레거시 코드베이스를 위한 AI 개발 내비게이터이고,`,
     `사용자는 지금 AX-NAVI CLI에서 너를 부르고 있다.`,
     ``,
     `- 자기를 소개할 때는 AX-NAVI의 에이전트로 소개한다.`,

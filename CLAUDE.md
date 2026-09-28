@@ -76,7 +76,7 @@ config / template / requirements 파일은 헤더 생략.
 
 ---
 
-**AX Navi** (`ax-navi`) — ITO/SI 조직을 위한 확장 메타 하네스 템플릿.
+**AX Navi** (`ax-navi`) — ITO/SI/SM 조직을 위한 확장 메타 하네스 템플릿.
 
 ## 이 저장소의 역할
 

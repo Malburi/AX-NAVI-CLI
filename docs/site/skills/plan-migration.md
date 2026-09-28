@@ -127,8 +127,8 @@ migration-planner가 지원하는 시나리오는 프레임워크(Struts 1 → S
 
 ## 원칙과 주의
 
-- **마이그레이션은 코드 작성이 아닌 작전이다.** 이 스킬은 계획 수립만 한다. 실제 코드 변환은 사용자가 매핑 테이블에 따라 수행하고, 각 모듈마다 [safe-modify](/skills/safe-modify.md) + [scaffold-feature](/skills/scaffold-feature.md) + test-generator를 조합해 안전하게 진행한다. 검토 없는 자동 변환은 ITO/SI에서 사고의 주범이다.
-- **일정 보수성.** migration-planner가 산출하는 일정에 50% 버퍼를 적용한다. ITO/SI 마이그레이션은 거의 항상 예상보다 오래 걸린다.
+- **마이그레이션은 코드 작성이 아닌 작전이다.** 이 스킬은 계획 수립만 한다. 실제 코드 변환은 사용자가 매핑 테이블에 따라 수행하고, 각 모듈마다 [safe-modify](/skills/safe-modify.md) + [scaffold-feature](/skills/scaffold-feature.md) + test-generator를 조합해 안전하게 진행한다. 검토 없는 자동 변환은 ITO/SI/SM에서 사고의 주범이다.
+- **일정 보수성.** migration-planner가 산출하는 일정에 50% 버퍼를 적용한다. ITO/SI/SM 마이그레이션은 거의 항상 예상보다 오래 걸린다.
 - **외부 시스템 우선.** 내부 코드만 보고 계획하면 가장 큰 위험인 외부 시스템 인터페이스를 놓친다. `external_io.json` 결과는 항상 risk register에 반영한다.
 - **사용자 결정 강제.** 자동 결정 불가 항목(데드 코드 제외, DB 전략, canary 비율, 외부 조율)은 명시적으로 묻고 자동 추측을 금지한다.
 - **빅뱅 금지.** 단계별 계획은 Strangler Fig 패턴(점진적 교체)을 기본으로 하며, Phase 1 LOW → Phase 2 MEDIUM → Phase 3 HIGH 모듈 순으로 위험도가 낮은 것부터 전환한다.

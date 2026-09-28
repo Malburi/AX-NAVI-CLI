@@ -135,7 +135,7 @@ GO가 나오면 Phase 5가 인덱스와 wiki를 자동 갱신한다. 커밋과 c
 ## 관련 문서
 
 - [safe-modify](/skills/safe-modify.md) — Phase 0 운영 모드 표와 Phase 4 결정 형식.
-- [change-safety](/agents/change-safety.md) — 즉시 STOP 트리거와 ITO/SI 운영 환경 조정.
+- [change-safety](/agents/change-safety.md) — 즉시 STOP 트리거와 ITO/SI/SM 운영 환경 조정.
 - [test-generator](/agents/test-generator.md) — 케이스 선정 우선순위와 TODO 정책.
 - [vibe](/skills/vibe.md) — 생략하는 게이트와 승격 조건.
 - [게이트](/concepts/gates.md) — GO/HOLD/STOP 개념 정리.

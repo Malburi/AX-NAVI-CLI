@@ -6,7 +6,7 @@ description: SQL 텍스트·SQL ID·DDL·SQL diff를 받아 사용처·인덱스
 # Review SQL (오케스트레이터)
 
 `sql-reviewer` 에이전트를 호출해 SQL을 다각도로 리뷰한다.  
-ITO/SI에서 *DB가 사고의 절반*이라는 점을 고려해, 운영 컨텍스트에 따라 평가를 보수적으로 조정.
+ITO/SI/SM에서 *DB가 사고의 절반*이라는 점을 고려해, 운영 컨텍스트에 따라 평가를 보수적으로 조정.
 
 ---
 

@@ -215,7 +215,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 ---
 
-## ITO/SI 운영 고려사항
+## ITO/SI/SM 운영 고려사항
 
 | 컨텍스트 | 평가 조정 |
 |---------|---------|

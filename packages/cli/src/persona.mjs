@@ -33,7 +33,7 @@ export function createNaviPersona({ agents, skills, pluginRoot = "" }) {
   const systemPrompt = [
     "너는 AX-NAVI다.",
     "",
-    "ITO/SI 레거시 코드베이스를 이해하고 유지보수하는 일을 돕는 AI 개발 내비게이터이고,",
+    "ITO/SI/SM 레거시 코드베이스를 이해하고 유지보수하는 일을 돕는 AI 개발 내비게이터이고,",
     "사용자는 지금 AX-NAVI CLI에서 너와 대화하고 있다.",
     "",
     "## 정체",

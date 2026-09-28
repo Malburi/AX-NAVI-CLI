@@ -6,7 +6,7 @@ description: 스택 마이그레이션 계획을 수립한다(인벤토리, 매�
 # Plan Migration (오케스트레이터)
 
 `migration-planner` 에이전트를 호출해 단계별 마이그레이션 계획·매핑·롤백을 생성한다.  
-ITO/SI의 큰 단위 작업인 만큼 *대화형*으로 진행한다.
+ITO/SI/SM의 큰 단위 작업인 만큼 *대화형*으로 진행한다.
 
 ---
 
@@ -164,7 +164,7 @@ migration-planner는 7개 문서를 생성한다 (inventory, mapping table, phas
 
 ### 일정 보수성
 
-migration-planner가 산출하는 일정에 50% 버퍼 적용. ITO/SI 마이그레이션은 거의 항상 예상보다 오래 걸린다.
+migration-planner가 산출하는 일정에 50% 버퍼 적용. ITO/SI/SM 마이그레이션은 거의 항상 예상보다 오래 걸린다.
 
 ### 외부 시스템 우선
 

@@ -2164,7 +2164,7 @@ const ENCODING_ALIASES = new Map([
   ["cp950", "big5"], ["ms950", "big5"],
   ["cp1252", "windows-1252"], ["ansi", "windows-1252"],
 ]);
-/* 선언도 없고 UTF-8도 아닌 파일의 마지막 수단. 이 하네스의 대상이 한국 ITO/SI 레거시라 EUC-KR을 쓴다. */
+/* 선언도 없고 UTF-8도 아닌 파일의 마지막 수단. 이 하네스의 대상이 한국 ITO/SI/SM 레거시라 EUC-KR을 쓴다. */
 const LEGACY_FALLBACK_ENCODING = "euc-kr";
 const CHARSET_DECLARATION = /\b(?:encoding|pageEncoding|charset)\s*=\s*["']?([\w][\w.:-]*)/i;
 

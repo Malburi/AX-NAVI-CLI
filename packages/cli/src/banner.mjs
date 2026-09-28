@@ -27,7 +27,7 @@ export function renderBanner(version) {
     `  ${ui.cyan("╭─────────╮")}   ${brand("▄▀█ ▀▄▀   █▄░█ ▄▀█ █░█ █")}`,
     `  ${ui.cyan("│")} ${brand("◉")} ${ui.dim("───")} ${brand("◉")} ${ui.cyan("│")}   ${brand("█▀█ █░█   █░▀█ █▀█ ▀▄▀ █")}`,
     `  ${ui.cyan("│")}   ${ui.dim("▁▁▁")}   ${ui.cyan("│")}`,
-    `  ${ui.cyan("╰──┬───┬──╯")}   ${ui.dim("ITO/SI 레거시 코드베이스를 위한 AI 개발 내비게이터")}`,
+    `  ${ui.cyan("╰──┬───┬──╯")}   ${ui.dim("ITO/SI/SM 레거시 코드베이스를 위한 AI 개발 내비게이터")}`,
     `  ${ui.cyan("═══╧═══╧═══")}   ${ui.dim(`Enterprise AI Development Navigator · v${version}`)}`,
     "",
     "",

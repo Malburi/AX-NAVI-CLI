@@ -25,7 +25,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 | 카테고리 | 예시 | 비고 |
 |---------|------|------|
-| **프레임워크** | Struts 1 → Spring MVC, Spring 3 → Spring Boot, EJB → Spring | ITO/SI 매우 흔함 |
+| **프레임워크** | Struts 1 → Spring MVC, Spring 3 → Spring Boot, EJB → Spring | ITO/SI/SM 매우 흔함 |
 | **ORM** | iBatis → MyBatis 3, MyBatis → JPA, JDBC → MyBatis | 데이터 매핑 변환 핵심 |
 | **DB** | Oracle → PostgreSQL, Tibero → Oracle, MySQL → MariaDB | PL/SQL/저장프로시저 변환 |
 | **언어/런타임** | Java 6 → 17, .NET FW 4 → .NET 8, Python 2 → 3 | 호환성 매트릭스 핵심 |
@@ -140,7 +140,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 ### Phase 3: 단계별 계획 (Phased Plan)
 
-빅뱅 마이그레이션은 ITO/SI에서 거의 항상 실패한다. **Strangler Fig 패턴**(점진적 교체)을 기본으로 한다.
+빅뱅 마이그레이션은 ITO/SI/SM에서 거의 항상 실패한다. **Strangler Fig 패턴**(점진적 교체)을 기본으로 한다.
 
 **출력:** `_workspace/migration/02_phased_plan.md`
 
@@ -370,7 +370,7 @@ Phase 0에서 측정:
 ### 1. 자동 변환 금지
 
 migration-planner는 *계획만* 수립한다. 실제 코드 변환은 사용자(개발자)가 수행해야 한다.  
-(자동 변환은 별도 도구·스크립트 영역이며, 검토 없는 자동 변환은 ITO/SI에서 사고의 주범)
+(자동 변환은 별도 도구·스크립트 영역이며, 검토 없는 자동 변환은 ITO/SI/SM에서 사고의 주범)
 
 ### 2. 보수적 일정
 

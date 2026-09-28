@@ -99,7 +99,7 @@ pair_linked = true이면 분석 리포트 헤더에 기록: 1:1이면 "파트너
 - `hibernate-*`/`spring-data-jpa` → JPA/Hibernate
 - `ojdbc*`/`oracle.jdbc` → Oracle
 - `postgresql`/`mysql-connector`/`mariadb-java-client` → 해당 DB
-- `tibero*`/`altibase*` → 한국 DBMS (ITO/SI 관점)
+- `tibero*`/`altibase*` → 한국 DBMS (ITO/SI/SM 관점)
 - `egovframework` / `org.egovframe` → 전자정부 표준프레임워크
 
 `WEB-INF/` 존재 시 Java EE Web 프로젝트:
