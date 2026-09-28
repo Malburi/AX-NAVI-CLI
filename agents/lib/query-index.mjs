@@ -239,7 +239,15 @@ const COMMANDS = {
       if (bucket) bucket.push(edge);
       else byFrom.set(edge.from, [edge]);
     }
-    const start = [...byFrom.keys()].find((key) => key === id) || [...byFrom.keys()].find((key) => idMatches(key, id));
+    /*
+     * 엔드포인트 id(`root::POST /addSample.do::…addSample`)나 `POST /addSample.do`로 물어도 그 핸들러에서 시작한다.
+     * 실측: search 결과의 엔드포인트 id를 그대로 넘긴 trace 가 0건이라 모델이 callees 를 손으로 이어 붙였다.
+     */
+    let endpoints = [];
+    try { endpoints = loadIndex(root, "api_contract", indexDir).endpoints || []; } catch { /* API 가 없는 저장소 */ }
+    const endpoint = byFrom.has(id) ? null : endpoints.find((item) => item.handler && (item.id === id || `${item.method} ${item.path_pattern}` === id || `${item.method} ${item.path}` === id));
+    const target = endpoint?.handler || id;
+    const start = [...byFrom.keys()].find((key) => key === target) || [...byFrom.keys()].find((key) => idMatches(key, target));
     const paths = [];
     const seen = new Set();
     const walk = (node, trail, level) => {

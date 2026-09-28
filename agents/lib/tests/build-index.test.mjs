@@ -680,9 +680,11 @@ public class SampleServiceImpl implements SampleService {
 }
 `);
       write(root, "src/main/java/com/acme/SampleController.java", `package com.acme;
+@Controller
 public class SampleController {
   @Resource(name = "sampleService")
   private SampleService sampleService;
+  @PostMapping("/addSample.do")
   public String addSample(SampleVO vo) { sampleService.insertSample(vo); return "ok"; }
 }
 `);
@@ -712,6 +714,12 @@ public abstract class BaseJob {
       const deadPath = join(root, "_workspace", "index", "dead_code.json");
       const dead = (existsSync(deadPath) ? json(root, "dead_code.json").unused_methods : []).map((item) => item.id);
       assert.ok(!dead.includes("com.acme.SampleService.unusedDeclaration"), "본문 없는 선언은 죽은 코드 후보가 아니다");
+      const endpoint = json(root, "api_contract.json").endpoints.find((item) => item.path_pattern === "/addSample.do");
+      for (const id of [endpoint.id, "POST /addSample.do"]) {
+        const traced = COMMANDS.trace({ root, indexDir: join(root, "_workspace", "index"), id, depth: 3, limit: 20 });
+        assert.equal(traced.resolved_start, "com.acme.SampleController.addSample", `엔드포인트로 물어도 핸들러에서 시작한다: ${id}`);
+        assert.ok(traced.items.some((item) => item.path.at(-1) === "com.acme.SampleMapper.insertSample"), JSON.stringify(traced.items));
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
