@@ -116,7 +116,9 @@ SQL 레이어에 도달하면 `sql --file [DAO 파일]` 또는 `sql --id [SQL ID
 
 ## 출력 형식
 
-`_workspace/reports/trace_<slug>.md` 에 저장 + 사용자에게 요약 출력:
+`_workspace/reports/trace_<slug>.md` 에 저장 + 사용자에게 요약 출력. 리포트는 조회가 간단해도 **요약을 출력하기 전에 먼저 쓴다.** 저장할지 묻지 않는다.
+
+인덱스 `trace` 결과에 `bean:` 노드와 `beans`(XML 빈 정의)가 있으면 그 `class`·`properties`를 흐름에 적는다 — 프레임워크 jar 클래스의 동작(ID 채번 테이블·접두어 등)은 이 설정에만 있다. 원문 근거는 빈의 `file:line`이다.
 
 ```
 로직 흐름 추적: [추적 대상]
