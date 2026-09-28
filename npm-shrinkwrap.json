@@ -1,12 +1,12 @@
 {
   "name": "axnavi",
-  "version": "0.1.0-alpha.27",
+  "version": "0.1.0-alpha.28",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "axnavi",
-      "version": "0.1.0-alpha.27",
+      "version": "0.1.0-alpha.28",
       "license": "MIT",
       "workspaces": [
         "packages/*"
