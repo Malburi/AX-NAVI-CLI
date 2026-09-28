@@ -15,7 +15,7 @@
   ═══╧═══╧═══   Enterprise AI Development Navigator
 ```
 
-현재 버전 **v0.1.0-alpha.33**
+현재 버전 **v0.1.0-alpha.34**
 
 ---
 
@@ -83,7 +83,7 @@
 ### 인터넷이 되는 PC
 
 ```bash
-npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.33
+npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.34
 ```
 
 git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm i -g github:…` 형식은 쓰지 마세요.
@@ -92,7 +92,7 @@ git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm
 `connect EACCES` 가 나면 보안 프로그램이 npm 의 외부 연결을 막는 경우입니다. 파일로 받아 설치합니다.
 
 ```powershell
-Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.33" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
+Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.34" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
 npm i -g "$env:TEMP\axnavi.tgz"
 ```
 
@@ -101,15 +101,15 @@ npm i -g "$env:TEMP\axnavi.tgz"
 배포 담당자에게 받은 설치 파일로 설치합니다.
 
 ```powershell
-npm i -g C:\경로\axnavi-0.1.0-alpha.33.tgz --omit=optional
+npm i -g C:\경로\axnavi-0.1.0-alpha.34.tgz --omit=optional
 ```
 
 `--omit=optional` 을 빼면 설치가 몇 분 멈춘 것처럼 보일 수 있습니다.
 
 > **배포 담당자** — 태그를 체크아웃한 깨끗한 폴더에서 `npm pack` 으로 만듭니다.
 > ```powershell
-> git checkout v0.1.0-alpha.33
-> npm pack    # axnavi-0.1.0-alpha.33.tgz
+> git checkout v0.1.0-alpha.34
+> npm pack    # axnavi-0.1.0-alpha.34.tgz
 > ```
 
 ### PowerShell 에서 실행되지 않으면
@@ -127,7 +127,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned # 또는 내 계정만 허�
 
 ```bash
 axnavi upgrade                   # 최신 판으로
-axnavi upgrade v0.1.0-alpha.32   # 특정 판으로
+axnavi upgrade v0.1.0-alpha.33   # 특정 판으로
 ```
 
 GitHub 에 접속되지 않는 PC는 새 설치 파일로 다시 설치합니다.
