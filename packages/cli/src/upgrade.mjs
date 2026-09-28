@@ -163,9 +163,10 @@ export function checkForUpdate(current, notify) {
  */
 export function runUpgrade(tag, say) {
   const url = installUrl(tag);
+  const args = installArgs(tag);
   say(`설치 중입니다 — ${url}`);
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const out = spawnSync(npm, ["i", "-g", url], { encoding: "utf8", shell: process.platform === "win32" });
+  const out = spawnSync(npm, args, { encoding: "utf8", shell: process.platform === "win32" });
   if (out.status === 0) {
     say(`${tag} 로 올렸습니다. 다시 시작하면 적용됩니다.`);
     return 0;
@@ -175,8 +176,23 @@ export function runUpgrade(tag, say) {
    * 그리고 손으로 칠 명령을 그대로 보여 준다.
    */
   say((out.stderr || out.stdout || "").trim().split(String.fromCharCode(10)).slice(-4).join(String.fromCharCode(10)));
-  say(`직접 실행해 보세요:  npm i -g ${url}`);
+  say(`직접 실행해 보세요:  npm ${args.join(" ")}`);
   return out.status ?? 1;
+}
+
+/**
+ * 설치에 넘길 npm 인자.
+ *
+ * `--allow-remote=all` 을 붙인다. npm 12 부터 `allow-remote` 기본값이 `none` 이라, URL 로 받는
+ * 설치가 `EALLOWREMOTE` 로 거부된다(2026-09-28 실측, npm 12.0.2 — 설정 파일 어디에도 없는 기본값이었다).
+ * npm 문서가 권하는 대로 의도한 URL 설치에만 명령 단위로 연다. 사용자 설정은 건드리지 않는다.
+ * 이 옵션을 모르는 옛 npm 은 경고만 하고 설치를 계속한다.
+ *
+ * @param {string} tag
+ * @returns {string[]}
+ */
+export function installArgs(tag) {
+  return ["i", "-g", "--allow-remote=all", installUrl(tag)];
 }
 
 /**

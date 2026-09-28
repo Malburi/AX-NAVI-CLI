@@ -83,10 +83,11 @@
 ### 인터넷이 되는 PC
 
 ```bash
-npm i -g https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.30
+npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.30
 ```
 
 git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm i -g github:…` 형식은 쓰지 마세요.
+`--allow-remote=all` 은 npm 12 부터 필요합니다 — 주소로 받는 설치가 기본으로 막혀 `EALLOWREMOTE` 가 납니다.
 
 ### GitHub 에 접속되지 않는 PC
 

@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { compareVersions, installUrl, readVersion } from "../../cli/src/upgrade.mjs";
+import { compareVersions, installArgs, installUrl, readVersion } from "../../cli/src/upgrade.mjs";
 
 test("숫자로 비교한다 — 글자로 보면 alpha.10 이 alpha.9 보다 낮아진다", () => {
   assert.ok(compareVersions("v0.1.0-alpha.10", "v0.1.0-alpha.9") > 0);
@@ -34,6 +34,17 @@ test("설치 주소는 tarball 이다 — git clone 경로는 사내망에서 �
   assert.match(url, /^https:\/\/codeload\.github\.com\//);
   assert.ok(!url.startsWith("github:"), "막히는 경로를 권하고 있다");
   assert.match(url, /refs\/tags\/v0\.1\.0-alpha\.5$/);
+});
+
+/*
+ * 실측(2026-09-28): npm 12.0.2 PC 에서 URL 설치가 EALLOWREMOTE 로 거부됐다. 설정 파일 어디에도 없는
+ * npm 12 의 새 기본값(allow-remote=none)이었다. 의도한 URL 설치이므로 명령 단위로 연다.
+ */
+test("upgrade 는 npm 12 의 URL 설치 차단을 명령 단위로 연다", () => {
+  const args = installArgs("v0.1.0-alpha.30");
+  assert.deepEqual(args.slice(0, 2), ["i", "-g"]);
+  assert.ok(args.includes("--allow-remote=all"), "npm 12 에서 EALLOWREMOTE 로 막힌다");
+  assert.equal(args.at(-1), installUrl("v0.1.0-alpha.30"));
 });
 
 test("버전은 package.json 에서 온다 — 소스에 박으면 배포본과 갈라진다", () => {
