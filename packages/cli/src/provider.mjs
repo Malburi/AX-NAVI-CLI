@@ -12,7 +12,7 @@
 import { AnthropicProvider } from "../../provider-anthropic/src/index.mjs";
 import { ClaudeCliProvider, probeClaudeCli } from "../../provider-claude-cli/src/index.mjs";
 import { AgentSdkProvider } from "../../provider-agent-sdk/src/index.mjs";
-import { hostPlugins, pluginSkillNames } from "../../provider-agent-sdk/src/host-settings.mjs";
+import { hostPlugins } from "../../provider-agent-sdk/src/host-settings.mjs";
 import { ui, REPO_ROOT } from "./runtime.mjs";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -143,13 +143,18 @@ function CLAUDE_CLI(version, cwd, mcp) {
  */
 function AGENT_SDK(host, cwd, mcp) {
   /*
-   * 호스트 플러그인 끄기와 이름이 겹치는 계정 동기화 스킬 막기(실측: claude.ai 에서 동기화된
-   * generate-wiki·publish-wiki·wiki-hub 가 ax-navi 스킬과 이름이 같다).
+   * 호스트 플러그인을 끈다.
+   *
+   * 이름이 겹치는 계정 동기화 스킬(claude.ai 의 anthropic-skills:generate-wiki 등)은 따로 막지
+   * 않는다. 내장 Skill 도구를 모든 경로에서 꺼 두었으므로(toDisallowedTools) 목록에 보여도
+   * 부를 수 없다(실측). 예전에는 `Skill(anthropic-skills:<이름>)` 를 permissions.deny 에 넣었는데,
+   * 자동 모드 판정기가 그 규칙을 "다른 도구로 같은 일을 하면 막아라" 는 지시와 함께 받아
+   * axnavi 자신의 mcp__axnavi__Skill(name=harness-init) 까지 우회로 보고 막았다
+   * (2026-09-28, Bedrock PC — "하네스 초기화 해줘" 가 첫 호출에서 거부됐다).
    */
   const mute = hostPlugins();
   const settings = JSON.stringify({
     ...(mute.length ? { enabledPlugins: Object.fromEntries(mute.map((n) => [n, false])) } : {}),
-    permissions: { deny: pluginSkillNames(REPO_ROOT).map((n) => `Skill(anthropic-skills:${n})`) },
   });
   return {
     provider: new AgentSdkProvider({

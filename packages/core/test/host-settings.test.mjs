@@ -63,3 +63,28 @@ test("Messages API SDK 가 없으면 키가 있어도 anthropic 경로를 고르
   const src = readFileSync(new URL("../../cli/src/provider.mjs", import.meta.url), "utf8");
   assert.match(src, /hasApiKey\(\) && anthropicSdkInstalled\(\)/, "auto 선택이 SDK 설치를 보지 않는다");
 });
+
+/*
+ * 실측(2026-09-28, Bedrock PC): 위임 설정에 `Skill(anthropic-skills:harness-init)` 차단 규칙을 넣었더니
+ * 자동 모드 판정기가 그 규칙을 "다른 도구로 같은 일을 하면 막아라" 는 지시와 함께 받아, axnavi 자신의
+ * mcp__axnavi__Skill(name=harness-init) 까지 우회로 보고 막았다. "하네스 초기화 해줘" 가 첫 호출에서 거부됐다.
+ *
+ * 동기화 스킬은 내장 Skill 도구를 꺼서 막는다. 두 조건을 함께 고정한다 — 차단 규칙이 없어도 되는 이유가
+ * 내장 Skill 도구가 꺼져 있다는 사실이기 때문이다.
+ */
+test("위임 설정에 스킬 차단 규칙을 넣지 않는다 — 판정기가 axnavi 자신의 스킬까지 막는다", async () => {
+  const { selectProvider } = await import("../../cli/src/provider.mjs");
+  const picked = selectProvider({ provider: "agent-sdk", cwd: REPO });
+  if ("error" in picked) return; // SDK 없는 설치 — 이 경로 자체가 없다
+  const settings = JSON.parse(/** @type {any} */ (picked.provider).options.settings ?? "{}");
+  assert.equal(settings.permissions?.deny, undefined, `차단 규칙이 들어갔다: ${JSON.stringify(settings.permissions)}`);
+});
+
+test("내장 Skill 도구는 모든 경로에서 꺼져 있다 — 계정 동기화 스킬을 부를 수 없게", async () => {
+  const { toDisallowedTools } = await import("../../provider-claude-cli/src/index.mjs");
+  for (const delegation of [false, true]) {
+    const tools = /** @type {any[]} */ ([{ name: "Read" }, { name: "Write" }, { name: "Bash" }]);
+    const off = toDisallowedTools(tools, delegation);
+    assert.ok(off.includes("Skill"), `위임 ${delegation} 에서 내장 Skill 도구가 열렸다`);
+  }
+});
