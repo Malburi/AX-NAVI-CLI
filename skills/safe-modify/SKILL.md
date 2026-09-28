@@ -180,7 +180,9 @@ Phase 1 결과를 보여 준 뒤 요청대로 어시스턴트가 Edit/Write로 �
 
 ## Phase 3: 사후 패턴·실행·안전성 평가
 
-**순서.** `normal`은 3-1 → 3-2 → 3-3 차례로 한다. `small`은 3-2(검증 명령·정적 대조, 1분 안팎)를 먼저 하고, **3-1과 3-3을 한 메시지에 두 Agent 호출로 함께 부른다**(동시에 돈다). 둘 다 "바뀐 코드를 보고 판정"하는 일이라 서로 기다릴 이유가 작다. 이때 change-safety 프롬프트의 패턴 적합성 자리에는 `병렬 합산`을 넣고, 두 결과를 오케스트레이터가 합친다.
+**순서.** `normal`은 3-1 → 3-2 → 3-3 차례로 한다. `small`은 3-2(검증 명령·정적 대조)를 한 뒤 **3-1·3-3 에이전트를 부르지 않고** 아래 "3-S. 작은 변경의 직접 확인"을 한다.
+
+`small`에서 에이전트를 빼는 이유 — 두 에이전트가 하는 일을 대부분 앞 단계와 규칙이 이미 한다. Phase 2에서 구현자가 `reference_files`를 먼저 읽고 그대로 따라 쓰므로 패턴 대조는 같은 파일을 한 번 더 읽는 일이고, change-safety 의 입력(영향·패턴·검증 결과)은 이미 나와 있으며 GO 조건은 Phase 4에 규칙으로 정해져 있다. 실측: 작은 변경에서 두 에이전트가 각각 약 2분씩 같은 파일을 다시 읽었고, 끝까지 결과가 남은 실행에서 패턴은 CONFORM, 안전성 HOLD 의 사유는 "코드 위험이 아니라 검증 증거 부족"(지금 규칙으로는 GO)이었다. 독립 검증은 큰 변경에서 값이 있으므로 `normal`은 그대로 둔다.
 
 | pattern-conformance | 최종 결정 |
 |---|---|
@@ -227,6 +229,32 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝
 
 `run`은 성공 시 요약만, 실패 시 `fail_lines`(명령당 상한)만 돌려준다 — 코드 전체를 다시 LLM에 넣지 않는다. 반환된 `commands[].cmd`·`exit`·`fail_lines`와 `overall`을 그대로 change-safety 입력에 넘긴다. `detected`가 비어 있으면(`count: 0`) 자동 검증이 없다는 뜻이다. PASS로 적지 않고 `검증 수단 없음`으로 적는다 — 위험 변경이 아니면 원문 확인 근거로 진행한다(Phase 4 GO 조건). 실행할 수 없거나 assertion까지 도달하지 못한 검사도 PASS로 간주하지 않는다.
 
+### 3-S. 작은 변경의 직접 확인 (`small`)
+
+오케스트레이터가 이미 읽은 기준 파일과 바뀐 줄로 직접 확인한다. 새로 여는 파일은 없어야 한다.
+
+| 확인 | 방법 | 판정 |
+|---|---|---|
+| 패턴 | Phase 2에서 읽은 기준 파일(`reference_files` 또는 이웃 파일)과 바뀐 줄을 대조 — 명명·구조·주석 위치·예외 처리·들여쓰기 | 다르면 기준에 맞춰 고치고 한 번 더 대조한다. 그래도 다르면 HOLD |
+| 위험 신호 | diff 에서 찾는다 — SQL 문자열 결합(`+`·`concat`·`${}`로 값을 끼움), `innerHTML`·`document.write` 에 값 대입, 인증·인가 어노테이션·체크 제거, 트랜잭션 어노테이션·경계 변경, DDL, 외부 호출(HTTP·MQ) 추가 | 하나라도 있으면 규모를 `normal`로 올리고 3-1·3-3을 에이전트로 부른다 |
+| 되돌리기 | 데이터를 바꾸는가(INSERT·UPDATE·DELETE 추가·변경) | 바꾸면 `normal`로 올린다 |
+| 결정 | Phase 4의 GO 조건을 그대로 적용한다(패턴 일치를 CONFORM 으로 본다) | GO / HOLD |
+
+하나라도 예상과 다르면 규모를 `normal`로 올리고 3-1·3-3을 부른다. Phase 1 `small` 규칙과 같다.
+
+결과는 `_workspace/reports/safety_<slug>.md`에 짧게 Write 한다.
+
+```
+# 안전성 확인: <slug> (small · 직접 확인)
+패턴: 일치 — 기준 [파일 경로] (또는: 고친 뒤 일치 / 불일치 — [차이])
+위험 신호: 없음 (또는: [찾은 신호] → normal 로 올림)
+되돌리기: 코드만 되돌리면 됨 (또는: 데이터 변경 → normal)
+검증 증거: [명령·exit / 검증 수단 없음(사유) + 정적 대조]
+결정: GO / HOLD — [사유]
+```
+
+`normal`로 올렸으면 이 파일은 쓰지 않고 3-1·3-3의 산출물을 쓴다.
+
 ### 3-3. 변경 안전성 평가
 
 `change-safety` 에이전트 호출:
@@ -235,7 +263,7 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/verify-target.mjs" run --root "[프로젝
 Agent(
   subagent_type="ax-navi:change-safety",
   description="변경 안전성 평가",
-  prompt="<변경 파일: [목록]. mode: [감지된 모드]. 맥락: _workspace/reports/context_<slug>.md. impact 리포트: _workspace/reports/impact_<slug>.md. 어댑터: check-adapter-coverage 결과 JSON(READ면 원문 확인 목록은 맥락 파일). 패턴 적합성: _workspace/reports/pattern_conformance_<slug>.md (small 병렬이면 '병렬 합산'). 검증 결과: verify-target run의 commands(cmd·exit·fail_lines)와 overall, 검증 수단이 없으면 그 사유와 맥락 파일 `## 변경 내역`의 정적 대조. 출력: _workspace/reports/safety_<slug>.md>",
+  prompt="<변경 파일: [목록]. mode: [감지된 모드]. 맥락: _workspace/reports/context_<slug>.md. impact 리포트: _workspace/reports/impact_<slug>.md. 어댑터: check-adapter-coverage 결과 JSON(READ면 원문 확인 목록은 맥락 파일). 패턴 적합성: _workspace/reports/pattern_conformance_<slug>.md. 검증 결과: verify-target run의 commands(cmd·exit·fail_lines)와 overall, 검증 수단이 없으면 그 사유와 맥락 파일 `## 변경 내역`의 정적 대조. 출력: _workspace/reports/safety_<slug>.md>",
   model="sonnet"
 )
 ```
@@ -244,7 +272,21 @@ Agent(
 
 ## Phase 4: 결정 + 후속 조치
 
-`_workspace/reports/safety_<slug>.md` 읽고 사용자에게 보고:
+`_workspace/reports/safety_<slug>.md` 읽고 사용자에게 보고한다.
+
+`small`(3-S 직접 확인)이면 차원별 점수 없이 이렇게 보고한다. GO·HOLD 뒤의 후속 안내는 아래 `normal` 양식과 같다.
+
+```
+변경 안전성 확인 완료 (작은 변경 · 직접 확인)
+
+패턴: [일치 — 기준 파일 경로]
+위험 신호: [없음]
+검증 증거: [명령·exit / 검증 수단 없음(사유) + 정적 대조]
+확인하지 못한 사실: [없음 또는 목록 — 무엇을 어디서 확인하면 되는지]
+결정: [GO / HOLD]
+```
+
+`normal`이면:
 
 ```
 변경 안전성 평가 완료

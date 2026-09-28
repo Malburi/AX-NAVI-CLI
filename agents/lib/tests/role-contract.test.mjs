@@ -123,4 +123,25 @@ export async function test(register, assert) {
     assert.ok(writer.includes("전역 워크플로우 6종") && writer.includes("프로젝트에 복사하지 않는다"), "writer 전역 스킬 계약");
     assert.ok(rootClaude.includes("Phase 3.7 온디맨드") && rootClaude.includes("Boundary 1~7"), "루트 운영 문서 QA 단계 drift");
   });
+
+  /*
+   * 작은 변경은 패턴·안전성 에이전트를 부르지 않고 오케스트레이터가 직접 확인한다. 두 에이전트가 하는
+   * 일을 앞 단계와 규칙이 이미 해서, 같은 파일을 한 번 더 읽는 데 각 약 2분이 들었다(실측).
+   * 다만 위험 신호가 보이면 반드시 normal 로 올려 독립 검증을 받게 한다 — 이 경로가 사라지면 안 된다.
+   */
+  register("safe-modify small 은 패턴·안전성 에이전트 없이 직접 확인하고, 위험 신호면 normal 로 올린다", () => {
+    const text = read(join(root, "skills", "safe-modify", "SKILL.md"));
+    const phase3 = text.slice(text.indexOf("## Phase 3"), text.indexOf("## Phase 4"));
+    assert.ok(phase3.includes("### 3-S. 작은 변경의 직접 확인"), "3-S 절 없음");
+    assert.ok(/`small`은 3-2[^\n]*3-1·3-3 에이전트를 부르지 않고/.test(phase3), "small 이 에이전트를 부르지 않는다는 순서 규칙 없음");
+    const direct = phase3.slice(phase3.indexOf("### 3-S"), phase3.indexOf("### 3-3"));
+    for (const signal of ["SQL 문자열 결합", "innerHTML", "인증", "트랜잭션", "DDL", "외부 호출"]) {
+      assert.ok(direct.includes(signal), `위험 신호 목록에서 빠짐: ${signal}`);
+    }
+    assert.ok(/하나라도 있으면 규모를 `normal`로 올리고 3-1·3-3을 에이전트로 부른다/.test(direct), "위험 신호 → normal 승격 규칙 없음");
+    assert.ok(!direct.includes('subagent_type="ax-navi:pattern-conformance"') && !direct.includes('subagent_type="ax-navi:change-safety"'), "3-S 에서 에이전트를 부른다");
+    // normal 경로의 독립 검증은 그대로 남아 있어야 한다
+    assert.ok(phase3.includes('subagent_type="ax-navi:pattern-conformance"') && phase3.includes('subagent_type="ax-navi:change-safety"'), "normal 의 3-1·3-3 호출이 사라졌다");
+    assert.ok(!phase3.includes("병렬 합산"), "옛 small 병렬 흐름이 남아 있다");
+  });
 }
