@@ -98,21 +98,37 @@ export const APPROVE_TOOL = "mcp__axnavi__Approve";
  * @returns {string[]}
  */
 export function toDisallowedTools(tools, allowDelegation = false) {
-  const allowed = new Set(tools.map((t) => t.name));
-  /** 이 실행에서 살려 둘 도구. */
-  const keep = new Set(
-    KEEP.filter((name) => {
-      if (DELEGATION_TOOLS.includes(name)) return allowDelegation;
-      /*
-       * 수정 도구는 역할이 **그 도구를 콕 집어** 허용했을 때만 연다.
-       * "Write가 있으면 Edit도" 식으로 묶으면 13개 에이전트의 불변식이 깨진다 —
-       * 그들은 리포트를 쓰되 소스는 고치지 않는 역할이라 Write만 갖고 Edit은 없다.
-       */
-      if (MUTATING.includes(name)) return allowed.has(name);
-      return true;
-    }),
-  );
+  const keep = new Set(toAllowedTools(tools, allowDelegation));
   return CLAUDE_CODE_TOOLS.filter((name) => !keep.has(name));
+}
+
+/**
+ * 이 실행에서 쓸 내장 도구 목록 — claude 에는 `--tools`(SDK 는 `tools`)로 넘긴다.
+ *
+ * **끌 목록(`--disallowedTools`)이 아니라 쓸 목록으로 넘기는 이유.** 결과는 같은데, 끄기는
+ * claude 안에서 출처 `cliArg` 의 차단 규칙으로 등록되고, 자동 모드 판정기는 그 목록을
+ * "사용자가 설정한 차단 규칙" 으로 받으며 "다른 도구로 같은 일을 하면 막아라" 는 지시를
+ * 함께 받는다. 그래서 내장 `Skill` 을 꺼 둔 탓에 axnavi 자신의 `mcp__axnavi__Skill` 이
+ * 우회로 몰려 거부됐다(2026-09-28, Bedrock PC — "하네스 초기화 해줘" 가 최신판에서도 막힘).
+ * `--tools` 로 좁힌 것은 출처가 `toolsNarrowing` 이고 판정기 목록에서 빠진다(claude 2.1.282
+ * 의 판정기 목록 생성 코드에서 확인: toolsNarrowing·command 출처만 제외).
+ *
+ * @param {readonly import("@ax-navi/core").ToolDefinition[]} tools
+ * @param {boolean} [allowDelegation]  서브에이전트 호출을 허용할지
+ * @returns {string[]}
+ */
+export function toAllowedTools(tools, allowDelegation = false) {
+  const allowed = new Set(tools.map((t) => t.name));
+  return KEEP.filter((name) => {
+    if (DELEGATION_TOOLS.includes(name)) return allowDelegation;
+    /*
+     * 수정 도구는 역할이 **그 도구를 콕 집어** 허용했을 때만 연다.
+     * "Write가 있으면 Edit도" 식으로 묶으면 13개 에이전트의 불변식이 깨진다 —
+     * 그들은 리포트를 쓰되 소스는 고치지 않는 역할이라 Write만 갖고 Edit은 없다.
+     */
+    if (MUTATING.includes(name)) return allowed.has(name);
+    return true;
+  });
 }
 
 /**
@@ -176,8 +192,8 @@ export function buildDelegatedArgs(spec, options, muteSettings) {
     args.push("--plugin-dir", options.pluginDir);
   }
 
-  const disallowed = toDisallowedTools(spec.tools, spec.allowDelegation === true);
-  if (disallowed.length) args.push("--disallowedTools", ...disallowed);
+  // 끌 목록이 아니라 쓸 목록으로 넘긴다 — 자동 모드 판정기가 오해하지 않게(toAllowedTools 주석).
+  args.push("--tools", ...toAllowedTools(spec.tools, spec.allowDelegation === true));
 
   /*
    * 우리 MCP 도구는 미리 승인해 둔다. -p 모드에는 승인해 줄 사람이 없어서

@@ -22,7 +22,7 @@ import {
   createBackgroundWatch,
   delegatedEnv,
   terminateTree,
-  toDisallowedTools,
+  toAllowedTools,
   toolBriefing,
   translateEvent,
 } from "../../provider-claude-cli/src/index.mjs";
@@ -195,7 +195,12 @@ export class AgentSdkProvider {
         systemPrompt: { type: "preset", preset: "claude_code", append: preamble },
         permissionMode: spec.permissionMode === "auto" ? "auto" : "default",
         // 내장 AskUserQuestion 은 살린다 — canUseTool 이 받아 우리 화면에 그린다.
-        disallowedTools: toDisallowedTools(spec.tools, allowDelegation).filter((n) => n !== "AskUserQuestion"),
+        /*
+         * 끌 목록이 아니라 쓸 목록으로 넘긴다. 끄기는 자동 모드 판정기에 "사용자 차단 규칙" 으로
+         * 전달돼 axnavi 자신의 mcp__axnavi__Skill 까지 우회로 막았다(toAllowedTools 주석).
+         * 내장 AskUserQuestion 은 살린다 — canUseTool 이 받아 우리 화면에 그린다.
+         */
+        tools: [...toAllowedTools(spec.tools, allowDelegation), "AskUserQuestion"],
         ...(allowDelegation && this.options.pluginDir ? { plugins: [{ type: "local", path: this.options.pluginDir }] } : {}),
         mcpServers: sdkMcpServers(this.options.mcpConfigPath, this.options.mcpEnv),
         strictMcpConfig: true,

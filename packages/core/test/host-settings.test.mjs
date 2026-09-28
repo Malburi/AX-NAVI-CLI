@@ -88,3 +88,38 @@ test("내장 Skill 도구는 모든 경로에서 꺼져 있다 — 계정 동기
     assert.ok(off.includes("Skill"), `위임 ${delegation} 에서 내장 Skill 도구가 열렸다`);
   }
 });
+
+/*
+ * 실측(2026-09-28, Bedrock PC 최신판): "하네스 초기화 해줘" 가 또 막혔다 — 이번에는 우리가 넣은 차단 규칙이
+ * 아니라 내장 도구를 `--disallowedTools` 로 끈 것 자체가 원인이었다. 끄기는 claude 안에서 출처 cliArg 의
+ * 차단 규칙이 되고, 자동 모드 판정기는 그것을 "사용자 차단 규칙" 으로 받아 mcp__axnavi__Skill 을
+ * 우회로 막았다. `--tools`(쓸 목록)로 좁힌 것은 출처 toolsNarrowing 이라 판정기 목록에서 빠진다.
+ */
+test("claude-cli 는 끌 목록이 아니라 쓸 목록으로 넘긴다 — 판정기가 우리 도구를 우회로 보지 않게", async () => {
+  const { buildDelegatedArgs, toAllowedTools } = await import("../../provider-claude-cli/src/index.mjs");
+  const tools = /** @type {any[]} */ ([{ name: "Read" }, { name: "Grep" }, { name: "Write" }]);
+  const args = buildDelegatedArgs(/** @type {any} */ ({ tier: "standard", tools, allowDelegation: false }), {}, null);
+  assert.ok(!args.includes("--disallowedTools"), "차단 규칙으로 끄면 판정기에 사용자 차단 규칙으로 넘어간다");
+  const at = args.indexOf("--tools");
+  assert.ok(at !== -1, "--tools 가 없다");
+  const listed = args.slice(at + 1, at + 1 + toAllowedTools(tools, false).length);
+  assert.deepEqual(listed, toAllowedTools(tools, false));
+  assert.ok(!listed.includes("Skill") && !listed.includes("Edit"), "끄려던 도구가 쓸 목록에 들어갔다");
+});
+
+test("agent-sdk 도 tools 옵션으로 넘긴다 — disallowedTools 를 쓰지 않는다", () => {
+  const src = readFileSync(new URL("../../provider-agent-sdk/src/index.mjs", import.meta.url), "utf8");
+  assert.match(src, /tools: \[\.\.\.toAllowedTools\(spec\.tools, allowDelegation\), "AskUserQuestion"\]/);
+  assert.ok(!/^\s*disallowedTools:/m.test(src), "disallowedTools 로 끄면 판정기가 우리 스킬 도구를 막는다");
+});
+
+test("쓸 목록과 끌 목록은 서로를 정확히 채운다 — 방식만 바뀌고 쓸 수 있는 도구는 같다", async () => {
+  const { toAllowedTools, toDisallowedTools } = await import("../../provider-claude-cli/src/index.mjs");
+  for (const [names, deleg] of /** @type {Array<[string[], boolean]>} */ ([[["Read", "Write"], false], [["Read", "Write", "Edit"], true]])) {
+    const tools = /** @type {any[]} */ (names.map((name) => ({ name })));
+    const on = toAllowedTools(tools, deleg);
+    const off = toDisallowedTools(tools, deleg);
+    assert.deepEqual(on.filter((n) => off.includes(n)), [], "켜고 끄는 목록이 겹친다");
+    assert.ok(!on.includes("Skill"));
+  }
+});
