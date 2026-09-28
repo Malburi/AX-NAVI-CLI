@@ -15,9 +15,9 @@
  */
 
 import { execFile, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 
 const REPO = "Malburi/AX-NAVI-CLI";
 const TAGS_URL = `https://api.github.com/repos/${REPO}/tags`;
@@ -154,8 +154,17 @@ export function checkForUpdate(current, notify) {
 /**
  * 실제로 올린다.
  *
- * npm 을 그대로 부른다. 우리가 파일을 옮기려 들면 전역 설치 경로·권한·셈(shim) 을
- * 전부 흉내 내야 하고, 그건 npm 이 이미 하는 일이다.
+ * **파일을 먼저 내려받고, 그 파일로 설치한다.** npm 에 주소를 바로 넘기지 않는 이유가 둘이다.
+ *
+ *   - npm 12 는 주소로 받는 설치를 기본으로 막는다(allow-remote=none → EALLOWREMOTE).
+ *   - 사내 PC 에서 보안 프로그램이 node.exe 의 외부 연결만 막는 일이 있다. 실측(2026-09-28):
+ *     같은 PC 에서 PowerShell 은 codeload.github.com 에 붙어 파일을 받았는데, npm 은
+ *     `connect EACCES 20.200.245.246:443` 으로 거부됐다. 프록시 설정은 없었다.
+ *
+ * 그래서 운영체제 도구(Windows 는 PowerShell, 그 밖에는 curl)로 받는다. 설치 자체는 npm 에
+ * 맡긴다 — 전역 설치 경로·권한·셈(shim) 을 흉내 내는 건 npm 이 이미 하는 일이다. 의존성은
+ * npm 이 설정된 레지스트리(사내 Nexus 등)에서 받는다.
+ * 내려받기가 안 되면 예전처럼 주소로 설치를 한 번 더 시도한다.
  *
  * @param {string} tag
  * @param {(line: string) => void} say
@@ -163,10 +172,22 @@ export function checkForUpdate(current, notify) {
  */
 export function runUpgrade(tag, say) {
   const url = installUrl(tag);
-  const args = installArgs(tag);
-  say(`설치 중입니다 — ${url}`);
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const out = spawnSync(npm, args, { encoding: "utf8", shell: process.platform === "win32" });
+  const file = join(tmpdir(), `axnavi-${tag}.tgz`);
+  say(`내려받는 중입니다 — ${url}`);
+  const fetched = download(url, file);
+
+  const target = fetched.ok ? file : null;
+  const args = target ? ["i", "-g", target] : installArgs(tag);
+  if (!fetched.ok) say(`내려받지 못했습니다(${fetched.reason}). 주소로 바로 설치해 봅니다.`);
+  say("설치 중입니다.");
+  const out = runNpm(args);
+  if (target) {
+    try {
+      rmSync(target, { force: true });
+    } catch {
+      // 임시 파일을 못 지워도 설치 결과와는 상관없다.
+    }
+  }
   if (out.status === 0) {
     say(`${tag} 로 올렸습니다. 다시 시작하면 적용됩니다.`);
     return 0;
@@ -176,8 +197,104 @@ export function runUpgrade(tag, say) {
    * 그리고 손으로 칠 명령을 그대로 보여 준다.
    */
   say((out.stderr || out.stdout || "").trim().split(String.fromCharCode(10)).slice(-4).join(String.fromCharCode(10)));
-  say(`직접 실행해 보세요:  npm ${args.join(" ")}`);
+  say("직접 실행해 보세요:");
+  for (const line of manualCommands(tag)) say(`  ${line}`);
   return out.status ?? 1;
+}
+
+/**
+ * 파일을 내려받을 운영체제 명령. node 의 네트워크를 쓰지 않는다(위 runUpgrade 주석).
+ *
+ * @param {string} url
+ * @param {string} file
+ * @param {NodeJS.Platform} [platform]
+ * @returns {{ cmd: string, args: string[] }}
+ */
+export function downloadCommand(url, file, platform = process.platform) {
+  if (platform === "win32") {
+    // 작은따옴표 문자열 안의 작은따옴표는 두 번 써서 넣는다(PowerShell 규칙).
+    const q = (/** @type {string} */ s) => `'${s.replace(/'/g, "''")}'`;
+    return {
+      cmd: "powershell.exe",
+      args: [
+        "-NoProfile", "-NonInteractive", "-Command",
+        // 진행 막대를 끄지 않으면 PowerShell 5.1 에서 내려받기가 몇 배 느려진다.
+        `$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri ${q(url)} -OutFile ${q(file)} -UseBasicParsing`,
+      ],
+    };
+  }
+  return { cmd: "curl", args: ["-fsSL", "--retry", "2", "-o", file, url] };
+}
+
+/**
+ * @param {string} url
+ * @param {string} file
+ * @returns {{ ok: true } | { ok: false, reason: string }}
+ */
+function download(url, file) {
+  const { cmd, args } = downloadCommand(url, file);
+  const out = spawnSync(cmd, args, { encoding: "utf8", windowsHide: true, timeout: 180_000 });
+  if (out.error) return { ok: false, reason: out.error.message };
+  if (out.status !== 0) return { ok: false, reason: failureReason(out.stderr || out.stdout || "") || `exit ${out.status}` };
+  // 프록시가 돌려준 오류 페이지를 설치 파일로 넘기지 않는다. tar.gz 는 1f 8b 로 시작한다.
+  try {
+    const head = readFileSync(file).subarray(0, 2);
+    if (head[0] !== 0x1f || head[1] !== 0x8b) return { ok: false, reason: "받은 파일이 설치 파일이 아닙니다" };
+  } catch {
+    return { ok: false, reason: "받은 파일이 없습니다" };
+  }
+  return { ok: true };
+}
+
+/**
+ * 내려받기 오류에서 사람이 읽을 한 줄.
+ *
+ * PowerShell 오류는 첫 줄이 메시지이고 뒤는 위치·오류 ID 다. 마지막 줄을 쓰면
+ * `FullyQualifiedErrorId : WebCmdletWebResponseException…` 만 보여 무엇이 틀렸는지 모른다(실측).
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function failureReason(text) {
+  const first = text.split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? "";
+  return first.replace(/^Invoke-WebRequest\s*:\s*/i, "").replace(/^curl:\s*\(\d+\)\s*/, "").slice(0, 160);
+}
+
+/**
+ * npm 을 부른다.
+ *
+ * Windows 에서 npm.cmd 는 셸을 거쳐야 돈다. 인자를 따로 넘기면서 shell 을 켜면 node 가
+ * DEP0190(인자가 이스케이프되지 않는다) 경고를 화면에 찍으므로, 따옴표를 붙인 명령 한 줄로 넘긴다.
+ *
+ * @param {string[]} args
+ */
+function runNpm(args) {
+  if (process.platform !== "win32") return spawnSync("npm", args, { encoding: "utf8" });
+  return spawnSync(`npm ${args.map(quoteForCmd).join(" ")}`, { encoding: "utf8", shell: true });
+}
+
+/**
+ * cmd.exe 에 넘길 인자 하나. 공백·특수문자가 있으면 큰따옴표로 감싼다.
+ * @param {string} arg
+ */
+export function quoteForCmd(arg) {
+  return /^[\w\-.:\\/=@]+$/.test(arg) ? arg : `"${arg.replace(/"/g, '""')}"`;
+}
+
+/**
+ * 자동 업그레이드가 안 될 때 손으로 칠 명령.
+ * @param {string} tag
+ * @returns {string[]}
+ */
+export function manualCommands(tag) {
+  const url = installUrl(tag);
+  if (process.platform === "win32") {
+    return [
+      `Invoke-WebRequest "${url}" -OutFile "$env:TEMP\\axnavi.tgz" -UseBasicParsing`,
+      `npm i -g "$env:TEMP\\axnavi.tgz"`,
+    ];
+  }
+  return [`curl -fsSL -o /tmp/axnavi.tgz ${url}`, "npm i -g /tmp/axnavi.tgz"];
 }
 
 /**

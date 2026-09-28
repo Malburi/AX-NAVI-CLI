@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { compareVersions, installArgs, installUrl, readVersion } from "../../cli/src/upgrade.mjs";
+import { compareVersions, downloadCommand, failureReason, installArgs, installUrl, manualCommands, quoteForCmd, readVersion } from "../../cli/src/upgrade.mjs";
 
 test("숫자로 비교한다 — 글자로 보면 alpha.10 이 alpha.9 보다 낮아진다", () => {
   assert.ok(compareVersions("v0.1.0-alpha.10", "v0.1.0-alpha.9") > 0);
@@ -45,6 +45,47 @@ test("upgrade 는 npm 12 의 URL 설치 차단을 명령 단위로 연다", () =
   assert.deepEqual(args.slice(0, 2), ["i", "-g"]);
   assert.ok(args.includes("--allow-remote=all"), "npm 12 에서 EALLOWREMOTE 로 막힌다");
   assert.equal(args.at(-1), installUrl("v0.1.0-alpha.30"));
+});
+
+/*
+ * 실측(2026-09-28): 같은 PC 에서 PowerShell 은 codeload 에서 파일을 받았는데 npm 은
+ * connect EACCES 로 거부됐다(보안 프로그램이 node.exe 의 외부 연결만 막음). 그래서 upgrade 는
+ * 운영체제 도구로 먼저 받고 파일로 설치한다.
+ */
+test("내려받기는 node 가 아니라 운영체제 도구로 한다", () => {
+  const url = installUrl("v0.1.0-alpha.32");
+  const win = downloadCommand(url, "C:\\Temp\\a'b.tgz", "win32");
+  assert.equal(win.cmd, "powershell.exe");
+  const script = win.args.at(-1) ?? "";
+  assert.match(script, /Invoke-WebRequest -Uri '/);
+  assert.ok(script.includes("-OutFile 'C:\\Temp\\a''b.tgz'"), "작은따옴표를 PowerShell 규칙대로 넣지 않았다");
+  assert.match(script, /ProgressPreference='SilentlyContinue'/, "진행 막대가 켜지면 5.1 에서 몇 배 느려진다");
+  const nix = downloadCommand(url, "/tmp/a.tgz", "linux");
+  assert.deepEqual([nix.cmd, nix.args.at(-1)], ["curl", url]);
+});
+
+test("내려받기 실패 사유는 첫 줄의 메시지다 — 오류 ID 가 아니라", () => {
+  const ps = [
+    "Invoke-WebRequest : 404: Not Found",
+    "위치 줄:1 문자:1",
+    "    + FullyQualifiedErrorId : WebCmdletWebResponseException",
+  ].join("\r\n");
+  assert.equal(failureReason(ps), "404: Not Found");
+  assert.equal(failureReason("curl: (6) Could not resolve host: codeload.github.com"), "Could not resolve host: codeload.github.com");
+  assert.equal(failureReason(""), "");
+});
+
+test("cmd 로 넘기는 인자는 공백이 있으면 따옴표로 감싼다 — DEP0190 경고 없이", () => {
+  assert.equal(quoteForCmd("-g"), "-g");
+  assert.equal(quoteForCmd("C:\\Users\\a\\axnavi.tgz"), "C:\\Users\\a\\axnavi.tgz");
+  assert.equal(quoteForCmd("C:\\새 폴더\\a.tgz"), '"C:\\새 폴더\\a.tgz"');
+});
+
+test("자동으로 안 될 때 보여 주는 수동 명령은 내려받기 → 파일 설치 두 줄이다", () => {
+  const lines = manualCommands("v0.1.0-alpha.32");
+  assert.equal(lines.length, 2);
+  assert.ok(lines[0]?.includes(installUrl("v0.1.0-alpha.32")));
+  assert.match(lines[1] ?? "", /^npm i -g /);
 });
 
 test("버전은 package.json 에서 온다 — 소스에 박으면 배포본과 갈라진다", () => {

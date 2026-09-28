@@ -89,6 +89,13 @@ npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.
 git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm i -g github:…` 형식은 쓰지 마세요.
 `--allow-remote=all` 은 npm 12 부터 필요합니다 — 주소로 받는 설치가 기본으로 막혀 `EALLOWREMOTE` 가 납니다.
 
+`connect EACCES` 가 나면 보안 프로그램이 npm 의 외부 연결을 막는 경우입니다. 파일로 받아 설치합니다.
+
+```powershell
+Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.31" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
+npm i -g "$env:TEMP\axnavi.tgz"
+```
+
 ### GitHub 에 접속되지 않는 PC
 
 배포 담당자에게 받은 설치 파일로 설치합니다.
