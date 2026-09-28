@@ -166,11 +166,26 @@ function termMatch(term, q) {
 }
 
 export function rankFeatures(entries, q, { groups: groupLimit = 8, files: fileLimit = 5 } = {}) {
+  /*
+   * 여러 낱말("샘플 등록")은 붙은 말 그대로만 찾으면 거의 늘 0건이다 — 화면 제목은 "등록", 코드는 "Sample"
+   * 이라 소스 어디에도 "샘플 등록"이 없다(egovframe-web-sample 실측). 붙은 말이 안 맞으면 낱말마다 맞춰
+   * 맞은 낱말 비율만큼 점수를 준다. 한 번도 안 나온 낱말은 따로 알려 영문 식별자로 다시 찾게 한다.
+   */
+  const words = [...new Set(q.split(/\s+/).filter(Boolean))];
+  const matchedWords = new Set();
   /** @type {Map<string, { score: number, reasons: Array<{ w: number, text: string }>, counts: Record<string, number> }>} */
   const byFile = new Map();
   let hitCount = 0;
   for (const entry of entries) {
-    const match = termMatch(entry.term, q);
+    let match = termMatch(entry.term, q);
+    if (match) for (const word of words) matchedWords.add(word);
+    else if (words.length > 1) {
+      const hit = words.filter((word) => termMatch(entry.term, word));
+      if (hit.length) {
+        match = Math.max(...hit.map((word) => termMatch(entry.term, word))) * (hit.length / words.length);
+        for (const word of hit) matchedWords.add(word);
+      }
+    }
     if (!match) continue;
     hitCount += 1;
     const file = byFile.get(entry.file) || { score: 0, reasons: [], counts: {} };
@@ -202,7 +217,11 @@ export function rankFeatures(entries, q, { groups: groupLimit = 8, files: fileLi
     const score = files.slice(0, 5).reduce((sum, f) => sum + f.score, 0);
     return { dir, score: Math.round(score * 10) / 10, file_count: files.length, files: files.slice(0, fileLimit).map((f) => ({ ...f, score: Math.round(f.score * 10) / 10 })) };
   }).sort((a, b) => b.score - a.score);
-  return { term_hits: hitCount, file_count: byFile.size, group_count: groups.length, groups: groups.slice(0, groupLimit), truncated_groups: Math.max(0, groups.length - groupLimit) };
+  const unmatched = words.length > 1 ? words.filter((word) => !matchedWords.has(word)) : [];
+  return {
+    term_hits: hitCount, file_count: byFile.size, group_count: groups.length, groups: groups.slice(0, groupLimit), truncated_groups: Math.max(0, groups.length - groupLimit),
+    ...(unmatched.length ? { unmatched_words: unmatched, unmatched_note: "이 낱말은 업무 용어 어디에도 없다 — 코드에는 영문 식별자로 있을 수 있으니 symbol 로 찾아 본다." } : {}),
+  };
 }
 
 const COMMANDS = {
@@ -417,6 +436,30 @@ const COMMANDS = {
       }
     }
 
+    /* 붙은 말로 하나도 없으면 모든 낱말이 들어 있는 레코드로 한 번 더 찾는다("결제 승인" → "승인 … 결제"). */
+    const words = [...new Set(lower.split(/\s+/).filter(Boolean))];
+    let matchedBy = "phrase";
+    if (!hits.length && words.length > 1) {
+      matchedBy = "all_words";
+      for (const source of SEARCHABLE) {
+        if (kind && source.kind !== kind) continue;
+        let index;
+        try { index = loadIndex(root, source.index, indexDir); } catch { continue; }
+        for (const record of index[source.key] || []) {
+          const found = words.map((word) => findText(record, word));
+          if (found.some((item) => !item)) continue;
+          hits.push({
+            kind: source.kind,
+            id: String(record.id ?? record.from ?? record.name ?? record.path ?? record.sql_id ?? ""),
+            file: String(record.file ?? ""),
+            line: Number(record.line ?? 0),
+            field: found[0].field,
+            snippet: excerpt(found[0].value, words[0]),
+          });
+        }
+      }
+    }
+
     /*
      * 한글 업무 용어면 기능 후보 순위를 **맨 앞에** 둔다. 결과는 중간에서 잘려 전달되기도 해서
      * 뒤에 두면 가장 쓸모 있는 부분을 먼저 잃는다. 인덱스가 옛 판이라 glossary 가 없으면 건너뛴다.
@@ -434,6 +477,7 @@ const COMMANDS = {
       query: { q: needle, kind: kind || null },
       ...(features ? { features, features_note: "업무 용어가 제목·머리말·설명에 나온 위치로 매긴 기능 후보다. 상위 폴더부터 읽어 확인한다." } : {}),
       ...cap(hits, limit),
+      ...(words.length > 1 && hits.length ? { matched_by: matchedBy } : {}),
       ...(missing.length ? { missing_indexes: missing } : {}),
       note: "코드 식별자로 좁히려면 symbol·callers·sql 명령을 쓴다.",
     };

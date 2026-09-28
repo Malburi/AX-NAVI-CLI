@@ -839,6 +839,44 @@ public class SampleServiceImpl {
     }
   });
 
+  register("유니코드 이스케이프 메시지 파일과 JSP 의 spring:message 참조로 화면을 한글로 찾고, 여러 낱말은 낱말마다 맞춘다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-message-terms-"));
+    try {
+      /* 화면이 쓰는 코드를 41번째 이후에 둔다 — 용어집 파일당 상한(40)과 무관하게 풀려야 한다. */
+      const filler = Array.from({ length: 45 }, (_, i) => `filler.${i}=\\uac12${String.fromCharCode(0xac00 + i)}`).join("\n");
+      write(root, "src/main/resources/message/message-common.properties", `${filler}\nbutton.create=\\ub4f1\\ub85d\ntitle.sample=\\uae30\\ubcf8 \\uac8c\\uc2dc\\ud310 \\ubaa9\\ub85d\n`);
+      write(root, "src/main/resources/message/message-common_ko.properties", `button.create=\\ub4f1\\ub85d\n`);
+      write(root, "src/main/resources/message/message-common_en.properties", `button.create=Create\n`);
+      write(root, "src/main/webapp/WEB-INF/jsp/sample/egovSampleRegister.jsp", `<%@ taglib prefix="spring" uri="http://www.springframework.org/tags" %>
+<html><head>
+<title>Sample <spring:message code="button.create" /></title>
+</head><body>
+<a href="#" onclick="sampleAdd()"><spring:message code='button.create'/></a>
+<spring:message code="\${dynamicCode}"/>
+</body></html>
+`);
+      write(root, "src/main/webapp/WEB-INF/jsp/sample/egovSampleList.jsp", `<html><head><title><spring:message code="title.sample"/></title></head><body></body></html>
+`);
+
+      buildIndex({ root, mode: "init", tier: "Full", config: null });
+      const entries = json(root, "glossary.json").entries;
+      const register = entries.filter((item) => item.file.endsWith("egovSampleRegister.jsp"));
+      assert.ok(register.some((item) => item.term === "등록" && item.kind === "title" && item.line === 3 && item.symbol === "button.create"), JSON.stringify(register));
+      assert.ok(register.some((item) => item.term === "등록" && item.kind === "label" && item.line === 5), "제목 밖의 참조는 라벨");
+      assert.equal(register.filter((item) => item.term === "등록" && item.kind === "label").length, 1, "같은 파일·종류·낱말은 한 번만");
+      assert.ok(!register.some((item) => item.term === "Create"), "_en 은 한글 라벨이 아니다");
+      assert.ok(entries.some((item) => item.file.endsWith("egovSampleList.jsp") && item.term === "기본 게시판 목록" && item.kind === "title"), "41번째 이후 코드도 풀린다");
+
+      const result = COMMANDS.search({ root, indexDir: join(root, "_workspace", "index"), q: "샘플 등록", limit: 20 });
+      assert.equal(result.features.groups[0].files[0].file, "src/main/webapp/WEB-INF/jsp/sample/egovSampleRegister.jsp", JSON.stringify(result.features));
+      assert.equal(result.features.unmatched_words.join(","), "샘플");
+      const phrase = COMMANDS.search({ root, indexDir: join(root, "_workspace", "index"), q: "등록", limit: 20 });
+      assert.ok(!phrase.features.unmatched_words, "낱말 하나면 안 맞은 낱말을 따로 알리지 않는다");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("ASP.NET Core의 controller route·생성자 DI·트랜잭션 경계를 추출한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-dotnet-"));
     try {

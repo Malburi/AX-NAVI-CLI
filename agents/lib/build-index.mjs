@@ -37,7 +37,7 @@ import {
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
 
-export const INDEXER_VERSION = "1.19.0"; // 프레임워크 타입 필드 호출을 Spring XML 빈 노드(class·property)로 잇는다.
+export const INDEXER_VERSION = "1.20.0"; // 유니코드 이스케이프 메시지 파일과 JSP 의 spring:message 참조를 화면 용어로 푼다.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
 const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
@@ -2554,7 +2554,8 @@ function docLines(block) {
  */
 export function extractTerms(text, rel, methods, classes = []) {
   const ext = extname(rel).toLowerCase();
-  if (!HANGUL.test(text)) return [];
+  /* 메시지 파일은 한글을 유니코드 이스케이프로 적는 것이 표준이다(native2ascii) — 원문에 한글 글자가 없어도 푼 뒤에는 있다. */
+  if (!HANGUL.test(text) && !(ext === ".properties" && /\\u[0-9a-fA-F]{4}/.test(text))) return [];
   const atLine = lineIndex(text);
   /** @type {Array<{ term: string, kind: string, file: string, line: number, symbol?: string }>} */
   const terms = [];
@@ -2958,10 +2959,74 @@ function analyzeFile(file, root, config) {
     springBeans: extractSpringBeans(text, file.rel),
     springTx: extractSpringTransactionConfig(text, file.rel),
     ...gridAndTerms(text, file.rel, symbolFacts, repx),
+    messageRefs: extractMessageRefs(text, file.rel),
+    messageLabels: extractMessageLabels(text, file.rel),
   };
 }
 
 /* 그리드 열과 업무 용어. 그리드 머리 글자도 라벨 용어가 된다(필드 이름을 주인으로). */
+/*
+ * 화면이 메시지 코드로 적은 글자 — `<spring:message code="button.create"/>` · `<fmt:message key="…"/>`.
+ *
+ * 전자정부 표준 화면은 한글을 JSP 에 쓰지 않고 메시지 파일에서 가져온다. 화면 파일에 한글이 없으니
+ * "등록"으로 찾으면 등록 화면이 나오지 않았다(egovframe-web-sample 실측). 여기서는 코드와 자리만 모으고,
+ * 코드 → 글자는 메시지 파일을 모두 읽은 aggregate 에서 푼다(`messageRefTerms`).
+ */
+function extractMessageRefs(text, rel) {
+  if (!MARKUP_TERM_EXT.has(extname(rel).toLowerCase()) || !/<(?:spring|fmt):message\b/i.test(text)) return [];
+  const atLine = lineIndex(text);
+  const titles = [...text.matchAll(/<(title|h[1-3])\b[^>]*>[\s\S]*?<\/\1>/gi)].map((m) => [m.index, m.index + m[0].length, m[1].toLowerCase() === "title" ? "title" : "heading"]);
+  const refs = [];
+  for (const m of text.matchAll(/<(?:spring:message\b[^>]*?\bcode|fmt:message\b[^>]*?\bkey)\s*=\s*["']([^"'$]+)["']/gi)) {
+    const kind = titles.find(([start, end]) => m.index >= start && m.index < end)?.[2] || "label";
+    refs.push({ code: m[1], kind, line: atLine(m.index) });
+  }
+  return refs;
+}
+
+/*
+ * 메시지 파일의 한글 라벨 전부(`코드 → 글자`). 용어집은 파일당 40개로 자르므로(TERMS_PER_FILE) 수백 줄짜리
+ * 메시지 파일에서 화면이 쓰는 코드를 대부분 놓친다 — 화면 참조를 풀 사전은 따로 전부 모은다.
+ */
+function extractMessageLabels(text, rel) {
+  if (extname(rel).toLowerCase() !== ".properties") return [];
+  const labels = [];
+  for (const m of text.matchAll(/^[ \t]*([\w.\-]+)[ \t]*[=:][ \t]*(.+)$/gm)) {
+    const value = m[2].replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16))).trim();
+    if (HANGUL.test(value)) labels.push([m[1], value]);
+  }
+  return labels;
+}
+
+/*
+ * 메시지 참조를 글자로 푼 용어. 같은 코드가 여러 메시지 파일에 있으면 `_ko` 가 먼저, 그다음 기본 파일이다
+ * (`_en` 같은 다른 언어 파일은 한글이 없어 애초에 라벨이 되지 않는다).
+ */
+function messageRefTerms(facts) {
+  const labels = new Map();
+  for (const fact of facts) {
+    const rank = /_ko(?:_KR)?\.properties$/i.test(fact.rel) ? 0 : 1;
+    for (const [code, value] of fact.messageLabels || []) {
+      const known = labels.get(code);
+      if (!known || rank < known.rank) labels.set(code, { rank, terms: termPieces(value) });
+    }
+  }
+  if (!labels.size) return [];
+  const entries = [];
+  const seen = new Set();
+  for (const fact of facts) {
+    for (const ref of fact.messageRefs || []) {
+      for (const term of labels.get(ref.code)?.terms || []) {
+        const key = `${fact.rel}\u0000${ref.kind}\u0000${term}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        entries.push({ term, kind: ref.kind, file: fact.rel, line: ref.line, symbol: ref.code });
+      }
+    }
+  }
+  return entries;
+}
+
 function gridAndTerms(text, rel, symbolFacts, repx) {
   const gridColumns = [...extractGridColumns(text, rel), ...(repx?.gridColumns || [])];
   const terms = [...(repx?.terms || [])];
@@ -3684,7 +3749,7 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
     call_graph: { _meta: { ...common, node_count: nodes.length, edge_count: uniqueEdges.length }, nodes, edges: uniqueEdges },
   };
   if (sqls.length || usages.length) output.sql_usage = { _meta: common, sqls, usages };
-  const glossary = facts.flatMap((item) => item.terms || []);
+  const glossary = [...facts.flatMap((item) => item.terms || []), ...messageRefTerms(facts)];
   if (glossary.length) output.glossary = { _meta: common, entries: glossary };
   const uiColumns = facts.flatMap((item) => item.gridColumns || []);
   if (uiColumns.length) output.ui_columns = { _meta: common, columns: uiColumns };
