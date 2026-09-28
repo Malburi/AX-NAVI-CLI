@@ -37,7 +37,7 @@ import {
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
 
-export const INDEXER_VERSION = "1.17.0"; // 본문 없는 interface·abstract 메서드 선언을 노드로 잡아 Service → Mapper → SQL 을 잇는다.
+export const INDEXER_VERSION = "1.18.0"; // Spring XML 선언형 트랜잭션(tx:advice + aop:advisor)을 pointcut 에 걸리는 메서드의 경계로 만든다.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
 const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
@@ -2058,6 +2058,138 @@ function extractTransactions(text, clean, rel, workspace, methods) {
   return boundaries;
 }
 
+/*
+ * Spring XML 선언형 트랜잭션 — `<tx:advice>` + `<aop:config>`의 `<aop:advisor>`.
+ *
+ * 전자정부프레임워크 표준 구성은 코드에 `@Transactional`이 하나도 없고 `context-transaction.xml`의
+ * pointcut(`execution(* egovframework.example.sample..impl.*Impl.*(..))`)으로 서비스 구현 전체에
+ * 트랜잭션을 건다. 인덱서는 애너테이션만 찾아 transactions 인덱스가 아예 생기지 않았고, `/flow`는
+ * Grep 으로 XML 을 뒤져 채웠다(2026-09-28 egovframe-web-sample 실측). 여기서는 파일마다 규칙만 모으고,
+ * 메서드와의 대조는 모든 메서드를 아는 aggregate 에서 한다(`springTransactionBoundaries`).
+ */
+function extractSpringTransactionConfig(text, rel) {
+  if (extname(rel).toLowerCase() !== ".xml" || !/<\w+:advice\b|<\w+:advisor\b/.test(text)) return null;
+  const source = text.replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, " "));
+  const atLine = lineIndex(text);
+  const decode = (value = "") => value.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&apos;/g, "'");
+  const advices = [];
+  for (const match of source.matchAll(/<tx:advice\b([^>]*?)(?:\/>|>([\s\S]*?)<\/tx:advice>)/g)) {
+    const id = attrValue(match[1], "id");
+    if (!id) continue;
+    const methods = [...(match[2] || "").matchAll(/<tx:method\b([^>]*?)\/?>/g)].map((item) => ({
+      name: attrValue(item[1], "name") || "",
+      propagation: attrValue(item[1], "propagation"),
+      isolation: attrValue(item[1], "isolation"),
+      read_only: attrValue(item[1], "read-only") === "true",
+      rollback_for: (attrValue(item[1], "rollback-for") || "").split(",").map((v) => v.trim()).filter(Boolean),
+    })).filter((item) => item.name);
+    advices.push({ id, methods, file: rel, line: atLine(match.index) });
+  }
+  const pointcuts = [...source.matchAll(/<aop:pointcut\b([^>]*?)\/?>/g)]
+    .map((match) => ({ id: attrValue(match[1], "id"), expression: decode(attrValue(match[1], "expression")), file: rel, line: atLine(match.index) }))
+    .filter((item) => item.id && item.expression);
+  const advisors = [...source.matchAll(/<aop:advisor\b([^>]*?)\/?>/g)].map((match) => ({
+    advice_ref: attrValue(match[1], "advice-ref"),
+    pointcut_ref: attrValue(match[1], "pointcut-ref"),
+    expression: decode(attrValue(match[1], "pointcut")),
+    file: rel, line: atLine(match.index),
+  })).filter((item) => item.advice_ref);
+  return advices.length || pointcuts.length || advisors.length ? { advices, pointcuts, advisors } : null;
+}
+
+/* AspectJ 타입 패턴(`com.acme..impl.*Impl`) → 정규식. `..`은 0개 이상의 중간 패키지, `*`는 이름 조각이다. */
+function aspectTypePattern(pattern) {
+  const body = pattern.split(/(\.\.|\.|\*)/).filter(Boolean)
+    .map((token) => (token === ".." ? String.raw`\.(?:[\w$]+\.)*` : token === "." ? String.raw`\.` : token === "*" ? String.raw`[\w$]*` : token.replace(/[.+?^${}()|[\]\\]/g, "\\$&")))
+    .join("");
+  return new RegExp(`^${body}$`);
+}
+
+/*
+ * pointcut 표현식을 메서드 판정 함수로 만든다. 지원하는 것은 `execution(...)`·`within(...)`과 그 `&&`·`||`·`!`
+ * (`and`·`or`·`not`) 조합뿐이다. `bean()`·`@annotation()` 같은 다른 지시자가 들어간 항은 정적으로 판정할 수
+ * 없으니 그 항을 통째로 버린다 — 틀리게 잇느니 잇지 않는 편이 낫다. 파라미터 패턴은 보지 않는다.
+ */
+function aspectPointcutMatcher(expression) {
+  const matchers = [];
+  for (const disjunct of expression.split(/\|\||\s+or\s+/)) {
+    const terms = [];
+    let supported = true;
+    for (const raw of disjunct.split(/&&|\s+and\s+/)) {
+      const negated = /^\s*(?:!|not\s+)/.test(raw);
+      const term = raw.replace(/^\s*(?:!|not\s+)/, "").trim().replace(/^\((.*)\)$/, "$1").trim();
+      let test = null;
+      const execution = term.match(/^execution\(\s*(.*)\)$/);
+      const within = term.match(/^within\(\s*([\w.*$]+)\s*\)$/);
+      if (execution) {
+        const parsed = execution[1].match(/([\w.*$]+)\s*\([^()]*\)\s*(?:throws\s+.*)?$/);
+        if (parsed) {
+          const cut = parsed[1].lastIndexOf(".");
+          /* `com.acme..*(..)`처럼 `..` 바로 뒤가 메서드 이름이면 타입은 `com.acme..*`(하위 패키지의 모든 타입)다. */
+          const typeText = cut > 0 ? (parsed[1][cut - 1] === "." ? `${parsed[1].slice(0, cut + 1)}*` : parsed[1].slice(0, cut)) : null;
+          const type = typeText ? aspectTypePattern(typeText) : null;
+          const name = aspectTypePattern(cut > 0 ? parsed[1].slice(cut + 1) : parsed[1]);
+          test = (method) => (!type || type.test(method.owner)) && name.test(method.name);
+        }
+      } else if (within) {
+        const type = aspectTypePattern(within[1]);
+        test = (method) => type.test(method.owner);
+      }
+      if (!test) { supported = false; break; }
+      terms.push(negated ? (method) => !test(method) : test);
+    }
+    if (supported && terms.length) matchers.push((method) => terms.every((test) => test(method)));
+  }
+  return matchers.length ? (method) => matchers.some((test) => test(method)) : null;
+}
+
+/* `<tx:method name>` — 정확히 같은 이름이 먼저, 없으면 걸리는 와일드카드 중 가장 긴 것(Spring NameMatchTransactionAttributeSource 규칙). */
+function txMethodAttribute(methods, name) {
+  const exact = methods.find((item) => item.name === name);
+  if (exact) return exact;
+  let best = null;
+  for (const item of methods) {
+    const pattern = new RegExp(`^${item.name.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`);
+    if (pattern.test(name) && (!best || item.name.length > best.name.length)) best = item;
+  }
+  return best;
+}
+
+function springTransactionBoundaries(configs, methodNodes, config) {
+  const advices = new Map(configs.flatMap((item) => item.advices).map((item) => [item.id, item]));
+  const pointcuts = new Map(configs.flatMap((item) => item.pointcuts).map((item) => [item.id, item]));
+  const candidates = methodNodes
+    .filter((node) => node.type === "method" && !node.abstract && node.visibility === "public" && /\.(?:java|kt|groovy)$/i.test(node.file || ""))
+    .map((node) => {
+      const parts = node.id.split(".");
+      return { node, name: parts.at(-1), owner: parts.slice(0, -1).join(".") };
+    });
+  const boundaries = [];
+  for (const advisor of configs.flatMap((item) => item.advisors)) {
+    const advice = advices.get(advisor.advice_ref);
+    const pointcut = advisor.pointcut_ref ? pointcuts.get(advisor.pointcut_ref) : null;
+    const expression = advisor.expression || pointcut?.expression;
+    const matches = advice && expression ? aspectPointcutMatcher(expression) : null;
+    if (!matches) continue;
+    for (const method of candidates) {
+      if (!matches(method)) continue;
+      const attribute = txMethodAttribute(advice.methods, method.name);
+      if (!attribute) continue;
+      boundaries.push({
+        id: `${method.node.id}@${method.node.line}`, entry_method: method.node.id, file: method.node.file, line: method.node.line,
+        marker: "aop:advisor", propagation: attribute.propagation || "REQUIRED",
+        ...(attribute.isolation ? { isolation: attribute.isolation } : {}),
+        ...(attribute.read_only ? { read_only: true } : {}),
+        ...(attribute.rollback_for.length ? { rollback_for: attribute.rollback_for } : {}),
+        pointcut: expression, config_file: advisor.file, config_line: advisor.line, advice_file: advice.file, advice_line: advice.line,
+        methods_in_scope: [method.node.id], external_io_calls: [],
+        workspace: method.node.workspace || workspaceFor(method.node.file, config).id, origin: "deterministic-indexer", confidence: "MEDIUM",
+      });
+    }
+  }
+  return boundaries;
+}
+
 const IO_CLIENT_TYPES = new Map([
   ["RestTemplate", "http"], ["WebClient", "http"], ["HttpClient", "http"],
   ["KafkaTemplate", "kafka_producer"], ["KafkaProducer", "kafka_producer"],
@@ -2800,6 +2932,7 @@ function analyzeFile(file, root, config) {
     tables: ext === ".sql" ? extractSchema(text, file.rel) : [],
     clientRefs: extractClientRefs(text, file.rel),
     springBeans: extractSpringBeans(text, file.rel),
+    springTx: extractSpringTransactionConfig(text, file.rel),
     ...gridAndTerms(text, file.rel, symbolFacts, repx),
   };
 }
@@ -3418,7 +3551,10 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
     (item) => `${item.sql_id}:${item.file}:${item.line}`,
   ).map(({ candidate, ...rest }) => rest);
   const sqlRelations = unique(facts.flatMap((item) => item.relations || []), (item) => `${item.from_table}:${item.from_columns?.join(",")}:${item.to_table}:${item.to_columns?.join(",")}:${item.file}:${item.line}`);
-  const boundaries = unique(facts.flatMap((item) => item.boundaries), (item) => item.id);
+  const boundaries = unique([
+    ...facts.flatMap((item) => item.boundaries),
+    ...springTransactionBoundaries(facts.map((item) => item.springTx).filter(Boolean), nodes, config),
+  ], (item) => item.id);
   const communications = unique(facts.flatMap((item) => item.communications), (item) => item.id);
   const profiles = [...new Set(facts.flatMap((item) => item.env.profiles))];
   const branches = unique(facts.flatMap((item) => item.env.branches), (item) => `${item.file}:${item.line}:${item.marker}`);

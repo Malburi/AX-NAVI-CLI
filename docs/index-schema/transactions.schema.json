@@ -19,6 +19,12 @@
           "propagation": { "type": "string" },
           "isolation": { "type": "string" },
           "rollback_for": { "type": "array", "items": { "type": "string" } },
+          "read_only": { "type": "boolean" },
+          "pointcut": { "type": "string" },
+          "config_file": { "type": "string" },
+          "config_line": { "type": ["integer", "null"] },
+          "advice_file": { "type": "string" },
+          "advice_line": { "type": ["integer", "null"] },
           "methods_in_scope": { "type": "array", "items": { "type": "string" } },
           "external_io_calls": {
             "type": "array",

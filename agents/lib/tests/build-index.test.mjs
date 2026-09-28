@@ -717,6 +717,69 @@ public abstract class BaseJob {
     }
   });
 
+  register("Spring XML 선언형 트랜잭션(tx:advice + aop:advisor)을 pointcut 에 걸리는 메서드의 경계로 만든다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-xml-tx-"));
+    try {
+      write(root, "src/main/java/com/acme/order/service/impl/OrderServiceImpl.java", `package com.acme.order.service.impl;
+public class OrderServiceImpl implements OrderService {
+  public void insertOrder(OrderVO vo) { save(vo); }
+  public OrderVO getOrder(String id) { return null; }
+  private void save(OrderVO vo) {}
+}
+`);
+      write(root, "src/main/java/com/acme/order/service/impl/OrderDaoImpl.java", `package com.acme.order.service.impl;
+public class OrderDaoImpl {
+  public void write(OrderVO vo) {}
+}
+`);
+      write(root, "src/main/java/com/acme/order/web/OrderController.java", `package com.acme.order.web;
+public class OrderController {
+  public String add(OrderVO vo) { return "ok"; }
+}
+`);
+      write(root, "src/main/java/com/acme/batch/BatchJobImpl.java", `package com.acme.batch;
+public class BatchJobImpl {
+  public void run() {}
+}
+`);
+      write(root, "src/main/resources/spring/context-transaction.xml", `<beans xmlns:tx="http://www.springframework.org/schema/tx" xmlns:aop="http://www.springframework.org/schema/aop">
+  <tx:advice id="txAdvice" transaction-manager="txManager">
+    <tx:attributes>
+      <tx:method name="get*" read-only="true"/>
+      <tx:method name="*" rollback-for="Exception"/>
+    </tx:attributes>
+  </tx:advice>
+  <aop:config>
+    <aop:pointcut id="requiredTx" expression="execution(* com.acme..impl.*Impl.*(..)) &amp;&amp; !execution(* com.acme..*DaoImpl.*(..))"/>
+    <aop:advisor advice-ref="txAdvice" pointcut-ref="requiredTx"/>
+    <!-- <aop:advisor advice-ref="txAdvice" pointcut="execution(* com.acme..web.*.*(..))"/> -->
+    <aop:advisor advice-ref="txAdvice" pointcut="bean(*Job*)"/>
+  </aop:config>
+</beans>`);
+
+      buildIndex({ root, mode: "init", tier: "Full", config: null });
+      const boundaries = json(root, "transactions.json").boundaries;
+      const byMethod = new Map(boundaries.map((item) => [item.entry_method, item]));
+      const insert = byMethod.get("com.acme.order.service.impl.OrderServiceImpl.insertOrder");
+      assert.ok(insert, JSON.stringify(boundaries));
+      assert.equal(insert.marker, "aop:advisor");
+      assert.equal(insert.propagation, "REQUIRED");
+      assert.equal(insert.rollback_for.join(","), "Exception");
+      assert.equal(insert.file, "src/main/java/com/acme/order/service/impl/OrderServiceImpl.java");
+      assert.equal(insert.config_file, "src/main/resources/spring/context-transaction.xml");
+      assert.equal(insert.config_line, 10);
+      assert.equal(byMethod.get("com.acme.order.service.impl.OrderServiceImpl.getOrder")?.read_only, true, "get* 가 * 보다 먼저 걸린다");
+      assert.ok(!byMethod.has("com.acme.order.service.impl.OrderServiceImpl.save"), "private 메서드는 프록시가 가로채지 않는다");
+      assert.ok(!byMethod.has("com.acme.order.service.impl.OrderDaoImpl.write"), "!execution(...) 으로 뺀 대상");
+      assert.ok(!byMethod.has("com.acme.order.web.OrderController.add"), "주석 처리한 advisor 는 규칙이 아니다");
+      assert.ok(!byMethod.has("com.acme.batch.BatchJobImpl.run"), "정적으로 판정할 수 없는 bean() 은 잇지 않는다");
+      const answer = COMMANDS.transaction({ root, indexDir: join(root, "_workspace", "index"), file: "OrderServiceImpl.java", limit: 10 });
+      assert.ok(answer.items.every((item) => item.config_file && item.pointcut), JSON.stringify(answer.items));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("ASP.NET Core의 controller route·생성자 DI·트랜잭션 경계를 추출한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-dotnet-"));
     try {

@@ -334,7 +334,8 @@ const COMMANDS = {
   transaction({ root, indexDir, id, file, limit }) {
     const boundaries = loadIndex(root, "transactions", indexDir).boundaries || [];
     const hits = boundaries.filter((item) => (id ? idMatches(item.entry_method, id) : true) && (file ? matches(item.file, file) : true));
-    return { query: { id, file }, ...cap(hits.map(({ entry_method, file: f, line, marker, propagation, isolation }) => ({ entry_method, file: f, line, marker, propagation, isolation })), limit) };
+    /* XML 선언형 트랜잭션은 코드에 표식이 없다 — 어느 설정이 걸었는지(config_file:line · pointcut)를 함께 준다. */
+    return { query: { id, file }, ...cap(hits.map(({ entry_method, file: f, line, marker, propagation, isolation, read_only, rollback_for, pointcut, config_file, config_line }) => ({ entry_method, file: f, line, marker, propagation, isolation, read_only, rollback_for, pointcut, config_file, config_line })), limit) };
   },
 
   /* 테이블 정의 — 컬럼·PK·FK. "이 테이블이 무엇과 엮여 있나"는 온보딩 1번 질문이다. */

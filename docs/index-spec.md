@@ -339,6 +339,8 @@ FROM/JOIN 절의 `ROWNUM`·`DUAL`·`SYSDATE`·`LEVEL` 같은 의사테이블은 
 
 `external_io_calls` 는 트랜잭션 경계 안에서의 외부 호출 — 위험 항목.
 
+Spring XML 선언형 트랜잭션(`<tx:advice>` + `<aop:advisor>`)은 코드에 표식이 없어 pointcut 에 걸리는 public 메서드마다 경계를 만든다. `marker` 는 `aop:advisor`, `file`·`line` 은 그 메서드이고, 건 설정은 `config_file`·`config_line`(advisor)·`advice_file`·`advice_line`·`pointcut` 에, `<tx:method>` 속성은 `propagation`(기본 `REQUIRED`)·`isolation`·`read_only`·`rollback_for` 에 담는다. pointcut 은 `execution`·`within` 과 그 `&&`·`||`·`!` 조합만 판정하고, 다른 지시자(`bean`·`@annotation` 등)가 든 항은 잇지 않는다. 신뢰도는 MEDIUM.
+
 ---
 
 ## external_io.json
