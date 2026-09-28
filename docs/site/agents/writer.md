@@ -6,7 +6,7 @@ analyzer의 분석 리포트를 받아 프로젝트 전용 하네스 파일을 �
 
 - [harness-init](/skills/harness-init.md) Phase 2-2(`T-W`)가 부른다. 입력은 `_workspace/01_analyzer_report.md`와 인덱스다.
 - harness-init Phase 4에서 harness-evaluator가 커버리지·정확도(스킬 본문)·실행가능성·컨텍스트 품질 차원의 `fix_target.agent`로 `writer`를 지정하면 지목된 파일만 다시 쓴다.
-- frontmatter `model`은 `claude-sonnet-5`, `tools`는 지정하지 않는다. 작업 범위는 "분석 리포트에 명시된 항목만 반영, 리포트에 없는 내용은 추측 금지"다.
+- frontmatter `model`은 `sonnet`, `tools`는 지정하지 않는다. 작업 범위는 "분석 리포트에 명시된 항목만 반영, 리포트에 없는 내용은 추측 금지"다.
 
 ## 하는 일
 

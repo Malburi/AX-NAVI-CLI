@@ -133,7 +133,7 @@ migration-planner가 지원하는 시나리오는 프레임워크(Struts 1 → S
 - **사용자 결정 강제.** 자동 결정 불가 항목(데드 코드 제외, DB 전략, canary 비율, 외부 조율)은 명시적으로 묻고 자동 추측을 금지한다.
 - **빅뱅 금지.** 단계별 계획은 Strangler Fig 패턴(점진적 교체)을 기본으로 하며, Phase 1 LOW → Phase 2 MEDIUM → Phase 3 HIGH 모듈 순으로 위험도가 낮은 것부터 전환한다.
 - **계획만 생성하므로 코드는 그대로다.** 마이그레이션 도중에도 일반 버그 수정을 동시에 진행할 수 있으며, 마이그레이션 대상 모듈 충돌만 주의한다.
-- migration-planner 에이전트 정의의 model은 `opus`다. 다른 오케스트레이터와 달리 Sonnet 5 고정 문구가 SKILL.md에 없다.
+- migration-planner 에이전트 정의의 model은 `opus`다. 다른 오케스트레이터와 달리 `sonnet` 통일 문구가 SKILL.md에 없다.
 
 ## 관련 문서
 

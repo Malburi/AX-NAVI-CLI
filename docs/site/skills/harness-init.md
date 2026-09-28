@@ -50,7 +50,7 @@ Phase -1은 `_workspace/00_init_scope.md`가 이미 있거나, 부분 재실행�
 | 2-4 (T-V) | 하네스 구조와 근거 검증. | [validator](/agents/validator.md) | 없음 |
 | 2-5 (T-E) | harness 품질 평가. 모든 Tier에서 실행한다. | [harness-evaluator](/agents/harness-evaluator.md) | 없음 |
 
-Tier는 Standard와 Full 2단계만 있고 기본은 Full이다. Standard는 analyzer가 스택 해당 Phase B만 분석하고, Full은 전체 분석 범위를 유지한다. 두 Tier 모두 모델은 `claude-sonnet-5`로 고정이며, 인덱스를 생략하는 Tier는 없다.
+Tier는 Standard와 Full 2단계만 있고 기본은 Full이다. Standard는 analyzer가 스택 해당 Phase B만 분석하고, Full은 전체 분석 범위를 유지한다. 두 Tier 모두 모델은 `sonnet`으로 같으며, 인덱스를 생략하는 Tier는 없다.
 
 ### Phase 3 ~ Phase 4. 보고, 선택 작업, 품질 루프
 
@@ -147,7 +147,7 @@ analyze-impact / safe-modify / scaffold-feature / vibe / plan-migration / review
 
 ## 원칙과 주의
 
-- **모델 고정.** 메인 스킬과 모든 팀원·폴백·재시도는 `claude-sonnet-5`를 사용한다. `sonnet` 별칭이나 Opus 자동 승격을 사용하지 않는다. 모델 미지원·권한 거부·다른 모델로의 대체가 확인되면 진행을 멈추고 알린다. 사용자·조직의 전역 모델 설정은 수정하지 않는다.
+- **모델 통일.** 메인 스킬과 모든 팀원·폴백·재시도는 `sonnet` 별칭을 사용한다. Opus로 자동 승격하지 않는다. 실제 모델은 조직 설정(`ANTHROPIC_DEFAULT_SONNET_MODEL`)이 정하고, 이 환경에서 막히면 쓸 수 있는 같은 계열 모델로 자동으로 다시 실행한다([모델 정책](/configuration/model-policy.md)). 사용자·조직의 전역 모델 설정은 수정하지 않는다.
 - **사용자 질문은 한국어.** `AskUserQuestion`의 `question`·`header`·옵션 `label`·`description`을 전부 한국어로 채운다.
 - **옵션은 한 질문에 최대 4개.** 5개를 한 질문에 담았다가 5번이 조용히 잘려나간 실사고가 있어 구성 확인은 2단계로 나눈다.
 - **초기화는 팀당 1회.** 팀원이 공유 하네스를 pull한 상태면 LLM 파이프라인을 돌리지 않고 인덱스만 로컬에서 다시 만든다. 반드시 커밋해야 하는 것은 인덱스가 아니라 `_workspace/index/_ai_patch.json`이다.

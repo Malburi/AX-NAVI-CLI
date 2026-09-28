@@ -8,7 +8,7 @@
 - harness-init Phase 4의 인덱스 무결성 게이트와 PARTIAL 점수의 `fix_target`은 `mode: targeted`로 다시 부른다. 이때는 지목된 항목만 고치고 리포트를 재작성하지 않는다.
 - 업데이트·인덱스 리프레시 경로는 `mode: incremental`로 변경 파일만 재분석한다.
 - 스킬 파일에서 `ax-navi:analyzer`로 직접 호출하는 곳은 harness-init뿐이다. 본문의 "실행 우선순위 가이드" 표는 analyze-impact·safe-modify·plan-migration 등 컨텍스트별로 어떤 Phase까지 필요한지 정의한다.
-- frontmatter `model`은 `claude-sonnet-5`, `tools`는 지정하지 않아 기본 도구 세트를 쓴다. 본문의 작업 범위가 "하네스 파일·코드 수정·삭제 금지"를 명시한다.
+- frontmatter `model`은 `sonnet`, `tools`는 지정하지 않아 기본 도구 세트를 쓴다. 본문의 작업 범위가 "하네스 파일·코드 수정·삭제 금지"를 명시한다.
 
 ## 하는 일
 

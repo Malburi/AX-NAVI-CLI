@@ -8,15 +8,15 @@ AX Navi는 19종의 서브에이전트로 구성된다. 하네스를 만드는 �
 
 | 이름 | 역할 한 줄 | 호출하는 스킬 | 모델 | 소스 수정 |
 |------|-----------|--------------|------|----------|
-| [analyzer](/agents/analyzer.md) | 코드베이스 구조·스택·의존성·트랜잭션·외부 통신을 분석해 리포트와 인덱스를 만든다 | harness-init | claude-sonnet-5 | tools 미지정. 본문이 하네스·코드 수정을 금지 |
-| [writer](/agents/writer.md) | 분석 리포트로 프로젝트 전용 스킬(trace·scaffolder·find-logic)과 결정 값 JSON을 생성한다 | harness-init | claude-sonnet-5 | tools 미지정. 하네스 파일만 생성 |
+| [analyzer](/agents/analyzer.md) | 코드베이스 구조·스택·의존성·트랜잭션·외부 통신을 분석해 리포트와 인덱스를 만든다 | harness-init | sonnet | tools 미지정. 본문이 하네스·코드 수정을 금지 |
+| [writer](/agents/writer.md) | 분석 리포트로 프로젝트 전용 스킬(trace·scaffolder·find-logic)과 결정 값 JSON을 생성한다 | harness-init | sonnet | tools 미지정. 하네스 파일만 생성 |
 | [pattern-extractor](/agents/pattern-extractor.md) | 실제 코드 샘플로 레이어별 컨벤션을 추출해 패턴 문서와 `pattern_profile.json`을 만든다 | harness-init | sonnet | tools 미지정. 패턴 파일만 생성 |
 | [validator](/agents/validator.md) | 생성된 하네스와 인덱스를 11개 항목으로 검증해 신뢰도 점수를 낸다 | harness-init | sonnet | 읽기·리포트 전용 |
 | [qa](/agents/qa.md) | 코드·인덱스·하네스 경계면을 Set 연산으로 교차 비교해 누락·고아 항목을 찾는다 | harness-init (온디맨드) | sonnet | 읽기·리포트 전용 |
 | [harness-evaluator](/agents/harness-evaluator.md) | 하네스의 실용 품질을 4개 차원 100점으로 평가하고 재생성 대상을 돌려준다 | harness-init | sonnet | 읽기·리포트 전용 |
 | [spec-clarifier](/agents/spec-clarifier.md) | 작업 전 소크라테스식 인터뷰로 모호성을 점수화하고 GO/REFINE을 낸다 | spec-gate | sonnet | 읽기·리포트 전용 (+AskUserQuestion) |
 | [pipeline-runner](/agents/pipeline-runner.md) | harness-init의 결정론적 스크립트 블록을 대신 실행하고 요약만 반환한다 | harness-init | sonnet | tools 미지정. 파일 내용 작성·수정 금지 |
-| [impact-analyzer](/agents/impact-analyzer.md) | 변경 대상의 직간접 영향을 추적해 위험도 점수 1~10을 낸다 | analyze-impact, safe-modify | claude-sonnet-5 | 읽기·리포트 전용 |
+| [impact-analyzer](/agents/impact-analyzer.md) | 변경 대상의 직간접 영향을 추적해 위험도 점수 1~10을 낸다 | analyze-impact, safe-modify | sonnet | 읽기·리포트 전용 |
 | [change-safety](/agents/change-safety.md) | diff·영향·패턴 판정·실행 증거를 종합해 GO/HOLD/STOP을 낸다 | safe-modify, scaffold-feature, cross-repo-modify | sonnet | 읽기·리포트 전용 |
 | [pattern-conformance](/agents/pattern-conformance.md) | 변경 코드가 모듈의 실제 기준 파일과 패턴 프로필을 따르는지 CONFORM/HOLD/FAIL로 판정한다 | safe-modify, scaffold-feature | sonnet | 읽기·리포트 전용 |
 | [migration-planner](/agents/migration-planner.md) | 스택 마이그레이션의 인벤토리·매핑·단계 계획·위험·테스트·롤백 문서를 만든다 | plan-migration | opus | 읽기·문서 생성 전용 |

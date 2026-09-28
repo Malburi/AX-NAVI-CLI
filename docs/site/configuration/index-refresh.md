@@ -31,7 +31,7 @@ harness-init의 실행 모드 표에서 "인덱스만 갱신해줘"·"인덱스�
 | 1 | `block: index`를 `--mode incremental`로 실행. 소스 추출은 전수로 다시 하며 파일별 캐시는 두지 않음 | 없음 |
 | 2 | `_workspace/index/_ai_patch.json`이 있으면 파일을 쓰기 전에 다시 병합하고 데드코드도 재계산 | 없음 |
 | 3 | 저장된 엔드포인트 설명·흐름 note·클라이언트 해설 패치도 다시 적용 | 없음 |
-| 4 | analyzer가 필요한 경우(업데이트 모드) `incremental`로 변경 파일만 재분석 | Sonnet 5 |
+| 4 | analyzer가 필요한 경우(업데이트 모드) `incremental`로 변경 파일만 재분석 | sonnet |
 
 `analyzer`가 `call_graph.json`을 직접 고치지 않고 `_ai_patch.json`으로 내는 이유가 여기 있습니다. `--mode incremental`은 소스에서 그래프를 다시 만들기 때문에 손으로 덧붙인 엣지는 사라지지만, 패치 파일은 다시 병합되므로 AI 보강이 보존됩니다.
 

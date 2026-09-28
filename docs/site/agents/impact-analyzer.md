@@ -6,7 +6,7 @@
 
 - [analyze-impact](/skills/analyze-impact.md) Phase 2가 부른다. `/impact` 별칭도 같은 경로다.
 - [safe-modify](/skills/safe-modify.md) Phase 1은 규모 normal일 때만 이 에이전트를 실행한다(small이면 오케스트레이터가 인덱스 질의로 직접 확인). 결과를 보여 준 뒤 묻지 않고 진행하며, CRITICAL이거나 데이터 변경 전제를 확인하지 못했거나 요청 해석이 갈릴 때만 사용자에게 묻는다.
-- frontmatter `model`은 `claude-sonnet-5`, `tools`는 `Read, Grep, Glob, Bash, Write`다. `Edit`가 없어 소스 파일을 제자리에서 수정하지 않는다.
+- frontmatter `model`은 `sonnet`, `tools`는 `Read, Grep, Glob, Bash, Write`다. `Edit`가 없어 소스 파일을 제자리에서 수정하지 않는다.
 
 ## 하는 일
 

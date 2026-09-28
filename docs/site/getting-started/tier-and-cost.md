@@ -14,7 +14,7 @@
 | 데드코드 식별 | 미지원 | 지원 |
 | writer·pattern-extractor·validator·harness-evaluator | 모두 실행 | 모두 실행 |
 | 경계 QA · wiki | 온디맨드 (Phase 3.6 메뉴에서 선택 시만) | 온디맨드 (동일) |
-| 모델 | 모든 에이전트 `claude-sonnet-5` | 모든 에이전트 `claude-sonnet-5` |
+| 모델 | 모든 에이전트 `sonnet` | 모든 에이전트 `sonnet` |
 | 소요 시간 감각 | 3~5분 | 10분 내외 |
 | 적합한 프로젝트 | 일반 웹 서비스, 소규모 모듈, 일상 유지보수 | 대형 레거시, 마이그레이션 대상, 대규모 수정 계획 |
 
@@ -109,7 +109,7 @@ Node가 없는 환경에서는 예산 게이트가 적용되지 않고 그 사�
 
 ## 실측표 (재측정 예정)
 
-`docs/harness-description.md`의 아래 수치는 analyzer가 Opus로 실행되던 이전 설정에서 측정한 값입니다. 현재는 모든 에이전트가 `claude-sonnet-5`로 고정돼 있어 재측정 예정이며, 상대적 비율을 보는 용도로만 참고하세요.
+`docs/harness-description.md`의 아래 수치는 analyzer가 Opus로 실행되던 이전 설정에서 측정한 값입니다. 현재는 모든 에이전트가 `sonnet`으로 돌아 재측정 예정이며, 상대적 비율을 보는 용도로만 참고하세요.
 
 | 항목 | Standard (중규모) | Full (대규모) |
 |------|-------------------|---------------|

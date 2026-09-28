@@ -24,7 +24,7 @@
 
 **Q. Standard와 Full은 무엇이 다른가요?**
 
-분석 범위만 다릅니다. Standard는 analyzer가 스택 해당 Phase B만 수행하고 데드코드 탐지를 생략하며, Full은 전체를 수행합니다. 모델은 둘 다 `claude-sonnet-5`이고 wiki·QA는 어느 쪽도 자동 실행하지 않습니다. 기본은 Full이며, 인덱싱 직후 실제 견적을 보고 Standard로 낮추거나 중단할 수 있습니다.
+분석 범위만 다릅니다. Standard는 analyzer가 스택 해당 Phase B만 수행하고 데드코드 탐지를 생략하며, Full은 전체를 수행합니다. 모델은 둘 다 `sonnet`이고 wiki·QA는 어느 쪽도 자동 실행하지 않습니다. 기본은 Full이며, 인덱싱 직후 실제 견적을 보고 Standard로 낮추거나 중단할 수 있습니다.
 
 **Q. 비용을 미리 알 수 있나요?**
 
