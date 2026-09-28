@@ -132,6 +132,8 @@ FROM/JOIN 절의 `ROWNUM`·`DUAL`·`SYSDATE`·`LEVEL` 같은 의사테이블은 
 - `import` — 파일/모듈 간 import 관계. 결정론적 인덱서는 **이 타입을 만들지 않는다**(파일 노드가 없는 순수 심볼 그래프라 `to`가 노드가 아니게 된다). Vue 추출기 등 파일 단위 관계를 내는 생성기만 쓴다
 - `reflect` — 리플렉션 가능성 (heuristic, 신뢰도 낮음). 인덱서는 만들지 않고 analyzer가 `_ai_patch.json`으로만 추가한다
 - `ui_event` · `markup_event` · `scheduler` · `process_entry` — 진입점에서 핸들러로 가는 관계. 출발점은 `trigger:<파일>#<트리거>` 형태의 합성 노드다
+- `bean_call` — 선언 타입이 저장소 밖(프레임워크 jar)인 주입 필드의 호출을 그 필드가 가리키는 Spring XML 빈으로 잇는다. `member`에 부른 메서드 이름이 있다. 대상은 `bean:<빈 이름>` 노드(`type: "spring_bean"`, `class`·`file`·`line`·`properties[{name, value|ref}]`)다
+- `bean_ref` — 빈이 `<property ref>`로 물고 있는 다른 빈(`property`에 속성 이름). 부른 빈에서 3단계까지만 노드로 둔다
 
 모든 레코드에는 `origin`(`deterministic-indexer` | `ai-enrichment` | `analyzer-fallback`)과 `confidence`(`HIGH`/`MEDIUM`/`LOW`)가 붙는다 — 어디서 온 사실인지 구분하기 위한 것이다.
 

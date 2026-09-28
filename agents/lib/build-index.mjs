@@ -37,7 +37,7 @@ import {
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
 
-export const INDEXER_VERSION = "1.18.0"; // Spring XML 선언형 트랜잭션(tx:advice + aop:advisor)을 pointcut 에 걸리는 메서드의 경계로 만든다.
+export const INDEXER_VERSION = "1.19.0"; // 프레임워크 타입 필드 호출을 Spring XML 빈 노드(class·property)로 잇는다.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
 const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
@@ -1434,7 +1434,9 @@ function extractSymbols(text, clean, rel, workspace) {
     const owner = ownerAt(match.index);
     /* 필드 *이름*(match[2])도 함께 남긴다 — `sqlSession.insert(...)`처럼 한정자로 호출할 때
      * 그 한정자가 어떤 타입인지 되짚는 유일한 근거다. 예전에는 타입만 쓰고 이름을 버렸다. */
-    if (owner) injects.push({ owner: symbolId(pkg, "", owner), targetName: match[1].split(".").at(-1), fieldName: match[2], file: rel, line: atLine(match.index), workspace: workspace.id });
+    /* `@Resource(name = "egovIdGnrService")` — XML 빈을 이름으로 찾을 때 쓴다(없으면 필드 이름이 빈 이름이다). */
+    const beanName = match[0].match(/@Resource\s*\([^)]*\bname\s*=\s*"([^"]+)"/)?.[1];
+    if (owner) injects.push({ owner: symbolId(pkg, "", owner), targetName: match[1].split(".").at(-1), fieldName: match[2], ...(beanName ? { beanName } : {}), file: rel, line: atLine(match.index), workspace: workspace.id });
   }
   /*
    * 주입 애너테이션이 없는 평범한 필드 선언도 한정자 해석에 쓴다(레거시는 애너테이션 없이
@@ -2471,15 +2473,37 @@ function detectLibraryVersions(scriptRefs) {
 /*
  * Spring XML 빈 정의(id→class) — Struts action의 `command` 속성(빈 id)이 가리키는 실제 서비스
  * 클래스를 찾는 데 쓰인다. `<bean id="X" class="Y"/>`, 속성 순서는 무관하게 잡는다.
+ *
+ * `name="a,b"`만 쓴 정의도 빈이다(전자정부 `context-idgen.xml`의 `<bean name="egovIdGnrService">`).
+ * 바로 아래 `<property>`의 value·ref 도 함께 남긴다 — 프레임워크 jar 의 클래스는 소스가 없어서, ID 를
+ * 어느 테이블에서 몇 자리로 채번하는지 같은 동작은 이 설정에만 적혀 있다. 중첩 빈의 속성은 바깥 빈 것이 아니다.
  */
-const SPRING_BEAN_REGEX = /<bean\b([^>]*)>/gi;
+const SPRING_BEAN_TAG = /<bean\b([^>]*?)(\/?)>|<\/bean\s*>|<property\b([^>]*?)\/>|<property\b([^>]*?)>([\s\S]*?)<\/property\s*>/gi;
 function extractSpringBeans(text, rel) {
-  if (extname(rel).toLowerCase() !== ".xml") return [];
+  if (extname(rel).toLowerCase() !== ".xml" || !/<bean\b/i.test(text)) return [];
+  const source = text.replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, " "));
   const atLine = lineIndex(text);
   const beans = [];
-  for (const match of text.matchAll(SPRING_BEAN_REGEX)) {
+  const open = [];
+  for (const match of source.matchAll(SPRING_BEAN_TAG)) {
+    if (match[0].startsWith("</")) { open.pop(); continue; }
+    if (/^<property/i.test(match[0])) {
+      const owner = open.at(-1);
+      const attrs = xmlAttrs(match[3] ?? match[4]);
+      if (!owner || !attrs.name) continue;
+      const inner = match[5] || "";
+      const value = attrs.value ?? inner.match(/^\s*<value>([\s\S]*?)<\/value>/i)?.[1]?.trim();
+      const ref = attrs.ref ?? inner.match(/^\s*<ref\b[^>]*\bbean\s*=\s*["']([^"']+)["']/i)?.[1];
+      if (value !== undefined || ref) owner.properties.push({ name: attrs.name, ...(ref ? { ref } : { value }) });
+      continue;
+    }
     const attrs = xmlAttrs(match[1]);
-    if (attrs.id && attrs.class) beans.push({ id: attrs.id, className: attrs.class, file: rel, line: atLine(match.index) });
+    const names = [...new Set([attrs.id, ...(attrs.name || "").split(/[\s,;]+/)].filter(Boolean))];
+    const bean = names.length && attrs.class
+      ? { id: names[0], ...(names.length > 1 ? { aliases: names.slice(1) } : {}), className: attrs.class, file: rel, line: atLine(match.index), properties: [] }
+      : { properties: [] };
+    if (bean.id) beans.push(bean);
+    if (!match[2]) open.push(bean);
   }
   return beans;
 }
@@ -3145,6 +3169,17 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   }
   const injects = facts.flatMap((item) => item.injects);
   /*
+   * XML 빈 — 이름·별칭 → 정의. 주입 필드(`owner::필드`) → 빈 이름(@Resource name, 없으면 필드 이름).
+   * 선언 타입이 저장소 밖(프레임워크 jar)이면 호출이 갈 노드가 없어 버렸는데, 그 필드가 XML 빈이면
+   * 빈 노드로 잇는다 — `egovIdGnrService.getNextStringId()`가 어느 설정의 무엇인지가 지도에 남는다.
+   */
+  const springBeanByName = new Map();
+  for (const bean of facts.flatMap((item) => item.springBeans || [])) {
+    for (const name of [bean.id, ...(bean.aliases || [])]) if (!springBeanByName.has(name)) springBeanByName.set(name, bean);
+  }
+  const injectedBeanName = new Map(injects.filter((item) => item.fieldName).map((item) => [`${item.owner}::${item.fieldName}`, item.beanName || item.fieldName]));
+  const beanCalls = [];
+  /*
    * 한정자 → 타입 사전. `owner클래스::필드명` → 타입명.
    * 이게 없으면 `sqlSession.insert(...)` 같은 프레임워크 호출에서 한정자가 아무 후보와도
    * 겹치지 않아 **후보 전체(오답뿐)를 그대로 LLM 판정 대기열에 넣었다.** 가상 프로젝트에서
@@ -3389,7 +3424,11 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
           /* 본문 없는 선언만 있으면 구현 쪽이 먼저다. 구현이 없을 때만(MyBatis Mapper) 선언이 종착점이다. */
           const implemented = (implementorsOf.get(declaredType) || []).flatMap((classId) => nodeByOwnerId.get(`${classId}\u0000${call.name}`) || []);
           if (implemented.length) candidates = implemented;
-          if (!candidates.length) continue;
+          if (!candidates.length) {
+            const bean = localType === undefined ? springBeanByName.get(injectedBeanName.get(`${ownerIdOf(call.caller)}::${call.qualifier}`)) : null;
+            if (bean) beanCalls.push({ call, bean });
+            continue;
+          }
         }
       } else {
         /*
@@ -3467,6 +3506,22 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
     }
   }
   nodes.push(...dbProcedures.values());
+  /* 부른 빈과, 그 빈이 property ref 로 물고 있는 빈(3단계까지)을 노드로 둔다. */
+  const beanNodes = new Map();
+  const addBeanNode = (bean, depth) => {
+    const id = `bean:${bean.id}`;
+    if (beanNodes.has(id)) return id;
+    beanNodes.set(id, { id, type: "spring_bean", name: bean.id, class: bean.className, file: bean.file, line: bean.line, properties: bean.properties || [], workspace: workspaceFor(bean.file, config).id, origin: "deterministic-indexer", confidence: "HIGH" });
+    for (const property of depth < 3 ? bean.properties || [] : []) {
+      const target = property.ref && springBeanByName.get(property.ref);
+      if (target) edges.push({ from: id, to: addBeanNode(target, depth + 1), type: "bean_ref", property: property.name, file: bean.file, line: bean.line, workspace: workspaceFor(bean.file, config).id, origin: "deterministic-indexer", confidence: "HIGH" });
+    }
+    return id;
+  };
+  for (const { call, bean } of beanCalls) {
+    edges.push({ from: call.caller, to: addBeanNode(bean, 0), type: "bean_call", member: call.name, file: call.file, line: call.line, workspace: call.workspace, origin: "deterministic-indexer", confidence: "MEDIUM" });
+  }
+  nodes.push(...beanNodes.values());
   for (const injection of injects) {
     const candidates = nodeBySimple.get(injection.targetName) || [];
     if (candidates.length === 1) edges.push({ from: injection.owner, to: candidates[0].id, type: "inject", file: injection.file, line: injection.line, workspace: injection.workspace, origin: "deterministic-indexer", confidence: "HIGH" });

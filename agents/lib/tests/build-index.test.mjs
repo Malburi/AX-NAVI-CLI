@@ -780,6 +780,57 @@ public class BatchJobImpl {
     }
   });
 
+  register("프레임워크 타입 필드 호출을 XML 빈 노드로 잇고, trace 가 빈 정의(property)를 함께 준다", () => {
+    const root = mkdtempSync(join(tmpdir(), "ax-indexer-xml-beans-"));
+    try {
+      write(root, "src/main/java/com/acme/SampleServiceImpl.java", `package com.acme;
+import org.egovframe.rte.fdl.idgnr.EgovIdGnrService;
+public class SampleServiceImpl {
+  @Resource(name = "egovIdGnrService")
+  private EgovIdGnrService idService;
+  private EgovIdGnrService plain;
+  public void insertSample() {
+    String id = idService.getNextStringId();
+    EgovIdGnrService local = null;
+    local.getNextStringId();
+  }
+}
+`);
+      write(root, "src/main/resources/spring/context-idgen.xml", `<beans>
+  <!-- <bean name="egovIdGnrService" class="com.old.Commented"/> -->
+  <bean name="egovIdGnrService,idGen" class="org.egovframe.rte.fdl.idgnr.impl.EgovTableIdGnrServiceImpl" destroy-method="destroy">
+    <property name="strategy" ref="mixPrefixSample"/>
+    <property name="table" value="IDS"/>
+    <property name="tableName"><value>SAMPLE</value></property>
+    <property name="helper">
+      <bean class="com.acme.Inner"><property name="innerOnly" value="x"/></bean>
+    </property>
+  </bean>
+  <bean id="mixPrefixSample" class="org.egovframe.rte.fdl.idgnr.impl.strategy.EgovIdGnrStrategyImpl">
+    <property name="prefix" value="SAMPLE-"/>
+    <property name="cipers" value="5"/>
+  </bean>
+</beans>`);
+
+      buildIndex({ root, mode: "init", tier: "Full", config: null });
+      const graph = json(root, "call_graph.json");
+      const bean = graph.nodes.find((item) => item.id === "bean:egovIdGnrService");
+      assert.equal(bean?.class, "org.egovframe.rte.fdl.idgnr.impl.EgovTableIdGnrServiceImpl", JSON.stringify(graph.nodes.filter((item) => item.type === "spring_bean")));
+      assert.equal(bean.line, 3);
+      assert.equal(bean.properties.map((item) => `${item.name}=${item.ref || item.value}`).join(","), "strategy=mixPrefixSample,table=IDS,tableName=SAMPLE", "중첩 빈의 property 는 바깥 빈 것이 아니다");
+      const beanCalls = graph.edges.filter((item) => item.type === "bean_call");
+      assert.equal(beanCalls.length, 1, `지역 변수 호출은 빈으로 잇지 않는다: ${JSON.stringify(beanCalls)}`);
+      assert.equal(beanCalls[0].from, "com.acme.SampleServiceImpl.insertSample");
+      assert.equal(beanCalls[0].member, "getNextStringId");
+      assert.ok(graph.edges.some((item) => item.type === "bean_ref" && item.from === "bean:egovIdGnrService" && item.to === "bean:mixPrefixSample" && item.property === "strategy"));
+      const traced = COMMANDS.trace({ root, indexDir: join(root, "_workspace", "index"), id: "SampleServiceImpl.insertSample", depth: 3, limit: 20 });
+      assert.ok(traced.items.some((item) => item.leaf.to === "bean:egovIdGnrService" && item.leaf.member === "getNextStringId"), JSON.stringify(traced.items));
+      assert.equal(traced.beans.find((item) => item.id === "bean:mixPrefixSample")?.properties.find((item) => item.name === "prefix")?.value, "SAMPLE-");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   register("ASP.NET Core의 controller route·생성자 DI·트랜잭션 경계를 추출한다", () => {
     const root = mkdtempSync(join(tmpdir(), "ax-indexer-dotnet-"));
     try {

@@ -246,14 +246,19 @@ const COMMANDS = {
       if (paths.length >= limit || level > depth || seen.has(node)) return;
       seen.add(node);
       for (const edge of byFrom.get(node) || []) {
-        const next = [...trail, { to: edge.to, type: edge.type, file: edge.file, line: edge.line }];
+        const next = [...trail, { to: edge.to, type: edge.type, file: edge.file, line: edge.line, ...(edge.member ? { member: edge.member } : {}), ...(edge.property ? { property: edge.property } : {}) }];
         /* 경로에 출발점을 포함해 그대로 읽을 수 있게 한다("A → B → C"). */
         paths.push({ depth: level, path: [start, ...next.map((step) => step.to)], leaf: next.at(-1) });
         walk(edge.to, next, level + 1);
       }
     };
     if (start) walk(start, [], 1);
-    return { query: { id, depth }, resolved_start: start || null, ...cap(paths, limit) };
+    /* 경로에 XML 빈이 나오면 그 정의를 함께 준다 — 프레임워크 클래스의 동작은 설정(property)에만 있다. */
+    const beanIds = new Set(paths.flatMap((item) => item.path).filter((node) => String(node).startsWith("bean:")));
+    const beans = beanIds.size
+      ? (loadIndex(root, "call_graph", indexDir).nodes || []).filter((node) => beanIds.has(node.id)).map(({ id: beanId, class: className, file, line, properties }) => ({ id: beanId, class: className, file, line, properties }))
+      : [];
+    return { query: { id, depth }, resolved_start: start || null, ...cap(paths, limit), ...(beans.length ? { beans } : {}) };
   },
 
   /* SQL id·테이블로 조회 — sql_usage.json은 실측 143MB라 직접 열면 안 된다 */
