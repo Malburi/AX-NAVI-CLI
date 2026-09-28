@@ -23,7 +23,29 @@ import { join } from "node:path";
 import { closeTurn, openTurn, recordAgentEnd, recordAgentStart, recordLine } from "./record.mjs";
 import { unwrittenClaims } from "./claims.mjs";
 import { createApprover } from "./approval.mjs";
-import { modelUnavailableHint } from "./models.mjs";
+import { learnFromError, modelUnavailableHint, startWithLearnedModels } from "./models.mjs";
+
+/*
+ * 이 환경에서 쓸 수 있다고 배워 둔 모델을 프로세스 시작 때 한 번 얹는다.
+ * 자식 claude 가 환경변수로 물려받아 `sonnet` 같은 별칭을 그 모델로 푼다.
+ * 조직·사용자 설정(settings.json 의 env)은 이것보다 우선한다.
+ */
+startWithLearnedModels();
+
+/** 모델을 바꿔 한 번 더 돌려야 한다는 신호. executeAgent 가 받아 다시 부른다. */
+const RETRY_WITH_LEARNED_MODEL = Symbol("retry-with-learned-model");
+
+/**
+ * 한 번 실행하고, 모델이 막혀 다른 모델을 배웠으면 한 번만 다시 실행한다.
+ * @param {Parameters<typeof executeAgentOnce>[0]} args
+ * @returns {Promise<number>}
+ */
+export async function executeAgent(args) {
+  const first = await executeAgentOnce(args, false);
+  if (first !== RETRY_WITH_LEARNED_MODEL) return first;
+  const second = await executeAgentOnce(args, true);
+  return second === RETRY_WITH_LEARNED_MODEL ? 1 : second;
+}
 
 /*
  * "이번 세션 동안 묻지 않음" 기억. 턴마다 executeAgent 가 새로 불리므로 여기 둔다 —
@@ -48,9 +70,10 @@ import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, 
  * @param {AbortSignal} [args.signal]
  * @param {boolean} [args.background]  화면에 찍지 않고 기록에만 담는다 (동시에 도는 작업용)
  * @param {string} [args.title]        되짚기 목록에 뜰 이름. 없으면 요청 첫 줄을 쓴다
- * @returns {Promise<number>} 프로세스 종료 코드
+ * @param {boolean} retried  모델을 바꿔 다시 도는 두 번째 실행인가
+ * @returns {Promise<number | typeof RETRY_WITH_LEARNED_MODEL>} 프로세스 종료 코드
  */
-export async function executeAgent({ root, agentName, agent: preset, prompt, conversation, onCost, onContextSize, onAnswer, onSkillRequest, queuedCount, providerName, signal, background = false, title }) {
+async function executeAgentOnce({ root, agentName, agent: preset, prompt, conversation, onCost, onContextSize, onAnswer, onSkillRequest, queuedCount, providerName, signal, background = false, title }, retried) {
   /*
    * Provider를 먼저 고른다.
    *
@@ -502,6 +525,10 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
   const startedAt = Date.now();
   let failed = false;
   let toolErrors = 0;
+  /** 도구를 한 번이라도 불렀나 — 불렀으면 다시 돌리면 같은 일을 두 번 하게 된다. */
+  let sawTool = false;
+  /** 모델이 막혀 다른 모델로 다시 돌린다. */
+  let retryModel = false;
   /** @type {{ input: number, output: number, cacheRead: number, costUsd: number | null }} */
   const totals = { input: 0, output: 0, cacheRead: 0, costUsd: null };
 
@@ -537,6 +564,7 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
          */
         debug(`${ui.yellow("  ! ")}${ui.dim(event.reason ?? "")}\n`);
       } else if (event.type === "tool_call") {
+        sawTool = true;
         // 자기 버퍼만 비운다 — 서브에이전트 도구 호출이 부모의 문장을 끊으면 안 된다.
         flushText(event.parentId ?? "");
         const tool = toolLabel(event.tool ?? "");
@@ -668,9 +696,27 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         }
       } else if (event.type === "error") {
         flushText();
-        emit(ui.red(`  오류: ${event.reason}`));
-        // 모델을 못 쓰는 환경이면 무엇을 설정하면 되는지까지 알려 준다. 오류만 보면 막힌다.
-        for (const line of modelUnavailableHint(event.reason ?? "") ?? []) emit(ui.dim(line));
+        /*
+         * 이 환경이 모델을 허용하지 않으면, 오류가 알려 준 목록에서 같은 계열의 가장 새 모델을
+         * 골라 한 번 더 돈다. 사용자가 설정을 만질 필요가 없다. 다만 이미 도구를 부른 뒤라면
+         * 다시 돌리지 않는다 — 같은 일을 두 번 하게 된다. 그때는 다음 요청부터 새 모델을 쓴다.
+         */
+        const learned = retried ? null : learnFromError(event.reason ?? "");
+        if (learned) {
+          const picked = Object.values(learned.mapping);
+          const from = learned.rejected ? `${learned.rejected} 를 쓸 수 없어 ` : "요청한 모델을 쓸 수 없어 ";
+          if (!sawTool) {
+            retryModel = true;
+            emit(ui.dim(`  이 환경은 ${from}사용 가능한 모델(${picked.join(", ")})로 다시 실행합니다.`));
+          } else {
+            emit(ui.red(`  오류: ${event.reason}`));
+            emit(ui.dim(`  ${from}다음 요청부터 사용 가능한 모델(${picked.join(", ")})을 씁니다.`));
+          }
+        } else {
+          emit(ui.red(`  오류: ${event.reason}`));
+          // 스스로 풀 수 없으면(목록이 없거나 사용자가 정한 값이 막힘) 무엇을 설정하면 되는지 알려 준다.
+          for (const line of modelUnavailableHint(event.reason ?? "") ?? []) emit(ui.dim(line));
+        }
         failed = true;
       } else if (event.type === "done") {
         /*
@@ -756,16 +802,20 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
      * "확인했다"로 갈음한 것이다. 사용자는 새 리포트인 줄 알고 옛 내용을 본다.
      */
     const claimRoots = discovery.roots.map((r) => r.paths.root).concat(paths.root);
-    const promised = unwrittenClaims(answer, claimRoots, startedAt);
+    const promised = retryModel ? [] : unwrittenClaims(answer, claimRoots, startedAt);
     if (promised.length) {
       emit(
         ui.yellow(`  약속한 산출물 ${promised.length}건이 이번 실행에서 쓰이지 않았습니다.`) +
           ui.dim(` ${promised.join(", ")}`),
       );
     }
-    onAnswer?.(answer);
+    // 모델을 바꿔 다시 돌 첫 시도는 답이 아니다. 대화에 남기지 않는다.
+    if (!retryModel) onAnswer?.(answer);
     await audit.flush();
   }
+
+  // 다시 도는 쪽이 마무리 줄을 찍는다. 여기서 찍으면 한 요청에 두 줄이 남는다.
+  if (retryModel && !controller.signal.aborted) return RETRY_WITH_LEARNED_MODEL;
 
   /*
    * 마무리 한 줄.
