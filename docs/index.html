@@ -292,16 +292,6 @@
   .flow .ai { margin-top: auto; font-size: 12px; font-family: var(--font-mono); color: var(--muted); }
   .flow .ai.none { color: var(--accent-ink); }
 
-  /* ─── 사내 환경 표 ─── */
-  .field { width: 100%; border-collapse: collapse; font-size: 15px; }
-  .field-wrap { overflow-x: auto; border-top: 2px solid var(--ink); }
-  .field th, .field td { text-align: left; vertical-align: top; padding: 16px 18px 16px 0; border-bottom: 1px solid var(--line); }
-  .field th { font-size: 12.5px; font-family: var(--font-mono); color: var(--muted); font-weight: 500; letter-spacing: 0.04em; }
-  .field td:first-child { width: 42%; min-width: 250px; }
-  .field .err { font-family: var(--font-mono); font-size: 13px; color: var(--warn); background: var(--warn-soft); padding: 2px 7px; border-radius: 5px; display: inline; line-height: 2; }
-  .field .ctx { display: block; font-size: 13px; color: var(--muted); margin-top: 4px; }
-  .field td:last-child { color: var(--ink-soft); }
-
   /* ─── 지원 스택 ─── */
   .stacks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 48px; }
   @media (max-width: 820px) { .stacks { grid-template-columns: minmax(0, 1fr); } }
@@ -366,7 +356,6 @@
     <nav class="nav" aria-label="주요 메뉴">
       <a href="#map">코드 지도</a>
       <a href="#safety">안전장치</a>
-      <a href="#field">사내 환경</a>
       <a href="#install">설치</a>
       <a href="site/">문서</a>
       <a class="gh" href="https://github.com/Malburi/AX-NAVI-CLI">GitHub</a>
@@ -572,32 +561,6 @@
         <li><span class="cmd">/impact</span><h3>영향 보기</h3><p>바꾸려는 대상을 쓰는 곳과 위험도를 먼저 확인합니다.</p><span class="ai">호출 그래프 · SQL 사용처</span></li>
         <li><span class="cmd">/modify</span><h3>안전하게 고치기</h3><p>허락을 받아 고치고, 검증까지 마친 뒤 결과를 보고합니다.</p><span class="ai">GO · HOLD · STOP</span></li>
       </ol>
-    </div>
-  </section>
-
-  <section class="sec" id="field">
-    <div class="wrap">
-      <div class="sec-head">
-        <div class="kicker">사내 환경</div>
-        <div>
-          <h2>사내망에서 실제로 부딪힌 것들,<br>이미 겪고 풀어 두었습니다.</h2>
-          <p>게이트웨이, Bedrock, 막힌 포트, 오래된 인코딩. SI 현장의 PC 는 개발자 노트북과 다릅니다.</p>
-        </div>
-      </div>
-      <div class="field-wrap">
-        <table class="field">
-          <thead><tr><th scope="col">현장에서 본 것</th><th scope="col">AX-NAVI 가 하는 일</th></tr></thead>
-          <tbody>
-            <tr><td><span class="err">'claude-sonnet-5' 모델은 사용할 수 없습니다</span><span class="ctx">사내 게이트웨이 · AWS Bedrock</span></td><td>그 환경에서 쓸 수 있는 같은 계열의 가장 새 모델로 바로 다시 실행하고, 연결 대상별로 기억합니다. 회사가 정한 모델이 있으면 그 설정이 우선합니다.</td></tr>
-            <tr><td><span class="err">EALLOWREMOTE</span><span class="ctx">npm 12 의 새 기본값</span></td><td>업그레이드는 설치 파일을 먼저 내려받아 파일로 설치합니다. 주소 설치 차단과 무관합니다.</td></tr>
-            <tr><td><span class="err">connect EACCES</span><span class="ctx">보안 프로그램이 node 의 외부 연결을 막음</span></td><td>내려받기는 PowerShell 로 합니다. 의존성은 사내 npm 저장소(Nexus 등)에서 받습니다.</td></tr>
-            <tr><td><span class="err">running scripts is disabled</span><span class="ctx">PowerShell 실행 정책</span></td><td><code>axnavi.cmd</code> 로 부르면 관리자 권한 없이 바로 실행됩니다.</td></tr>
-            <tr><td><span class="err">EUC-KR · CP949 소스</span><span class="ctx">오래된 JSP · Java</span></td><td>고치는 동안에만 UTF-8 로 바꿨다가 원래 인코딩으로 되돌립니다. 되돌릴 수 없는 파일은 수정을 거부합니다.</td></tr>
-            <tr><td><span class="err">C:\새 폴더\프로젝트</span><span class="ctx">한글 · 공백 경로</span></td><td>그대로 씁니다. 한글 폭을 정확히 계산해 터미널 화면도 깨지지 않습니다.</td></tr>
-            <tr><td><span class="err">GitHub 접속 불가</span><span class="ctx">폐쇄망</span></td><td>설치 파일 하나로 옮겨 설치합니다. Claude 구독만 있으면 API 키도 필요 없습니다.</td></tr>
-          </tbody>
-        </table>
-      </div>
     </div>
   </section>
 
