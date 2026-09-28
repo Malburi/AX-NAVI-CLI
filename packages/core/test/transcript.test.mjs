@@ -321,6 +321,13 @@ test("0건은 0건이라고 한다 — 빈 목록과 실패를 헷갈리면 안 
   assert.equal(summarizeResult("QueryIndex", JSON.stringify({ items: [], total: 0 })), "0건");
 });
 
+test("한글 search 는 텍스트 일치가 0건이어도 기능 후보를 먼저 알린다", () => {
+  const features = { file_count: 5, groups: [{ dir: "src/main/webapp/sample", files: [{ file: "src/main/webapp/sample/egovSampleRegister.jsp" }] }] };
+  assert.equal(summarizeResult("QueryIndex", JSON.stringify({ features, items: [], total: 0 })), "기능 후보 5곳 · 1위 egovSampleRegister.jsp");
+  assert.equal(summarizeResult("QueryIndex", JSON.stringify({ features, items: [{ id: "a" }], total: 3 })), "기능 후보 5곳 · 1위 egovSampleRegister.jsp · 텍스트 일치 3건");
+  assert.equal(summarizeResult("QueryIndex", JSON.stringify({ features: { file_count: 0, groups: [] }, items: [], total: 0 })), "0건", "후보도 없으면 그대로 0건");
+});
+
 test("목록이 아닌 결과는 무엇이 들었는지 키로 알린다", () => {
   const summary = summarizeResult("QueryIndex", JSON.stringify({ tier: "Full", source_file_count: 4003 }));
   assert.match(/** @type {string} */ (summary), /tier/);

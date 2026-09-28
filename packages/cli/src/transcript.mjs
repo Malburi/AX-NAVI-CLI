@@ -339,6 +339,15 @@ function describeQuery(result) {
   }
 
   const total = typeof parsed.total === "number" ? parsed.total : items.length;
+  /*
+   * 한글 search 는 기능 후보(features)가 본론이다. 목록 건수만 보이면 후보가 있는데도 "0건"으로 찍혀
+   * 검색이 실패한 것처럼 보였다(실측, 녹화용 /flow 첫 화면).
+   */
+  const topFeature = parsed.features?.groups?.[0]?.files?.[0]?.file;
+  if (topFeature) {
+    const lead = `기능 후보 ${parsed.features.file_count}곳 · 1위 ${String(topFeature).split("/").at(-1)}`;
+    return total ? `${lead} · 텍스트 일치 ${total}건` : lead;
+  }
   if (total === 0) return "0건";
   const head = items[0] ?? {};
   const first = String(head.id ?? head.name ?? head.from ?? head.file ?? head.sql_id ?? "").split("/").at(-1) ?? "";
