@@ -13,7 +13,7 @@ README 맨 위에 걸 데모입니다. 보여 줄 것은 하나입니다.
 | 저장소 | https://github.com/eGovFramework/egovframe-web-sample |
 | 커밋 | `8f37555` (녹화 시점 고정 — 다시 녹화할 때도 이 커밋) |
 | 흐름 | 샘플 등록 화면의 **등록** 버튼 |
-| axnavi 판 | 인덱서 **1.20.0 이상**(`axnavi doctor`의 인덱서 줄) — Mapper 연결 · XML 트랜잭션 · XML 빈 · 메시지 라벨 검색이 들어간 판. `v0.1.0-alpha.34` 로는 정답지가 재현되지 않는다 |
+| axnavi 판 | 인덱서 **1.20.0 이상**(`axnavi doctor`의 인덱서 줄) — Mapper 연결 · XML 트랜잭션 · XML 빈 · 메시지 라벨 검색이 들어간 판. `v0.1.0-alpha.35` 이상으로 녹화한다 — `v0.1.0-alpha.34` 이하로는 정답지가 재현되지 않는다 |
 
 ```bash
 git clone https://github.com/eGovFramework/egovframe-web-sample.git C:\demo\egov-sample
