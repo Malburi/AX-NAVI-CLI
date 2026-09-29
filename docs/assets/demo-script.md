@@ -94,3 +94,40 @@ agg --font-dir fonts --font-family D2Coding --font-size 16 --idle-time-limit 8  
 - [x] 빨리감기 구간에 실제 시간 표시가 있다 — 화면 바닥 경과 시간
 - [x] 판이 README 의 현재 버전과 같다 — 배너 `v0.1.0-alpha.35`
 - [x] `README.md` 의 데모 GIF 를 걸었다
+
+---
+
+# /modify — 허락받고 고치기
+
+## 요청
+
+`/mode 매번 묻기` → `/modify 카테고리명을 최대 20자까지만 입력되게 해줘`
+
+기본 모드(자동)는 이 정도 수정을 묻지 않고 바로 고친다 — 승인 창을 보여 주려고 매번 묻기로 녹화한다.
+`/mode 매번 묻기` 는 v0.1.0-alpha.36 부터 켜진다(그 전에는 이름의 공백 때문에 "모르는 모드"였다).
+
+## 정답지
+
+| 구분 | 기대 | 근거 |
+|---|---|---|
+| 바뀜 | `form:input path="name"` 의 `maxlength` 50 → 20 | `egovSampleRegister.jsp:134` |
+| 바뀌면 좋음 | `validateSampleVO` 의 `name` 규칙에 `maxlength: 20` (검증기가 지원) | `EgovValidation.js:292` · `:35` |
+| 영향도 | 등록 · 수정이 같은 JSP · VO. DB `NAME VARCHAR(50)` 라 DDL 불필요. 초기 데이터 최대 20자 | `sampledb.sql:3` · 114행 |
+| 안 바뀜 | DDL, SQL 매퍼 | |
+| 화면 | 고치기 전에 바뀌는 줄과 승인 창 | |
+
+서버 검증(`@Size`)은 요청이 "입력되게"라 범위 밖으로 두는 판단도 맞다 — 이 샘플은 id · regUser 도 화면 `maxlength` 만 쓴다.
+
+## 녹화 기록 (2026-09-29)
+
+| 테이크 | 결과 | 버린 이유 |
+|---|---|---|
+| 1 | 실패 | Git Bash 가 환경 변수의 `/modify` 를 `C:/Program Files/Git/modify` 로 바꿈 → 질문은 파일로 넘긴다(`QFILE`) |
+| 2 · 3 | GO · JSP 1줄 | 승인 창 없음(자동 모드 · `/mode 매번 묻기` 가 켜지지 않던 버그), `find /` 로 2분 낭비 → alpha.36 에서 둘 다 고침 |
+| **4** | **GO · JSP + JS** | 사용. 승인 5번(리포트 쓰기 포함), 6분 47초 · $0.78 |
+
+## 편집
+
+`rec/retime2.mjs mod4.cast mod4-edit.cast 14 2,3 "변경 안전성 확인 완료"` — 5번의 승인 중 코드 수정 두 번(JSP · JS)의
+앞뒤만 실제 속도, 나머지 394초를 약 14초로. 최종 보고는 실제 속도 + 8초 정지. 10fps · 44초 · 4.0MB.
+

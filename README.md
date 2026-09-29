@@ -264,6 +264,15 @@ axnavi doctor
 
 파일을 쓰거나 고치거나 명령을 실행하기 전에, 무엇이 바뀌는지 보여 주고 묻습니다.
 
+<details>
+<summary><b>실제 실행 녹화 보기</b> — <code>/modify 카테고리명을 최대 20자까지만 입력되게 해줘</code> (매번 묻기 모드)</summary>
+
+<img src="docs/assets/demo-modify.gif" alt="매번 묻기 모드에서 /modify 로 카테고리명을 20자로 제한하면, 영향도를 확인하고 바뀌는 줄을 보여 주며 승인을 받은 뒤 JSP 와 검증 스크립트를 고치고 GO 를 판정하는 녹화" width="820">
+
+<sub>실제 실행 녹화입니다(v0.1.0-alpha.36 · 6분 47초). 두 번의 코드 수정 승인 장면만 실제 속도이고 나머지는 빨리감았습니다 — 화면 바닥의 경과 시간이 실제 값입니다. 승인은 녹화 스크립트가 "예"를 눌렀고 결과 글자는 편집하지 않았습니다 — 원본 <a href="docs/assets/demo-modify.cast">demo-modify.cast</a></sub>
+
+</details>
+
 ```
 ╭──────╮
 │ 권한 │
