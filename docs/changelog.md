@@ -4,6 +4,7 @@
 
 | 날짜 | 변경 내용 | 대상 | 사유 |
 |------|----------|------|------|
+| 2026-09-29 | **README 첫 화면 개편.** 한 줄 소개("처음 투입된 레거시 프로젝트, 첫날부터 길을 잃지 않게.")·배지·바로가기, 데모 GIF 자리(녹화 전이라 주석), SI 현장 말투로 바꾼 "첫날 하는 질문" 표, 설치부터 `index coverage` 실제 출력까지 "5분 체험", 차별점 4개(나머지 장점은 접음). 5분 체험과 겹치던 "시작하기" 섹션은 뺐다. | README.md | 공개 홍보 준비 — GitHub 첫 화면에서 무엇을 하는 도구인지 30초 안에 보이게. |
 | 2026-09-29 | **"없다"는 대상 파일을 열어 본 뒤에만 쓴다.** logic-tracer 가 `NotEmpty\|NotNull\|Size\|Pattern` grep 0건을 근거로 "SampleVO 에 검증 제약이 없어 @Valid 가 사실상 항상 통과한다"고 보고했는데, 실제로는 전자정부 전용 `@EgovNullCheck` 가 name·description·regUser 에 붙어 있었다(egovframe-web-sample 녹화용 /flow 실측). 실행자 보고 형식과 logic-tracer 에 "이름 목록 grep 0건은 그 이름이 없다는 뜻일 뿐, 기능이 없다고 쓰려면 대상 파일을 직접 연다"를 넣었다. | packages/cli/src/commands.mjs, agents/logic-tracer.md | 녹화용 /flow 실측(오답). |
 | 2026-09-29 | **화면에 보이는 문장은 한국어로.** 페르소나와 스킬 실행 지시문 어디에도 언어 규칙이 없어, 녹화용 /flow 를 세 번 돌리는 동안 매번 리포트를 쓰기 직전 "Now I will write the trace report." 같은 영어 한 줄이 섞였다. 단일 에이전트·지휘자·절차 세 경로의 지시문(`LANGUAGE_RULE`)과 대화형 페르소나에 "진행 설명까지 한국어, 코드·경로·식별자는 원문"을 넣었다. | packages/cli/src/{commands,persona}.mjs | 녹화용 /flow 실측. |
 | 2026-09-29 | **잘린 search 결과도 기능 후보로 요약한다.** 위임 경로는 도구 결과를 2000자에서 자르는데, 한글 search 는 features 블록이 앞에 길어 `total` 이 잘려 나가고 요약이 포기되어 잘린 JSON 원문 56줄이 화면에 찍혔다(녹화용 /flow 실측). 잘린 글자에서 `file_count` 와 1위 파일을 긁어 `기능 후보 N곳 · 1위 <파일>` 로 보인다. | packages/cli/src/transcript.mjs, packages/core/test/transcript.test.mjs | 녹화용 /flow 첫 화면. |
