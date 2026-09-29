@@ -8,7 +8,7 @@ const OUT = process.argv[2] || "raw.cast";
 /* 질문은 파일로 받는다 — Git Bash 가 환경 변수의 "/modify" 를 "C:/Program Files/Git/modify" 로 바꿔 넘겼다(실측). */
 const QUESTION = process.env.QFILE ? readFileSync(process.env.QFILE, "utf8").trim() : "/flow 샘플 등록 화면에서 등록 버튼 누르면 뭐가 실행돼?";
 
-const env = { ...process.env, PATH: `C:\\demo\\tools;${process.env.PATH}`, TERM: "xterm-256color" };
+const env = { ...process.env, PATH: `${process.env.TOOLS || "C:\\demo\\tools"};${process.env.PATH}`, TERM: "xterm-256color" };
 const term = spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-NoExit", "-Command", "function prompt { 'PS C:\\demo\\egov-sample> ' }; Clear-Host"], {
   name: "xterm-256color", cols: COLS, rows: ROWS, cwd: "C:\\demo\\egov-sample", env,
 });

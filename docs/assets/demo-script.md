@@ -101,10 +101,10 @@ agg --font-dir fonts --font-family D2Coding --font-size 16 --idle-time-limit 8  
 
 ## 요청
 
-`/mode 매번 묻기` → `/modify 카테고리명을 최대 20자까지만 입력되게 해줘`
+`/modify 카테고리명을 최대 20자까지만 입력되게 해줘` — 기본 자동 모드 그대로.
 
-기본 모드(자동)는 이 정도 수정을 묻지 않고 바로 고친다 — 승인 창을 보여 주려고 매번 묻기로 녹화한다.
-`/mode 매번 묻기` 는 v0.1.0-alpha.36 부터 켜진다(그 전에는 이름의 공백 때문에 "모르는 모드"였다).
+v0.1.0-alpha.37 부터 자동 모드도 프로젝트 소스 수정은 바뀌는 줄을 보여 주고 묻는다(리포트 쓰기는 묻지 않는다).
+그 전 판의 자동 모드는 이 정도 수정을 묻지 않고 고쳐서, 테이크 4 는 `/mode 매번 묻기` 로 찍었다.
 
 ## 정답지
 
@@ -113,6 +113,7 @@ agg --font-dir fonts --font-family D2Coding --font-size 16 --idle-time-limit 8  
 | 바뀜 | `form:input path="name"` 의 `maxlength` 50 → 20 | `egovSampleRegister.jsp:134` |
 | 바뀌면 좋음 | `validateSampleVO` 의 `name` 규칙에 `maxlength: 20` (검증기가 지원) | `EgovValidation.js:292` · `:35` |
 | 영향도 | 등록 · 수정이 같은 JSP · VO. DB `NAME VARCHAR(50)` 라 DDL 불필요. 초기 데이터 최대 20자 | `sampledb.sql:3` · 114행 |
+| 영향도(있으면 좋음) | 기존 회귀 테스트 `EgovSampleRegisterJspMaxLengthTest` 가 "폼 maxlength ≤ DDL 컬럼폭" 을 검사 — 20 ≤ 50 이라 통과 | upstream `747611b` |
 | 안 바뀜 | DDL, SQL 매퍼 | |
 | 화면 | 고치기 전에 바뀌는 줄과 승인 창 | |
 
@@ -124,10 +125,11 @@ agg --font-dir fonts --font-family D2Coding --font-size 16 --idle-time-limit 8  
 |---|---|---|
 | 1 | 실패 | Git Bash 가 환경 변수의 `/modify` 를 `C:/Program Files/Git/modify` 로 바꿈 → 질문은 파일로 넘긴다(`QFILE`) |
 | 2 · 3 | GO · JSP 1줄 | 승인 창 없음(자동 모드 · `/mode 매번 묻기` 가 켜지지 않던 버그), `find /` 로 2분 낭비 → alpha.36 에서 둘 다 고침 |
-| **4** | **GO · JSP + JS** | 사용. 승인 5번(리포트 쓰기 포함), 6분 47초 · $0.78 |
+| 4 | GO · JSP + JS | 매번 묻기 모드로 찍음(승인 5번, 리포트 쓰기 포함) — alpha.37 이후 기본 모드 녹화로 교체 |
+| **5** | **GO · JSP + JS** | 사용. alpha.37 · 기본 자동 모드 · 승인 2번(소스 수정만) · 6분 43초 · $0.72. `find /` 가 지침에도 불구하고 한 번 나옴(120초 제한, 빨리감기 구간) |
 
 ## 편집
 
-`rec/retime2.mjs mod4.cast mod4-edit.cast 14 2,3 "변경 안전성 확인 완료"` — 5번의 승인 중 코드 수정 두 번(JSP · JS)의
-앞뒤만 실제 속도, 나머지 394초를 약 14초로. 최종 보고는 실제 속도 + 8초 정지. 10fps · 44초 · 4.0MB.
+`rec/retime2.mjs mod5.cast mod5-edit.cast 14 1,2 "변경 내용"` — 소스 수정 승인 두 번(JSP · JS)의 앞뒤만 실제 속도,
+나머지 391초를 약 14초로. 최종 보고는 실제 속도 + 8초 정지. 10fps · 40초 · 4.4MB.
 
