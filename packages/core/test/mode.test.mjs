@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_MODE, MODES, applyMode, modeOf, nextMode } from "../../cli/src/mode.mjs";
+import { DEFAULT_MODE, MODES, applyMode, findMode, modeOf, nextMode } from "../../cli/src/mode.mjs";
 import { createDefaultRegistry } from "../src/tools/builtin/index.mjs";
 
 /** @type {import("@ax-navi/core").AgentDefinition} */
@@ -135,4 +135,13 @@ test("계획 모드는 읽기 도구를 살려 둔다 — 근거 없는 계획�
   for (const need of ["Read", "Grep", "Glob", "Bash", "QueryIndex"]) {
     assert.ok(tools.includes(need), `계획 모드에서 ${need} 까지 막혔다`);
   }
+});
+
+test("/mode 이름은 공백이 든 표시 이름도 받는다 — '매번 묻기' 를 첫 낱말만 읽어 켤 수 없었다", () => {
+  assert.equal(findMode("매번 묻기")?.id, "default");
+  assert.equal(findMode("매번묻기")?.id, "default");
+  assert.equal(findMode("default")?.id, "default");
+  assert.equal(findMode("계획")?.id, "plan");
+  assert.equal(findMode("전부승인")?.id, "trust");
+  assert.equal(findMode("매번"), undefined, "앞 낱말만으로는 고르지 않는다");
 });

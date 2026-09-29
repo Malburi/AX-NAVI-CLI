@@ -41,7 +41,7 @@ import { createTypeahead } from "./typeahead.mjs";
 import { createLineBurst } from "./line-burst.mjs";
 import { renderReplay, replayFrame } from "./replay.mjs";
 import { claudeTranscriptPath, renderClaudeSession } from "./session-replay.mjs";
-import { DEFAULT_MODE, MODES, modeOf, nextMode } from "./mode.mjs";
+import { DEFAULT_MODE, MODES, findMode, modeOf, nextMode } from "./mode.mjs";
 
 const NL = String.fromCharCode(10);
 
@@ -882,9 +882,9 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
        * Shift+Tab 은 터미널이 먼저 가로채면 Node 까지 오지 않는다 — 그럴 때
        * 모드를 바꿀 길이 아예 없어지면 계획 모드를 못 쓴다.
        */
-      const wanted = (rest[0] ?? "").trim();
+      const wanted = argText;
       if (wanted) {
-        const hit = MODES.find((m) => m.id === wanted || m.label === wanted);
+        const hit = findMode(wanted);
         if (!hit) {
           process.stderr.write(`  ${ui.yellow("모르는 모드입니다")} ${ui.dim(`— ${wanted} (${MODES.map((m) => m.label).join(", ")})`)}${NL}`);
           return 2;

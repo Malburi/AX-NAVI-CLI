@@ -57,6 +57,19 @@ export function modeOf(id) {
 }
 
 /**
+ * `/mode <이름>` 의 이름을 모드로. id·표시 이름 모두 받고, 공백은 무시한다.
+ *
+ * 인자를 첫 낱말만 읽어서 "매번 묻기" 는 `/mode 매번 묻기` 로 켤 길이 없었다 — "모르는 모드입니다 — 매번"
+ * (데모 녹화 실측). 그 모드가 켜지지 않은 채 승인 창 없이 고쳐졌다.
+ * @param {string} name
+ * @returns {Mode | undefined}
+ */
+export function findMode(name) {
+  const key = String(name).replace(/\s+/g, "");
+  return MODES.find((m) => m.id === key || m.label.replace(/\s+/g, "") === key);
+}
+
+/**
  * 다음 모드. Shift+Tab 이 이 함수를 돈다.
  * @param {string} id
  * @returns {string}
