@@ -13,9 +13,9 @@ ITO/SI/SM 현장을 위한 AI 개발 내비게이터 — 코드베이스 지도�
 
 [5분 체험](#5분-체험) · [설치](#설치) · [사용법](#사용법) · [지원 스택](#지원-스택)
 
-<!-- TODO: 데모 GIF 녹화 후 주석 해제 — 낯선 프로젝트에서 /flow 한 번으로 화면 → Controller → Service → Mapper → SQL 까지 따라가는 30초
-<img src="docs/assets/demo.gif" alt="AX-NAVI 데모" width="820">
--->
+<img src="docs/assets/demo.gif" alt="처음 보는 전자정부 샘플 프로젝트에서 /flow 한 번으로 등록 버튼부터 Controller · Service · ID 채번 · 트랜잭션 · SQL 까지 따라가는 데모" width="820">
+
+<sub>실제 실행 녹화입니다. 기다리는 구간만 빨리감았고(화면 바닥의 경과 시간이 실제 값) 결과 글자는 편집하지 않았습니다 — 원본 <a href="docs/assets/demo.cast">demo.cast</a></sub>
 
 </div>
 
