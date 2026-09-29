@@ -388,6 +388,21 @@ function scavenge(text) {
   }
   const total = digits ? Number(digits) : null;
 
+  /*
+   * 한글 search 는 features 블록이 앞에 길게 와서 2000자에서 자르면 total 이 잘려 나간다 — 그러면 잘린
+   * JSON 원문 56줄이 화면에 그대로 찍혔다(실측, 녹화용 /flow). 후보 수와 1위 파일은 앞쪽에 있다.
+   */
+  if (text.includes('"features"')) {
+    let count = "";
+    for (const ch of after("file_count")) {
+      if (ch >= "0" && ch <= "9") count += ch;
+      else break;
+    }
+    const fileRaw = after("file");
+    const top = fileRaw.startsWith('"') ? fileRaw.slice(1, fileRaw.indexOf('"', 1)).split("/").at(-1) : "";
+    if (count && top) return `기능 후보 ${count}곳 · 1위 ${top}`;
+  }
+
   const idRaw = after("id");
   const quoted = idRaw.startsWith('"') ? idRaw.slice(1, idRaw.indexOf('"', 1)) : "";
   const first = quoted.split("/").at(-1) ?? "";

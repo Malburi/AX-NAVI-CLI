@@ -328,6 +328,15 @@ test("한글 search 는 텍스트 일치가 0건이어도 기능 후보를 먼�
   assert.equal(summarizeResult("QueryIndex", JSON.stringify({ features: { file_count: 0, groups: [] }, items: [], total: 0 })), "0건", "후보도 없으면 그대로 0건");
 });
 
+test("잘린 search 결과도 기능 후보로 요약한다 — 원문 JSON 을 화면에 쏟지 않는다", () => {
+  const full = JSON.stringify({
+    query: { q: "샘플 등록", kind: null },
+    features: { term_hits: 23, file_count: 7, group_count: 4, groups: [{ dir: "src/main/webapp/sample", score: 11.7, file_count: 2, files: [{ file: "src/main/webapp/sample/egovSampleRegister.jsp", score: 9.9, reasons: ["x".repeat(3000)] }] }] },
+    total: 0, items: [],
+  }, null, 2);
+  assert.equal(summarizeResult("QueryIndex", full.slice(0, 2000)), "기능 후보 7곳 · 1위 egovSampleRegister.jsp");
+});
+
 test("목록이 아닌 결과는 무엇이 들었는지 키로 알린다", () => {
   const summary = summarizeResult("QueryIndex", JSON.stringify({ tier: "Full", source_file_count: 4003 }));
   assert.match(/** @type {string} */ (summary), /tier/);
