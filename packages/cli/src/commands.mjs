@@ -501,6 +501,7 @@ export async function runSkill(root, name, prompt, providerName, ctx = {}) {
     ``,
     `- 절차 자체를 설명하지 마라. 요청을 수행하라.`,
     LANGUAGE_RULE,
+    SEARCH_SCOPE_RULE,
     `- 절차 중 네 역할에 해당하는 부분만 하고, 산출물 경로·형식 규약은 지켜라.`,
     /*
      * 실측(trace-logic, egovframe-web-sample 두 번): 실행자가 "간단 조회 성격"이라며 리포트를 쓰지 않고
@@ -599,6 +600,7 @@ async function runOrchestratorSkill(root, skill, prompt, providerName, ctx = {})
     `프로젝트 루트: ${resolveProjectPaths(root).root}`,
     prompt ? `사용자가 덧붙인 조건: ${prompt}` : `사용자가 덧붙인 조건: 없음`,
     LANGUAGE_RULE,
+    SEARCH_SCOPE_RULE,
     ``,
     `## 이 런타임에서 위임하는 법`,
     ``,
@@ -768,6 +770,7 @@ async function runProcedureSkill(root, skill, prompt, providerName, ctx = {}) {
     `프로젝트 루트: ${paths.root}`,
     prompt ? `사용자가 덧붙인 조건: ${prompt}` : `사용자가 덧붙인 조건: 없음`,
     LANGUAGE_RULE,
+    SEARCH_SCOPE_RULE,
     ``,
     `## 이 런타임에서의 실행 방법`,
     ``,
@@ -823,6 +826,13 @@ async function runProcedureSkill(root, skill, prompt, providerName, ctx = {}) {
  * 리포트를 쓰기 직전에 "Now I will write the trace report." 같은 영어 한 줄이 섞였다(실측).
  */
 export const LANGUAGE_RULE = "- 사용자에게 보이는 모든 문장은 한국어로 쓴다. 도구를 부르기 전의 짧은 진행 설명도 마찬가지다. 코드·경로·식별자는 원문 그대로 둔다.";
+
+/*
+ * 탐색 범위. 실측(safe-modify 녹화 두 번 연속): SampleVO 의 `@EgovNullCheck` 가 어디서 오는지 보려고
+ * `find / -path "*egovframe/rte/ptl/reactive/validation*"` 을 돌려 120초 제한에 걸렸고, 멈추고 다시 가는 데 2분을 썼다.
+ * 프레임워크 jar 안은 소스가 없으니 찾을 것이 없다.
+ */
+export const SEARCH_SCOPE_RULE = "- 파일 탐색은 프로젝트 루트 안에서만 한다. `find /` 처럼 디스크 전체를 뒤지지 마라. 프레임워크·라이브러리(jar) 안의 클래스는 소스가 없으니 '저장소 밖이라 확인하지 못함'으로 보고한다.";
 
 function delegationLines(roots, agentName) {
   if (roots.length <= 1) {

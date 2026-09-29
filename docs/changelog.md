@@ -4,6 +4,7 @@
 
 | 날짜 | 변경 내용 | 대상 | 사유 |
 |------|----------|------|------|
+| 2026-09-29 | **스킬 실행자의 파일 탐색을 프로젝트 안으로.** safe-modify 녹화 두 번 연속, `@EgovNullCheck` 의 출처를 보려고 `find / -path "*egovframe/rte/ptl/reactive/validation*"` 을 돌려 120초 제한에 걸리고 멈추는 데 2분을 썼다. 세 실행 경로 지시문에 "탐색은 프로젝트 루트 안에서만, jar 안의 클래스는 저장소 밖이라 확인하지 못함으로 보고"(`SEARCH_SCOPE_RULE`)를 넣었다. | packages/cli/src/commands.mjs | /modify 데모 녹화. |
 | 2026-09-29 | **`/mode 매번 묻기` 가 켜지지 않던 것을 수정.** `/mode` 가 인자를 첫 낱말만 읽어 공백이 든 표시 이름을 찾지 못했고 "모르는 모드입니다 — 매번" 으로 끝났다 — 매번 묻기를 이름으로 켤 길이 없었다(데모 녹화 실측: 모드가 자동 그대로라 승인 창 없이 고쳐졌다). 인자 전체로 찾고 공백은 무시한다(`findMode`). | packages/cli/src/{mode,repl}.mjs, packages/core/test/mode.test.mjs | /modify 데모 녹화. |
 | 2026-09-29 | **소개 페이지에 실제 실행 녹화 섹션.** 히어로 바로 아래 "실제 실행" 섹션에 데모 GIF 를 터미널 틀로 걸고, 녹화 조건(v0.1.0-alpha.35 · 답까지 1분 35초 · $0.22 · 대기 구간만 빨리감기 · 결과 무편집)과 원본 녹화 · 대본 링크를 붙였다. 메뉴에 "데모". 히어로의 터미널은 "예시 프로젝트" 모형이라 그대로 둔다. | docs/index.html | 공개 홍보 준비 — README 와 같은 녹화를 소개 페이지에도. |
 | 2026-09-29 | **데모 GIF 녹화.** egovframe-web-sample(`8f37555`)에서 alpha.35 로 `/flow` 를 실제로 돌려 녹화했다 — 가상 터미널(120×50)에 한 글자씩 입력하며 asciicast 로 기록(`rec/record.mjs`), 시간 축만 편집(`rec/retime.mjs`: 준비 구간 잘라냄 · 타이핑 1.5배 · 대기 93초 → 약 10초, 결과 글자 무편집), agg + D2Coding 으로 렌더. 25초 · 1.3MB, 마지막 화면에 정답지 7단계와 `@EgovNullCheck` 가 한꺼번에 보인다. 편집 전 원본 `demo.cast` 를 함께 두고 README 에 "실제 실행 녹화, 대기 구간만 빨리감기"를 적었다. 첫 테이크(120×32)는 ID 채번 줄이 위로 밀려 버렸다. | README.md, docs/assets/{demo.gif,demo.cast,demo-script.md,rec/} | 공개 홍보 준비. |
