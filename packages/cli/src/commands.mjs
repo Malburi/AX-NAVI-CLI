@@ -500,6 +500,7 @@ export async function runSkill(root, name, prompt, providerName, ctx = {}) {
     `아래는 그 스킬의 오케스트레이션 절차이며 **참고 자료**다.`,
     ``,
     `- 절차 자체를 설명하지 마라. 요청을 수행하라.`,
+    LANGUAGE_RULE,
     `- 절차 중 네 역할에 해당하는 부분만 하고, 산출물 경로·형식 규약은 지켜라.`,
     /*
      * 실측(trace-logic, egovframe-web-sample 두 번): 실행자가 "간단 조회 성격"이라며 리포트를 쓰지 않고
@@ -591,6 +592,7 @@ async function runOrchestratorSkill(root, skill, prompt, providerName, ctx = {})
     `아래 절차(${skill.name})를 **지금 이 프로젝트에 실제로 수행**하라. 절차를 설명하지 마라.`,
     `프로젝트 루트: ${resolveProjectPaths(root).root}`,
     prompt ? `사용자가 덧붙인 조건: ${prompt}` : `사용자가 덧붙인 조건: 없음`,
+    LANGUAGE_RULE,
     ``,
     `## 이 런타임에서 위임하는 법`,
     ``,
@@ -759,6 +761,7 @@ async function runProcedureSkill(root, skill, prompt, providerName, ctx = {}) {
     `아래 절차(${skill.name})를 **지금 이 프로젝트에 실제로 수행**하라. 절차를 설명하지 마라.`,
     `프로젝트 루트: ${paths.root}`,
     prompt ? `사용자가 덧붙인 조건: ${prompt}` : `사용자가 덧붙인 조건: 없음`,
+    LANGUAGE_RULE,
     ``,
     `## 이 런타임에서의 실행 방법`,
     ``,
@@ -809,6 +812,12 @@ async function runProcedureSkill(root, skill, prompt, providerName, ctx = {}) {
  * @param {string} agentName
  * @returns {string[]}
  */
+/*
+ * 화면에 보이는 진행 문장의 언어. 규칙이 어디에도 없어서, 녹화용 /flow 를 세 번 돌리는 동안 매번
+ * 리포트를 쓰기 직전에 "Now I will write the trace report." 같은 영어 한 줄이 섞였다(실측).
+ */
+export const LANGUAGE_RULE = "- 사용자에게 보이는 모든 문장은 한국어로 쓴다. 도구를 부르기 전의 짧은 진행 설명도 마찬가지다. 코드·경로·식별자는 원문 그대로 둔다.";
+
 function delegationLines(roots, agentName) {
   if (roots.length <= 1) {
     return ["- 이 런타임에 없는 기능(서브에이전트 호출 등)은 네가 직접 수행하고, 그 사실만 짧게 밝혀라."];
