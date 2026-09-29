@@ -12,6 +12,7 @@
  */
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 import {
   ENCODING_TOOLS,
   LOGIN_ERROR,
@@ -84,6 +85,39 @@ export async function foregroundAgents(input) {
       permissionDecision: "allow",
       permissionDecisionReason: "axnavi: 이 실행에서는 서브에이전트를 포그라운드로 돌린다",
       updatedInput: { ...ti, run_in_background: false },
+    },
+  };
+}
+
+/** 파일을 고치는 도구. 자동 모드에서도 프로젝트 소스를 건드리면 묻는다(sourceEditGate). */
+export const SOURCE_EDIT_TOOLS = "Edit|Write|MultiEdit|NotebookEdit";
+/* axnavi 가 쓰는 산출물 자리 — 리포트 · 세션 · 하네스. 여기까지 물으면 harness-init 이 다시 승인 창투성이가 된다. */
+const ARTIFACT_DIRS = new Set(["_workspace", ".axnavi", ".claude"]);
+
+/**
+ * 자동 모드의 파일 수정을 승인 창으로 돌린다 — 대상이 프로젝트 소스일 때만.
+ *
+ * 자동 모드는 Claude Code 분류기가 판단해, 작고 되돌리기 쉬운 수정은 묻지 않고 허용한다. 그러면 canUseTool 에
+ * 오지 않아 바뀌는 줄을 보여 줄 기회가 없다(/modify 데모 녹화 실측). PreToolUse 에서 "ask" 를 돌려주면 판단이
+ * canUseTool 로 넘어와 우리 승인 화면(바뀌는 줄 · 이번 세션 허용)이 그린다. 산출물 자리와 루트 CLAUDE.md 는 묻지
+ * 않는다. 프로젝트 밖 파일은 묻는다.
+ * @param {any} input  PreToolUse 훅 입력(tool_input · cwd)
+ * @param {string} [cwd]
+ * @returns {import("@anthropic-ai/claude-agent-sdk").HookJSONOutput}
+ */
+export function sourceEditGate(input, cwd) {
+  const ti = input?.tool_input ?? {};
+  const raw = typeof ti.file_path === "string" ? ti.file_path : typeof ti.notebook_path === "string" ? ti.notebook_path : "";
+  if (!raw) return {};
+  const root = resolve(cwd || input?.cwd || process.cwd());
+  const rel = relative(root, resolve(root, raw));
+  const inside = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+  if (inside && (ARTIFACT_DIRS.has(rel.split(/[\\/]/)[0] ?? "") || rel.toLowerCase() === "claude.md")) return {};
+  return {
+    hookSpecificOutput: {
+      hookEventName: /** @type {const} */ ("PreToolUse"),
+      permissionDecision: /** @type {const} */ ("ask"),
+      permissionDecisionReason: "axnavi: 자동 모드여도 프로젝트 소스 수정은 바뀌는 줄을 보여 주고 묻는다",
     },
   };
 }
@@ -186,6 +220,9 @@ export class AgentSdkProvider {
      * 없으면 selectProvider 가 애초에 이 연결을 고르지 않는다(claude -p 연결로 간다).
      */
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
+    /* 자동 모드의 소스 수정 승인(sourceEditGate). 꺼져 있으면 훅 목록을 비운다 — 항목을 빼는 스프레드는 훅 배열의 타입 추론을 깬다. */
+    /** @type {import("@anthropic-ai/claude-agent-sdk").HookCallback[]} */
+    const editGate = spec.askSourceEdits && spec.permissionMode === "auto" ? [async (input) => sourceEditGate(input, this.options.cwd)] : [];
     const stream = query({
       prompt,
       options: {
@@ -208,6 +245,7 @@ export class AgentSdkProvider {
         hooks: {
           PreToolUse: [
             { matcher: "Agent", hooks: [foregroundAgents] },
+            { matcher: SOURCE_EDIT_TOOLS, hooks: editGate },
             // EUC-KR 등 레거시 인코딩 파일은 도구가 도는 동안만 UTF-8 로 바꿨다가 원래 인코딩으로 되돌린다.
             { matcher: ENCODING_TOOLS, hooks: [async (input) => encodingPreToolUse(input)] },
           ],

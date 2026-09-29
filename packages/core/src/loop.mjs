@@ -108,6 +108,7 @@ export async function* runAgent({ provider, agent, registry, gateway, ctx, userP
         label: agent.name,
         ...(agent.allowDelegation ? { allowDelegation: true } : {}),
         ...(agent.permissionMode ? { permissionMode: agent.permissionMode } : {}),
+        ...(agent.askSourceEdits ? { askSourceEdits: true } : {}),
         ...(conversation?.providerSessionId ? { resumeFrom: conversation.providerSessionId } : {}),
       },
       userPrompt,

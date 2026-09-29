@@ -56,6 +56,8 @@ export interface SessionSpec {
   readonly allowDelegation?: boolean;
   /** 권한 판단 방식. "auto" 면 Claude Code 자동 모드(분류기)가 판단한다. Agent SDK 연결만 쓴다. */
   readonly permissionMode?: "default" | "auto";
+  /** 자동 판단이어도 프로젝트 소스 파일 수정은 승인을 받는다. 산출물(_workspace·.axnavi·.claude·CLAUDE.md)은 빼고. */
+  readonly askSourceEdits?: boolean;
   /*
    * 이어갈 이전 대화의 Provider 쪽 식별자.
    *

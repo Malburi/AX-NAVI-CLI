@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { answerQuestions, foregroundAgents, sdkMcpServers } from "../../provider-agent-sdk/src/index.mjs";
+import { answerQuestions, foregroundAgents, sdkMcpServers, sourceEditGate } from "../../provider-agent-sdk/src/index.mjs";
 import { toolBriefing } from "../../provider-claude-cli/src/index.mjs";
 
 test("내장 질문을 우리 질문 화면으로 묻고, 답에는 레이블만 넣는다", async () => {
@@ -101,5 +101,25 @@ test("SDK 가 띄우는 MCP 서버의 스킬 요청이 axnavi 화면 쪽에 닿�
   } finally {
     await bridge.dispose();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("자동 모드여도 프로젝트 소스 수정은 승인 창으로 돌린다 — 산출물 자리와 루트 CLAUDE.md 는 빼고", () => {
+  const root = process.platform === "win32" ? "C:\\demo\\proj" : "/demo/proj";
+  const gate = (/** @type {any} */ input) => /** @type {any} */ (sourceEditGate(input, root));
+  const ask = (/** @type {string} */ file) => gate({ tool_input: { file_path: file } }).hookSpecificOutput?.permissionDecision ?? "-";
+  assert.equal(ask("src/main/webapp/a.jsp"), "ask");
+  assert.equal(ask(join(root, "src", "B.java")), "ask");
+  assert.equal(ask("sub/CLAUDE.md"), "ask", "하위 폴더의 CLAUDE.md 는 소스와 같게 본다");
+  assert.equal(ask(join(root, "..", "other.txt")), "ask", "프로젝트 밖은 묻는다");
+  assert.equal(ask(join(root, "_workspace", "reports", "x.md")), "-");
+  assert.equal(ask(".axnavi/sessions/s.json"), "-");
+  assert.equal(ask(".claude/agents/a.md"), "-");
+  assert.equal(ask("CLAUDE.md"), "-");
+  assert.equal(gate({ tool_input: { notebook_path: "nb/a.ipynb" } }).hookSpecificOutput?.permissionDecision, "ask");
+  assert.deepEqual(gate({ tool_input: {} }), {});
+  if (process.platform === "win32") {
+    assert.equal(ask("c:\\DEMO\\PROJ\\_workspace\\r.md"), "-", "윈도 경로는 대소문자를 가리지 않는다");
+    assert.equal(ask("C:\\demo\\proj\\src\\a.jsp"), "ask");
   }
 });

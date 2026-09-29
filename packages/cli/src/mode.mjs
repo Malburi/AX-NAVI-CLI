@@ -29,7 +29,7 @@ export const MODES = [
    * 판단해 묻지 않았다(거부 0). 평소 Claude Code 를 자동 모드로 쓰는 사람에게는 이쪽이 같은 경험이다.
    * Agent SDK 연결에서만 효과가 있다(permissionMode). 다른 연결은 매번 묻기와 같다.
    */
-  { id: "auto", label: "자동", hint: "안전한 작업은 분류기가 판단해 묻지 않습니다" },
+  { id: "auto", label: "자동", hint: "소스 수정은 묻고, 그 밖의 안전한 작업은 분류기가 판단해 묻지 않습니다" },
   { id: "default", label: "매번 묻기", hint: "Claude Code 가 승인이 필요하다고 본 작업을 모두 묻습니다" },
   /*
    * 계획 모드의 강제는 절반이다. Write·Edit 은 도구 목록에서 빠지지만,
@@ -120,7 +120,13 @@ const PLAN_POLICY = [
 export function applyMode(agent, modeId) {
   /* 권한 판단 방식. 매번 묻기만 Claude Code 기본 모드이고, 나머지 모드는 자동 판단 위에 얹는다. */
   const permissionMode = modeId === "default" ? "default" : "auto";
-  agent = { ...agent, permissionMode };
+  /*
+   * 자동 모드여도 프로젝트 소스 수정은 묻는다. 분류기는 작고 되돌리기 쉬운 수정을 묻지 않고 허용해서,
+   * README 가 내세우는 "고치기 전에 바뀌는 줄을 보여 주고 허락을 받는다" 가 기본 모드에서는 일어나지
+   * 않았다(/modify 데모 녹화 실측: 자동 모드 두 번 모두 승인 창 없이 JSP 를 고쳤다). 읽기 · 안전한 명령 ·
+   * 산출물 쓰기는 지금처럼 묻지 않는다. 빠름 · 전부승인은 사람이 덜 묻기를 고른 모드라 그대로 둔다.
+   */
+  agent = { ...agent, permissionMode, ...(modeId === "auto" ? { askSourceEdits: true } : {}) };
   if (modeId === "plan") {
     /*
      * 쓰기 도구를 뺀다. 그게 전부다.
