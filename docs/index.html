@@ -269,6 +269,12 @@
   .measure span { font-size: 13.5px; color: var(--muted); }
   .note { margin-top: 14px; font-size: 13px; color: var(--muted); }
 
+  /* ─── 실제 실행 녹화 ─── */
+  .demo { max-width: 780px; margin: 0 auto; }
+  .demo img { display: block; width: 100%; height: auto; }
+  .demo-note { max-width: 780px; margin-inline: auto; }
+  .demo-note a { color: var(--accent-ink); }
+
   /* ─── 두 칸 (설명 + 터미널) ─── */
   .split { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: clamp(28px, 5vw, 64px); align-items: start; }
   @media (max-width: 980px) { .split { grid-template-columns: minmax(0, 1fr); } }
@@ -369,6 +375,7 @@
       <span class="brand-ver">v0.1.0-alpha.35</span>
     </a>
     <nav class="nav" aria-label="주요 메뉴">
+      <a href="#demo">데모</a>
       <a href="#map">코드 지도</a>
       <a href="#safety">안전장치</a>
       <a href="#skills">스킬</a>
@@ -421,6 +428,23 @@
 <span class="t-dim">  42s · $0.21</span>
 <span class="t-cy">AX-NAVI</span> <span class="t-dim">&gt;</span> <span class="caret"></span></pre>
       </figure>
+    </div>
+  </section>
+
+  <section class="sec" id="demo">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker">실제 실행</div>
+        <div>
+          <h2>처음 보는 전자정부 프로젝트에서,<br>질문 한 줄로 SQL 까지.</h2>
+          <p>공개 샘플 <a href="https://github.com/eGovFramework/egovframe-web-sample">egovframe-web-sample</a> 에서 <code>/flow</code> 를 한 번 돌린 녹화입니다. 등록 버튼부터 Controller · Service · SQL 까지 따라가고, Java 코드에는 없고 XML 설정에만 있는 ID 채번 규칙과 트랜잭션도 짚습니다.</p>
+        </div>
+      </div>
+      <figure class="term demo" style="margin-inline:auto">
+        <div class="term-bar"><i></i><i></i><i></i><span class="title">axnavi — egovframe-web-sample</span></div>
+        <img src="assets/demo.gif" width="976" height="1142" loading="lazy" alt="axnavi 를 띄우고 /flow 로 샘플 등록 버튼의 흐름을 물으면, 인덱스를 질의하고 원문을 읽은 뒤 화면 · Controller · Service(ID 채번 SAMPLE-00001, 트랜잭션 context-transaction.xml) · SQL 흐름과 확인했는데 없는 것 · 확인하지 못한 것을 보고하는 녹화">
+      </figure>
+      <p class="note demo-note">실제 실행 녹화 · v0.1.0-alpha.35 · 답까지 1분 35초 · $0.22. 기다리는 구간만 빨리감았고(화면 바닥의 경과 시간이 실제 값) 결과 글자는 편집하지 않았습니다 — <a href="assets/demo.cast">원본 녹화</a> · <a href="https://github.com/Malburi/AX-NAVI-CLI/blob/main/docs/assets/demo-script.md">녹화 대본과 정답지</a></p>
     </div>
   </section>
 
