@@ -772,7 +772,7 @@ function pluginMuteSettings() {
   }
   try {
     const file = join(mkdtempSync(join(tmpdir(), "axnavi-settings-")), "settings.json");
-    writeFileSync(file, JSON.stringify(delegatedSettings(names, FOREGROUND_HOOK_COMMAND, ENCODING_HOOK_COMMAND), null, 2), "utf8");
+    writeFileSync(file, JSON.stringify(delegatedSettings(names, FOREGROUND_HOOK_COMMAND, ENCODING_HOOK_COMMAND, DISK_SCAN_HOOK_COMMAND), null, 2), "utf8");
     mutePath = file;
   } catch {
     // 임시 폴더에 못 쓰면 설정 없이 돈다. 안내문의 "뒤에서 돌리지 마라" 가 남은 방어선이다.
@@ -791,6 +791,9 @@ function pluginMuteSettings() {
  */
 const FOREGROUND_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "foreground-agent-hook.mjs");
 const FOREGROUND_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${FOREGROUND_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
+/* 디스크 전체를 뒤지는 셸 명령을 막는 훅(disk-scan-guard.mjs 를 명령으로 돌린다). */
+const DISK_SCAN_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "disk-scan-guard.mjs");
+const DISK_SCAN_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${DISK_SCAN_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
 /* EUC-KR 등 레거시 인코딩 파일을 읽고 고칠 때 인코딩을 지키는 훅(legacy-encoding.mjs). 뒤에 pre|post 를 붙인다. */
 const ENCODING_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "legacy-encoding-hook.mjs");
 const ENCODING_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${ENCODING_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
@@ -848,14 +851,16 @@ export function encodingHookEvents(hooks) {
  * @param {string[]} pluginNames  끌 호스트 플러그인
  * @param {string} hookCommand
  * @param {string} [encodingCommand]  인코딩 보존 훅 명령(뒤에 pre|post 를 붙인다)
+ * @param {string} [diskScanCommand]  디스크 전체 검색을 막는 훅 명령
  */
-export function delegatedSettings(pluginNames, hookCommand, encodingCommand) {
+export function delegatedSettings(pluginNames, hookCommand, encodingCommand, diskScanCommand) {
   return {
     ...(pluginNames.length ? { enabledPlugins: Object.fromEntries(pluginNames.map((n) => [n, false])) } : {}),
     hooks: {
       PreToolUse: [
         { matcher: "Agent", hooks: [{ type: "command", command: hookCommand }] },
         ...(encodingCommand ? [{ matcher: ENCODING_TOOLS, hooks: [{ type: "command", command: `${encodingCommand} pre` }] }] : []),
+        ...(diskScanCommand ? [{ matcher: "Bash|PowerShell", hooks: [{ type: "command", command: diskScanCommand }] }] : []),
       ],
       ...(encodingCommand ? encodingHookEvents((phase) => [{ type: "command", command: `${encodingCommand} ${phase}` }]) : {}),
     },

@@ -28,6 +28,7 @@ import {
   translateEvent,
 } from "../../provider-claude-cli/src/index.mjs";
 import { encodingCleanup, encodingPostToolUse, encodingPreToolUse, restoreAll } from "../../provider-claude-cli/src/legacy-encoding.mjs";
+import { diskScanDecision } from "../../provider-claude-cli/src/disk-scan-guard.mjs";
 import { noAnswerText } from "../../cli/src/mcp/answers.mjs";
 
 /**
@@ -246,6 +247,8 @@ export class AgentSdkProvider {
           PreToolUse: [
             { matcher: "Agent", hooks: [foregroundAgents] },
             { matcher: SOURCE_EDIT_TOOLS, hooks: editGate },
+            // 디스크 전체를 뒤지는 셸 명령은 실행 전에 막는다(disk-scan-guard.mjs).
+            { matcher: "Bash|PowerShell", hooks: [async (input) => diskScanDecision(/** @type {any} */ (input).tool_input)] },
             // EUC-KR 등 레거시 인코딩 파일은 도구가 도는 동안만 UTF-8 로 바꿨다가 원래 인코딩으로 되돌린다.
             { matcher: ENCODING_TOOLS, hooks: [async (input) => encodingPreToolUse(input)] },
           ],
