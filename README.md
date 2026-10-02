@@ -48,7 +48,7 @@ ITO/SI/SM 현장을 위한 AI 개발 내비게이터 — 코드베이스 지도�
 Claude 구독 로그인(`claude`)만 돼 있으면 API 키도 추가 비용도 필요 없습니다.
 
 ```bash
-npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI-v2/tar.gz/refs/tags/v2.0.0-alpha.1
+npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI-v2/tar.gz/refs/tags/v2.0.0-alpha.2
 
 cd /path/to/레거시-프로젝트
 axnavi index build      # 1) 코드베이스 지도 만들기 — AI 를 쓰지 않아 비용 0
@@ -74,7 +74,7 @@ v1(0.1.0-alpha.38)을 평범한 Claude Code 와 같은 과제로 108번 비교�
 
 - **인덱스 2.0 — 문자열 디스패치와 "위치로 읽는 화면"을 잇습니다.** `TransData.do?worker=빈&action=메서드` 처럼 문자열로 부르는 호출과, 결과를 `rtInfo[1][2]` 처럼 위치로 읽는 화면을 설정 없이 찾아 백엔드 메서드 · SQL 컬럼 순서와 잇습니다. `query-index impact` 한 번(0.4초, AI 0원)으로 짝 저장소 화면까지 "이 컬럼을 빼면 어디가 깨지는지"가 나옵니다. 이런 메서드를 더 이상 죽은 코드로 보지 않습니다.
 - **런타임 안전.** 소스 수정 승인이 Edit 뿐 아니라 셸 명령(`python -c` · `sed -i` · `>` …)에도 걸리고, 세 실행 경로(Agent SDK · claude -p · API 키) 모두에 적용됩니다. 턴이 끝나면 승인 없이 바뀐 파일을 보여 주고 되돌릴지 묻고, UTF-8 로 바뀐 EUC-KR 파일은 손실 없이 되돌려 씁니다. 고친 뒤 SELECT 순서가 바뀌었는데 위치로 읽는 화면이 남아 있으면 런타임이 HOLD 로 알립니다.
-- **가벼운 실행 경로.** 인덱스 신선도는 런타임이 확인하고, 영향도 · 수정 요청이면 인덱스로 계산한 사전 영향도를 먼저 넣습니다. 저장소마다 띄우던 서브에이전트와 리포트 강제를 걷었습니다(리포트는 `/report` · `--report`).
+- **가벼운 실행 경로.** 인덱스 신선도는 런타임이 확인하고, 영향도 · 수정 요청이면 인덱스로 계산한 사전 영향도를 먼저 넣습니다. 저장소마다 띄우던 서브에이전트와 리포트 강제를 걷었습니다(리포트는 `/report` · `--report`). 고친 뒤 평가는 결정적 검사(재영향도 · 검증 명령 · 런타임 HOLD)가 기본이고, LLM 평가는 DDL · 트랜잭션 · 인증 · 데이터 변경 같은 위험한 변경에서만 한 번 돕니다.
 
 **같은 과제 재측정 (방식마다 3회 평균)**
 
@@ -84,8 +84,8 @@ v1(0.1.0-alpha.38)을 평범한 Claude Code 와 같은 과제로 108번 비교�
 | 실제 레거시: "안 쓰는 컬럼이니 빼줘" (실제로는 24곳이 위치로 읽음) | 3/3 화면 깨뜨림 | 2/3 화면 깨뜨림 | **0/3 — 24곳을 보여 주고 멈춤** |
 | 실제 레거시: jar 안 디스패처를 거치는 흐름 추적 | 정답 | 정답 · $0.44 | 정답 · $0.22 |
 | 공개 샘플: 등록 버튼부터 SQL 까지 (7단계) | 7단계 0/3(트랜잭션 · 채번 놓침) · $0.06 | 7단계 1/3 · $0.25 | **7단계 3/3 · $0.14** |
-| 대형 공개 저장소: 입력 길이 제한 수정 | 화면만 · $0.07 | $1.99 · 15분 | $1.43 · 10분 |
-| 백 · 프론트 분리: 상세 화면에 수정 일시 추가 | 정답 · $0.30 | 정답 · $4.45 · 23분 | 정답 · $2.30 · 15분 |
+| 대형 공개 저장소: 입력 길이 제한 수정 | 화면만 · $0.07 | $1.99 · 15분 | $0.74 · 5분 |
+| 백 · 프론트 분리: 상세 화면에 수정 일시 추가 | 정답 · $0.30 | 정답 · $4.45 · 23분 | 정답 · $1.36 · 7분 |
 
 한 저장소 안의 단순 질문은 여전히 평범한 Claude Code 가 더 쌉니다(v2 도 2~3배). v2 의 쓸모는 **다른 저장소 · 문자열 호출 · 위치로 읽는 결과처럼 코드만 봐서는 안 보이는 영향**에 있습니다. 측정 조건과 칸별 결과는 [docs/changelog.md](docs/changelog.md) 의 2026-10-02 항목에 있습니다.
 
@@ -121,7 +121,7 @@ v1(0.1.0-alpha.38)을 평범한 Claude Code 와 같은 과제로 108번 비교�
 - [지원 스택](#지원-스택)
 - [Claude Code 안에서 쓰기](#claude-code-안에서-쓰기)
 
-현재 버전 **v2.0.0-alpha.1**
+현재 버전 **v2.0.0-alpha.2**
 
 ---
 
@@ -139,7 +139,7 @@ v1(0.1.0-alpha.38)을 평범한 Claude Code 와 같은 과제로 108번 비교�
 ### 인터넷이 되는 PC
 
 ```bash
-npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI-v2/tar.gz/refs/tags/v2.0.0-alpha.1
+npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI-v2/tar.gz/refs/tags/v2.0.0-alpha.2
 ```
 
 git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm i -g github:…` 형식은 쓰지 마세요.
@@ -148,7 +148,7 @@ git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm
 `connect EACCES` 가 나면 보안 프로그램이 npm 의 외부 연결을 막는 경우입니다. 파일로 받아 설치합니다.
 
 ```powershell
-Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI-v2/tar.gz/refs/tags/v2.0.0-alpha.1" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
+Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI-v2/tar.gz/refs/tags/v2.0.0-alpha.2" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
 npm i -g "$env:TEMP\axnavi.tgz"
 ```
 
@@ -164,7 +164,7 @@ npm i -g C:\경로\axnavi-2.0.0-alpha.1.tgz --omit=optional
 
 > **배포 담당자** — 태그를 체크아웃한 깨끗한 폴더에서 `npm pack` 으로 만듭니다.
 > ```powershell
-> git checkout v2.0.0-alpha.1
+> git checkout v2.0.0-alpha.2
 > npm pack    # axnavi-2.0.0-alpha.1.tgz
 > ```
 
