@@ -538,6 +538,27 @@ const COMMANDS = {
     return { query: { table }, ...cap(shaped, limit), referenced_by: referencedBy };
   },
 
+  /*
+   * 문자열 디스패치 — `TransData.do?worker=빈&action=메서드` 처럼 화면이 문자열로 서버 메서드를 부르는 구조.
+   * 규칙(어느 파라미터가 빈 · 메서드인지)과, 찾는 값이 든 호출 · 그 호출이 이어지는 메서드를 돌려준다.
+   * 디스패처 클래스가 jar 안이라 소스가 없어도 이걸로 "화면에서 X 를 부르면 서버에서 뭐가 도나"를 바로 안다.
+   */
+  dispatch({ root, indexDir, q, limit }) {
+    const index = loadIndex(root, "dispatch", indexDir);
+    const needle = String(q || "").toLowerCase();
+    const calls = (index.calls || []).filter((call) => !needle
+      || Object.values(call.params || {}).some((value) => String(value).toLowerCase() === needle)
+      || String(call.resolved?.method_id || "").toLowerCase().endsWith(`.${needle}`));
+    const methods = [...new Set(calls.map((call) => call.resolved?.method_id).filter(Boolean))];
+    return {
+      query: { q: q || null },
+      rules: index.rules || [],
+      resolved_methods: methods,
+      ...cap(calls.map(({ file, line, function: fn, endpoint, params, callback, resolved }) => ({ file, line, function: fn, endpoint, params, callback, ...(resolved ? { resolved } : {}) })), limit),
+      note: "짝 저장소의 호출은 그 저장소 인덱스의 dispatch 에 있다. 어느 화면이 이 메서드를 부르는지 저장소를 넘어 보려면 impact --id 를 쓴다.",
+    };
+  },
+
   /* 데드 코드 후보 (실측 38MB — 페이지 단위로만 준다) */
   dead({ root, indexDir, file, limit }) {
     const index = loadIndex(root, "dead_code", indexDir);
@@ -681,6 +702,7 @@ function printHelp() {
   endpoint    [--path <경로>]                HTTP 엔드포인트
   transaction [--id <심볼>] [--file <경로>]  트랜잭션 경계
   dead        [--file <경로>]                데드 코드 후보
+  dispatch    [--q <빈·action 값>]          문자열 디스패치 규칙 · 호출 · 이어지는 메서드
 
   공통: --limit N (기본 ${DEFAULT_LIMIT}, 최대 ${MAX_LIMIT}). 응답에 total·truncated가 함께 온다.
         --index-dir <dir>  인덱스 위치 (기본 <root>/_workspace/index).

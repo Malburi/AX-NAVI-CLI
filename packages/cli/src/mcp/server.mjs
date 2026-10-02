@@ -157,7 +157,8 @@ const TOOLS = [
     description:
       "AX-NAVI 결정론적 인덱스에 질의한다. 인덱스 JSON을 직접 열지 말고 이 도구를 써라 " +
       "(대형 레거시에서 sql_usage.json은 143MB까지 커진다). " +
-      "명령: summary, impact, search, symbol, callers, callees, trace, sql, table, column, endpoint, transaction, schema, dead. " +
+      "명령: summary, impact, dispatch, search, symbol, callers, callees, trace, sql, table, column, endpoint, transaction, schema, dead. " +
+      "dispatch(q=빈 이름·action 값)는 `*.do?worker=…&action=…` 같은 문자열 디스패치의 규칙과 이어지는 서버 메서드를 준다. " +
       "impact(sql=SQL id[, column=컬럼] 또는 id=메서드)는 바꾸면 영향받는 곳을 저장소를 넘어 돌려준다 — 코드 호출자 + 문자열 디스패치로 부르는 화면 + 그 화면이 결과를 위치(rtInfo[1][2])로 읽는지와 컬럼을 빼면 무엇을 읽게 되는지. 영향도 · 수정 전에는 이것부터 부른다. " +
       "column(name=컬럼명)은 그 DB 컬럼을 보여 주는 화면 그리드 열과 SQL 을 준다 — 컬럼 변경의 화면 영향. " +
       "업무 용어로 찾을 때는 search 를 먼저 쓴다 — 나머지 명령은 코드 식별자·파일명으로만 걸려서 한글 용어가 안 맞는다(실측: symbol '로그인' 0건, search '로그인' 384건). " +

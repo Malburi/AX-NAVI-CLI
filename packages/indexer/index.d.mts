@@ -104,7 +104,7 @@ export interface CappedResult<T = unknown> {
 
 export type QueryCommand =
   | "symbol" | "callers" | "callees" | "trace" | "sql" | "table"
-  | "endpoint" | "transaction" | "schema" | "dead" | "summary" | "impact" | "column" | "search";
+  | "endpoint" | "transaction" | "schema" | "dead" | "summary" | "impact" | "column" | "search" | "dispatch";
 
 export declare const COMMANDS: Record<QueryCommand, (args: QueryArgs) => unknown>;
 

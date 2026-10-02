@@ -11,7 +11,7 @@ import { COMMANDS } from "../../../../indexer/index.mjs";
 
 const COMMAND_NAMES = /** @type {const} */ ([
   "summary", "impact", "search", "symbol", "callers", "callees", "trace", "sql",
-  "table", "endpoint", "transaction", "schema", "dead", "column",
+  "table", "endpoint", "transaction", "schema", "dead", "column", "dispatch",
 ]);
 
 /** @type {ToolHandler} */
