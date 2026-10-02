@@ -36,11 +36,12 @@ import {
   detectAdapters,
 } from "./adapters/registry.mjs";
 import { extractNexacro } from "./adapters/nexacro.mjs";
+import { extractDispatchCalls, extractResultKeys, inferDispatchRules, resolveCall, selectColumns } from "./index/dispatch.mjs";
 
-export const INDEXER_VERSION = "1.20.0"; // 유니코드 이스케이프 메시지 파일과 JSP 의 spring:message 참조를 화면 용어로 푼다.
+export const INDEXER_VERSION = "2.0.0"; // 문자열 디스패치(worker·action → 빈 메서드)와 결과를 위치로 읽는 화면을 잇고, SELECT 컬럼 순서를 남긴다.
 
 /* AI edge patch에서 허용하는 관계 종류. analyzer는 노드를 새로 만들 수 없고 기존 노드 사이의 관계만 보강한다. */
-const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect"]);
+const AI_PATCH_EDGE_TYPES = new Set(["call", "inject", "inherit", "reflect", "dispatch"]);
 /*
  * `_analysis_input.json`의 digest 상한.
  * analyzer는 대형 index를 직접 읽지 못하므로, 인덱서가 이미 메모리에 갖고 있는 사실을
@@ -316,13 +317,36 @@ function isIncluded(rel, includePaths) {
   return includePaths.some((scope) => !scope || rel === scope || rel.startsWith(`${scope}/`));
 }
 
+/*
+ * 빌드 결과물 이름이면서 업무 폴더 이름으로도 흔한 것. 이름만 보고 빼면 업무 코드가 빠진다 —
+ * 실측(xu25-client): `html/script/js/back/demand/target/demand_target_view.js`(수요조사 '대상자' 화면)가
+ * `target` 이라는 이유로 인덱스에서 빠져, 영향도 24곳 중 1곳을 놓쳤다. 빌드 설정 파일 옆이거나
+ * 안에 빌드 흔적이 있을 때만 빌드 결과물로 본다.
+ */
+const AMBIGUOUS_BUILD_DIRS = new Set(["target", "build", "dist", "out", "bin", "obj"]);
+const BUILD_MANIFESTS = /^(?:pom\.xml|build\.gradle(?:\.kts)?|settings\.gradle(?:\.kts)?|package\.json|build\.xml|Makefile|.*\.(?:csproj|vbproj|sln|fsproj))$/i;
+const BUILD_MARKERS = new Set(["classes", "maven-status", "generated-sources", "generated-test-sources", "test-classes", "Debug", "Release", "tmp", "libs", "reports", "intermediates"]);
+function looksLikeBuildOutput(parent, name) {
+  try {
+    if (readdirSync(parent).some((item) => BUILD_MANIFESTS.test(item))) return true;
+    return readdirSync(join(parent, name)).some((item) => BUILD_MARKERS.has(item) || /\.(?:jar|war|class|dll|pdb|exe|map)$/i.test(item));
+  } catch {
+    return true;
+  }
+}
+
+function isExcludedDir(parent, name) {
+  if (!EXCLUDED_DIRS.has(name)) return false;
+  return AMBIGUOUS_BUILD_DIRS.has(name) ? looksLikeBuildOutput(parent, name) : true;
+}
+
 function listFiles(root, includePaths = [""], config = null) {
   const output = [];
   const excluded = [];
   function walk(dir, relDir = "") {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (EXCLUDED_DIRS.has(entry.name)) continue;
+        if (isExcludedDir(dir, entry.name)) continue;
         if (relDir === "plugins" && entry.name === "AX-Harness") continue;
         walk(join(dir, entry.name), join(relDir, entry.name));
         continue;
@@ -363,7 +387,7 @@ function discoverUnsupportedFiles(root, includePaths = [""]) {
   function walk(dir, relDir = "") {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (EXCLUDED_DIRS.has(entry.name)) continue;
+        if (isExcludedDir(dir, entry.name)) continue;
         if (relDir === "plugins" && entry.name === "AX-Harness") continue;
         walk(join(dir, entry.name), join(relDir, entry.name));
         continue;
@@ -447,6 +471,16 @@ function loadConfig(root, configArg) {
      * 받는 config가 바로 이 객체라 여기 없으면 두 함수 모두 항상 undefined만 본다.
      */
     vendor_exclude: config.vendor_exclude, test_exclude: config.test_exclude,
+    /*
+     * 문자열 디스패치 규칙. 화면이 `/TransData.do?worker=빈&action=메서드` 처럼 부르는 구조는 호출 모양에서
+     * 대부분 추론하지만(inferDispatchRules), 추론이 못 하는 프로젝트를 위해 직접 적을 수 있게 둔다.
+     * 예: [{ "endpoint": "/TransData.do", "bean_param": "worker", "method_param": "action", "method_template": "do{Action}" }]
+     */
+    dispatch_rules: Array.isArray(config.dispatch_rules)
+      ? config.dispatch_rules
+        .filter((item) => item && item.endpoint && item.bean_param && item.method_param)
+        .map((item) => ({ endpoint: String(item.endpoint), bean_param: String(item.bean_param), method_param: String(item.method_param), method_template: String(item.method_template || "do{Action}"), source: "config" }))
+      : [],
   };
 }
 
@@ -1964,7 +1998,8 @@ function extractSql(text, clean, rel, methods) {
     }
     if (!namespace && !sqlStatementType(match[3])) continue;
     const id = statementId(match[2]);
-    sqls.push({ id, ...shortId(match[2]), file: rel, line: atLine(match.index), type: match[1].toLowerCase(), tables: [...new Set(sqlTables(match[3]))], text_preview: match[3].replace(/\s+/g, " ").trim().slice(0, 240), ...(callable ? { procedure: callable } : {}), origin: "deterministic-indexer", confidence: "HIGH" });
+    const mapperColumns = match[1].toLowerCase() === "select" ? selectColumns(match[3]) : [];
+    sqls.push({ id, ...shortId(match[2]), file: rel, line: atLine(match.index), type: match[1].toLowerCase(), tables: [...new Set(sqlTables(match[3]))], text_preview: match[3].replace(/\s+/g, " ").trim().slice(0, 240), ...(mapperColumns.length ? { columns: mapperColumns } : {}), ...(callable ? { procedure: callable } : {}), origin: "deterministic-indexer", confidence: "HIGH" });
     relations.push(...extractSqlRelations(match[3], { sql_id: id, file: rel, line: atLine(match.index) }));
     if (namespace) usages.push({ sql_id: id, file: rel, line: atLine(match.index), method: id, evidence: "MyBatis mapper namespace + statement id", origin: "deterministic-indexer", confidence: "HIGH" });
   }
@@ -1990,7 +2025,9 @@ function extractSql(text, clean, rel, methods) {
     const type = sqlStatementType(statement) || (procedure ? "call" : null);
     if (!type) continue;
     const line = atLine(block.index);
-    sqls.push({ id, file: rel, line, type, tables: [...new Set(sqlTables(statement))], text_preview: statement.replace(/\s+/g, " ").trim().slice(0, 240), ...(procedure ? { procedure } : {}), origin: "deterministic-indexer", confidence: "HIGH" });
+    /* 결과를 위치로 읽는 화면(rtInfo[1][2])이 몇 번째 컬럼을 읽는지 풀려면 SELECT 순서가 있어야 한다. */
+    const containerColumns = type === "select" ? selectColumns(statement) : [];
+    sqls.push({ id, file: rel, line, type, tables: [...new Set(sqlTables(statement))], text_preview: statement.replace(/\s+/g, " ").trim().slice(0, 240), ...(containerColumns.length ? { columns: containerColumns } : {}), ...(procedure ? { procedure } : {}), origin: "deterministic-indexer", confidence: "HIGH" });
     relations.push(...extractSqlRelations(statement, { sql_id: id, file: rel, line }));
   }
   const annotation = /@(Query|Select|Insert|Update|Delete)\s*\(\s*(["'])([\s\S]*?)\2\s*\)/gi;
@@ -2961,8 +2998,15 @@ function analyzeFile(file, root, config) {
     ...gridAndTerms(text, file.rel, symbolFacts, repx),
     messageRefs: extractMessageRefs(text, file.rel),
     messageLabels: extractMessageLabels(text, file.rel),
+    /* 화면의 문자열 디스패치 호출과 그 콜백이 결과를 읽는 자리(index/dispatch.mjs). */
+    dispatchCalls: DISPATCH_CALL_EXT.has(ext) ? extractDispatchCalls(clean, file.rel, symbolFacts.methods) : [],
+    /* 서버 메서드가 쿼리 결과를 내보내는 이름(`dataSet.set("rtInfo", …)`). */
+    resultKeys: RESULT_KEY_EXT.has(ext) ? extractResultKeys(clean, symbolFacts.methods) : [],
   };
 }
+
+const DISPATCH_CALL_EXT = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".vue", ".jsp", ".jspf", ".jspx", ".html", ".htm", ".asp", ".aspx", ".xjs"]);
+const RESULT_KEY_EXT = new Set([".java", ".kt", ".kts", ".cs"]);
 
 /* 그리드 열과 업무 용어. 그리드 머리 글자도 라벨 용어가 된다(필드 이름을 주인으로). */
 /*
@@ -3697,6 +3741,7 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
    * 예전에는 _meta.edge_count만 중복 포함 배열 길이로 기록돼 실제 edges 배열과 어긋났고
    * (validator_checks가 count 불일치로 FAIL), in-degree도 같은 관계를 여러 번 세고 있었다.
    */
+  const dispatch = linkDispatch(facts, options, config, springBeanByName, nodeByOwnerId, nodes, edges);
   const uniqueEdges = unique(edges, (item) => `${item.from}:${item.to}:${item.type}`);
   /* 짝 저장소 함수는 실제로 이어진 것만 노드로 남긴다(전부 넣으면 짝 저장소 함수 수천 개가 여기 그래프를 채운다). */
   if (externalBySimple.size) {
@@ -3705,7 +3750,14 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
   }
   const { inDegree } = degreeMaps(nodes, uniqueEdges);
   /* 데드 코드 후보는 전 Tier에서 계산한다. Full 전용이면 Standard 분석이 유지보수 위험을 볼 근거를 잃는다. */
-  const unusedMethods = deadCodeCandidates(nodes, inDegree, uniqueEdges, endpoints);
+  const deadCandidates = deadCodeCandidates(nodes, inDegree, uniqueEdges, endpoints);
+  /*
+   * 디스패치 규칙이 닿는 메서드는 호출이 코드에 없어도 죽은 코드가 아니다. 규칙에 맞는 이름인데 이번에 이어진
+   * 호출이 없으면 "디스패치로 불릴 수 있음" 으로 따로 둔다 — v1 은 이것을 죽은 코드로 내 axnavi 가 삭제를 진행했다.
+   */
+  const dispatchReachable = dispatchReachableMethod(dispatch.rules, springBeanByName);
+  const unusedMethods = deadCandidates.filter((item) => !dispatchReachable(item.id));
+  const dispatchUnlinked = deadCandidates.filter((item) => dispatchReachable(item.id)).map((item) => ({ id: item.id, file: item.file, line: item.line, reason: "디스패치 규칙으로 불릴 수 있는 메서드 — 이번 인덱스에서 이어진 호출은 없음(짝 저장소 인덱스를 먼저 만들면 이어진다)" }));
   /*
    * _meta 9필드는 이 저장소의 계약이다(docs/index-spec.md, validator_checks._meta_field_issues).
    * files_scanned/files_total은 analyzer_index_summary가 "분석 커버리지 N/M" 줄로 렌더한다.
@@ -3783,7 +3835,8 @@ function aggregate(facts, options, config, generatedAt, sourceFileCount, latestM
     unmatched_endpoints: endpoints.filter((item) => !matchedEndpoints.has(item.id)).map((item) => item.id),
     unmatched_consumers: consumers.filter((item) => !matchedConsumers.has(item.id)).map((item) => item.id),
   };
-  if (unusedMethods.length) output.dead_code = { _meta: common, unused_methods: unusedMethods, unused_sql_ids: [], unused_jsps: [] };
+  if (unusedMethods.length || dispatchUnlinked.length) output.dead_code = { _meta: common, unused_methods: unusedMethods, unused_sql_ids: [], unused_jsps: [], ...(dispatchUnlinked.length ? { dispatch_unlinked: dispatchUnlinked } : {}) };
+  if (dispatch.calls.length || dispatch.rules.length || dispatch.result_keys.length) output.dispatch = { _meta: { ...common, rule_count: dispatch.rules.length, call_count: dispatch.calls.length }, ...dispatch };
   const clientIndex = deriveClientIndex(facts, nodes, options.root);
   if (clientIndex) output.client_index = { _meta: common, ...clientIndex };
   const beanClassById = new Map(facts.flatMap((item) => item.springBeans || []).map((item) => [item.id, item.className]));
@@ -3913,7 +3966,7 @@ function deriveDataFlow(endpoints, edges, sqls, usages, nodes, beanClassById) {
   }
   const calleesOf = new Map();
   for (const edge of edges) {
-    if (edge.type !== "call") continue;
+    if (edge.type !== "call" && edge.type !== "dispatch") continue;
     const list = calleesOf.get(edge.from) || [];
     list.push(edge.to);
     calleesOf.set(edge.from, list);
@@ -4019,6 +4072,76 @@ function preferConcrete(candidates) {
   if (candidates.length < 2 || !candidates.some((item) => item.abstract)) return candidates;
   const concrete = candidates.filter((item) => !item.abstract);
   return concrete.length ? concrete : candidates;
+}
+
+/*
+ * 문자열 디스패치를 잇는다.
+ *
+ * 1) 규칙: 설정(dispatch_rules) + 호출 모양에서 추론(빈 이름 · 메서드가 실제로 있어야 규칙이 된다).
+ * 2) 이 저장소의 호출과 짝 저장소(pair_config)의 호출을 규칙으로 풀어 빈 클래스의 메서드에 `dispatch` 엣지를 단다.
+ *    짝 저장소 호출은 그쪽 인덱스(dispatch.json)를 읽는다 — 짝 저장소 인덱스가 먼저 있어야 한다.
+ * 3) 결과: 규칙 · 호출(해석 결과 포함) · 결과 이름. query-index 의 impact 가 이것으로 화면까지 따라간다.
+ */
+function linkDispatch(facts, options, config, springBeanByName, nodeByOwnerId, nodes, edges) {
+  const own = facts.flatMap((item) => item.dispatchCalls || []);
+  const resultKeys = facts.flatMap((item) => item.resultKeys || []);
+  /** 짝 저장소의 호출 — 라벨을 붙여 둔다. */
+  const partnerCalls = [];
+  for (const link of pairConfig(options.root)?.partners || []) {
+    const index = readJson(join(link.partner_root, "_workspace", "index", "dispatch.json"), null);
+    if (!index?.calls) continue;
+    const label = basename(String(link.partner_root).replace(/[\\/]+$/, ""));
+    for (const call of index.calls) partnerCalls.push({ ...call, repo: label });
+  }
+  const beanClass = (id) => springBeanByName.get(id)?.className || null;
+  const hasMethod = (cls, name) => nodeByOwnerId.has(`${cls}\u0000${name}`);
+  const inferred = inferDispatchRules([...own, ...partnerCalls], beanClass, hasMethod);
+  const rules = [...(config.dispatch_rules || []), ...inferred.filter((rule) => !(config.dispatch_rules || []).some((c) => c.endpoint === rule.endpoint && c.bean_param === rule.bean_param && c.method_param === rule.method_param))];
+  const resolve1 = (call) => {
+    const hit = resolveCall(call, rules);
+    if (!hit) return null;
+    const cls = beanClass(hit.bean);
+    const target = cls ? (nodeByOwnerId.get(`${cls}\u0000${hit.method}`) || [])[0] : null;
+    return { bean: hit.bean, method: hit.method, ...(target ? { method_id: target.id } : {}) };
+  };
+  const nodeIds = new Set(nodes.map((item) => item.id));
+  const calls = own.map((call) => {
+    const resolved = resolve1(call);
+    if (resolved?.method_id) {
+      const from = call.function_id && nodeIds.has(call.function_id) ? call.function_id : `dispatch:${call.file}:${call.line}`;
+      edges.push({ from, to: resolved.method_id, type: "dispatch", file: call.file, line: call.line, evidence: `${call.endpoint} ${Object.entries(call.params).map(([k, v]) => `${k}=${v}`).join("&")}`, origin: "deterministic-indexer", confidence: "HIGH" });
+    }
+    return resolved ? { ...call, resolved } : call;
+  });
+  const partnerLinks = [];
+  for (const call of partnerCalls) {
+    const resolved = resolve1(call);
+    if (!resolved?.method_id) continue;
+    const id = `ext:${call.repo}:${call.file}:${call.line}`;
+    if (!nodeIds.has(id)) {
+      nodes.push({ id, type: "external_function", file: call.file, line: call.line, source: "external", workspace: `partner:${call.repo}`, origin: "deterministic-indexer", confidence: "HIGH" });
+      nodeIds.add(id);
+    }
+    edges.push({ from: id, to: resolved.method_id, type: "dispatch", file: call.file, line: call.line, evidence: `${call.repo}: ${call.endpoint}`, origin: "deterministic-indexer", confidence: "HIGH" });
+    partnerLinks.push({ repo: call.repo, file: call.file, line: call.line, method_id: resolved.method_id });
+  }
+  return { rules, calls, result_keys: resultKeys, partner_links: partnerLinks };
+}
+
+/* 디스패치 규칙이 닿을 수 있는 메서드인가 — 빈으로 등록된 클래스의, 규칙 이름 모양에 맞는 공개 메서드. */
+function dispatchReachableMethod(rules, springBeanByName) {
+  if (!rules.length) return () => false;
+  const beanClasses = new Set([...springBeanByName.values()].map((bean) => bean.className));
+  const patterns = [...new Set(rules.map((rule) => rule.method_template))].map((template) => {
+    const [pre = "", post = ""] = template.split(/\{action\}|\{Action\}/i);
+    const upper = /\{Action\}/.test(template);
+    return new RegExp(`^${pre}${upper ? "[A-Z]" : "[A-Za-z_]"}\\w*${post}$`);
+  });
+  return (id) => {
+    const parts = String(id).split(".");
+    const name = parts.at(-1);
+    return beanClasses.has(parts.slice(0, -1).join(".")) && patterns.some((re) => re.test(name));
+  };
 }
 
 function deadCodeCandidates(nodes, inDegree, edges, endpoints) {
@@ -4522,6 +4645,7 @@ function validateOutput(name, value) {
     ui_flow: ["_meta", "screens", "events", "datasets", "transactions"],
     client_index: ["_meta", "type", "js_count", "domain_structure", "sample_mappings", "jquery_versions"],
     data_flow: ["_meta", "chains"],
+    dispatch: ["_meta", "rules", "calls", "result_keys", "partner_links"],
   }[name] || [];
   const missing = required.filter((key) => !(key in value));
   if (missing.length) throw new Error(`${name}.json 필수 필드 누락: ${missing.join(", ")}`);
@@ -4580,7 +4704,7 @@ export function buildIndex(options) {
       globalMeta.ai_enrichment = { applied_at: generatedAt, applied: 0, rejected: 0, error: error.message, patch: slash(relative(root, stalePatch)) };
     }
   }
-  const managed = new Set(["symbols", "call_graph", "sql_usage", "transactions", "external_io", "env_branches", "schema", "api_contract", "dead_code", "ui_flow", "client_index", "data_flow", "glossary", "ui_columns"]);
+  const managed = new Set(["symbols", "call_graph", "sql_usage", "transactions", "external_io", "env_branches", "schema", "api_contract", "dead_code", "ui_flow", "client_index", "data_flow", "glossary", "ui_columns", "dispatch"]);
   for (const name of managed) {
     const path = join(indexDir, `${name}.json`);
     /*

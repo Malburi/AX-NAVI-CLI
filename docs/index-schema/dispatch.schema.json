@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "dispatch.json",
+  "description": "문자열 디스패치(화면이 worker·action 류 파라미터로 서버 빈 메서드를 부르는 구조)와 결과 소비. indexer 2.0.0 부터. 짝 저장소의 호출은 그 저장소 기준 경로라 근거 경로 검증 대상이 아니다.",
+  "type": "object",
+  "required": ["_meta", "rules", "calls", "result_keys", "partner_links"],
+  "properties": {
+    "_meta": { "$ref": "_meta.schema.json" },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["endpoint", "bean_param", "method_param", "method_template", "source"],
+        "properties": {
+          "endpoint": { "type": "string" },
+          "bean_param": { "type": "string" },
+          "method_param": { "type": "string" },
+          "method_template": { "type": "string" },
+          "source": { "type": "string", "enum": ["config", "inferred"] },
+          "support": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "calls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "params", "reads"],
+        "properties": {
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "function": { "type": ["string", "null"] },
+          "function_id": { "type": ["string", "null"] },
+          "endpoint": { "type": ["string", "null"] },
+          "params": { "type": "object", "additionalProperties": { "type": "string" } },
+          "callback": { "type": ["string", "null"] },
+          "reads": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["line", "text"],
+              "properties": {
+                "key": { "type": ["string", "null"] },
+                "row": { "type": ["integer", "null"] },
+                "col": { "type": ["integer", "null"] },
+                "name": { "type": ["string", "null"] },
+                "line": { "type": "integer" },
+                "text": { "type": "string" },
+                "via": { "type": "string" }
+              }
+            }
+          },
+          "resolved": {
+            "type": "object",
+            "required": ["bean", "method"],
+            "properties": { "bean": { "type": "string" }, "method": { "type": "string" }, "method_id": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "result_keys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["method", "key", "sql_id", "line"],
+        "properties": { "method": { "type": "string" }, "key": { "type": "string" }, "sql_id": { "type": "string" }, "line": { "type": "integer" } }
+      }
+    },
+    "partner_links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["repo", "file", "line", "method_id"],
+        "properties": { "repo": { "type": "string" }, "file": { "type": "string" }, "line": { "type": "integer" }, "method_id": { "type": "string" } }
+      }
+    }
+  }
+}
