@@ -124,7 +124,8 @@ export function orchestratorInstruction({ skill, prompt, projectRoot, roots, pre
     SEARCH_SCOPE_RULE,
     FRESH_RULE,
     EDIT_RULE,
-    reportRule(reportOn),
+    /* 오케스트레이터는 서브에이전트끼리 리포트 파일로 결과를 넘긴다(impact_ → safety_). 그건 절차대로 쓴다. */
+    `- 절차가 서브에이전트끼리 넘기는 중간 산출물(\`_workspace/reports/*\`)은 절차대로 쓴다. 최종 보고는 답으로 한다${reportOn ? " — 답은 런타임이 리포트로도 저장한다" : ""}.`,
     "",
     "## 이 런타임에서 위임하는 법",
     "- 서브에이전트는 절차가 꼭 요구할 때만 띄운다. 직접 할 수 있는 확인은 직접 한다 — 서브에이전트마다 시간과 비용이 몇 배로 든다.",
@@ -203,4 +204,16 @@ export function inlineInstruction({ skill, agentBody, request, precomputed, repo
     skill.body,
     "</스킬 절차>",
   ].join("\n");
+}
+
+/**
+ * 실행자에게 줄 스킬 본문. SKILL.md 에 `<!-- cli:executor -->` … `<!-- /cli:executor -->` 구간이 있으면 그것만 준다.
+ * 그 밖의 본문은 플러그인에서 오케스트레이터가 서브에이전트를 부르는 절차라, 실행자 본인에게 주면 자기를 호출하라는
+ * 지시를 읽고 헷갈리고 토큰만 든다. 구간이 없으면 본문 전체를 준다(옛 스킬과 호환).
+ * @param {string} body
+ * @returns {string}
+ */
+export function executorBody(body) {
+  const m = /<!--\s*cli:executor\s*-->([\s\S]*?)<!--\s*\/cli:executor\s*-->/.exec(body);
+  return m ? (m[1] ?? "").trim() : body;
 }

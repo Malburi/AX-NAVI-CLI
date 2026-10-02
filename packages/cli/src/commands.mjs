@@ -27,7 +27,7 @@ import {
   resolveProjectPaths,
 } from "../../core/src/index.mjs";
 import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, sessionReport, ui } from "./runtime.mjs";
-import { agentInstruction, inlineInstruction, orchestratorInstruction, procedureInstruction } from "./skill-prompt.mjs";
+import { agentInstruction, executorBody, inlineInstruction, orchestratorInstruction, procedureInstruction } from "./skill-prompt.mjs";
 import { PRECOMPUTE_SKILLS, precomputeImpact } from "./precompute.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
@@ -241,7 +241,7 @@ export async function inlineSkill(name, request, root = process.cwd()) {
     agentBody = `(${agentName} 지침을 읽지 못했다 — 스킬 절차대로 수행하라)`;
   }
   const precomputed = PRECOMPUTE_SKILLS.has(skill.name) ? precomputeImpact(resolveProjectPaths(root).root, request) : null;
-  return inlineInstruction({ skill: { name: skill.name, body }, agentBody, request, precomputed, reportOn: sessionReport() });
+  return inlineInstruction({ skill: { name: skill.name, body: resolveSkillPaths(executorBody(skill.body)) }, agentBody, request, precomputed, reportOn: sessionReport() });
 }
 
 /* ---------- index ---------- */
@@ -509,7 +509,7 @@ export async function runSkill(root, name, prompt, providerName, ctx = {}) {
   const precomputed = PRECOMPUTE_SKILLS.has(skill.name) ? precomputeImpact(projectRoot, prompt) : null;
   if (precomputed) process.stderr.write(ui.dim(`  사전 영향도를 인덱스로 계산해 넣었습니다${NEWLINE}`));
   const instruction = agentInstruction({
-    skill: { name: skill.name, body: resolveSkillPaths(skill.body) },
+    skill: { name: skill.name, body: resolveSkillPaths(executorBody(skill.body)) },
     agentName, prompt, projectRoot, roots, precomputed, reportOn: sessionReport(),
   });
 
