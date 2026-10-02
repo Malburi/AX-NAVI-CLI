@@ -148,6 +148,8 @@ test("/mode 이름은 공백이 든 표시 이름도 받는다 — '매번 묻�
 
 test("자동 모드만 소스 수정을 묻는다 — 매번 묻기는 원래 묻고, 빠름·전부승인은 덜 묻기를 고른 모드다", () => {
   const agent = /** @type {any} */ ({ systemPrompt: "x", role: { allowMutations: true } });
-  assert.equal(applyMode(agent, "auto").askSourceEdits, true);
-  for (const id of ["default", "vibe", "trust"]) assert.ok(!applyMode(agent, id).askSourceEdits, id);
+  assert.equal(applyMode(agent, "auto").guardSource, "ask");
+  assert.equal(applyMode(agent, "default").guardSource, "ask");
+  assert.equal(applyMode(agent, "plan").guardSource, "deny");
+  for (const id of ["vibe", "trust"]) assert.ok(!applyMode(agent, id).guardSource, id);
 });

@@ -27,7 +27,8 @@ import { toTier } from "../llm/tier.mjs";
  * @property {string[]} warnings
  * @property {boolean} [allowDelegation]  서브에이전트를 띄워도 되는 실행인가 (오케스트레이터 전용)
  * @property {"default" | "auto"} [permissionMode]  권한 판단 방식(세션 모드가 정한다). Agent SDK 연결만 쓴다
- * @property {boolean} [askSourceEdits]  자동 판단이어도 프로젝트 소스 수정은 묻는다(세션 모드가 정한다)
+ * @property {"ask" | "deny"} [guardSource]  프로젝트 소스 쓰기(Edit·Write 와 셸 명령)를 묻거나 막는다(세션 모드가 정한다)
+ * @property {string[]} [sourceRoots]  소스로 볼 프로젝트 루트들(실행이 정한다). 없으면 작업 폴더
  */
 
 /** 부수효과를 내는 도구. frontmatter가 이 중 하나라도 선언하면 쓰기 역할로 본다. */

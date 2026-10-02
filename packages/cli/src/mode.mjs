@@ -36,7 +36,7 @@ export const MODES = [
    * Bash 는 `echo > file` 처럼 쓸 수 있고 그걸 런타임이 가려낼 수 없다.
    * 명령어를 글자로 보고 막는 것은 새는 검사라 하지 않는다 — 대신 그 사실을 적는다.
    */
-  { id: "plan", label: "계획", hint: "고치지 않고 계획부터 냅니다", caveat: "Bash 는 지침으로만 막습니다" },
+  { id: "plan", label: "계획", hint: "고치지 않고 계획부터 냅니다", caveat: "쓰기로 인식하지 못한 Bash 명령은 지침으로만 막습니다" },
   { id: "vibe", label: "빠름", hint: "영향도·안전 게이트를 건너뛰고 바로 수행합니다", caveat: "전부 지침입니다" },
   /*
    * 승인 창을 끄는 모드. 오래 걸리는 초기화를 믿고 맡길 때 쓴다 — 감사 기록은 그대로 남는다.
@@ -104,7 +104,7 @@ const PLAN_POLICY = [
   "## 계획 모드",
   "사용자가 계획 모드를 골랐다. 파일을 고치지 말고, 무엇을 어떻게 바꿀지를 먼저 내놓는다.",
   "조사·분석은 제한 없이 한다 — 근거 없는 계획은 계획이 아니다.",
-  "Bash 로도 파일을 고치지 않는다. 리다이렉션·mv·rm·sed -i 같은 것은 쓰지 마라 — 그건 런타임이 막아 주지 않는다.",
+  "Bash 로도 파일을 고치지 않는다. 리다이렉션·mv·rm·sed -i 로 소스를 쓰는 명령은 런타임이 거부한다.",
   "계획에는 고칠 파일·줄, 순서, 검증 방법을 넣는다.",
 ].join(NEWLINE);
 
@@ -126,7 +126,12 @@ export function applyMode(agent, modeId) {
    * 않았다(/modify 데모 녹화 실측: 자동 모드 두 번 모두 승인 창 없이 JSP 를 고쳤다). 읽기 · 안전한 명령 ·
    * 산출물 쓰기는 지금처럼 묻지 않는다. 빠름 · 전부승인은 사람이 덜 묻기를 고른 모드라 그대로 둔다.
    */
-  agent = { ...agent, permissionMode, ...(modeId === "auto" ? { askSourceEdits: true } : {}) };
+  /*
+   * v2: 셸 명령(python -c · sed -i · > …)으로 소스를 쓰는 것도 같은 가드가 잡는다. v1 은 Edit·Write 만 봐서
+   * 실제 레거시 벤치에서 python -c 로 24곳을 승인 창 없이 고쳤다. 계획 모드는 묻지 않고 막는다.
+   */
+  const guard = modeId === "plan" ? "deny" : modeId === "auto" || modeId === "default" ? "ask" : null;
+  agent = { ...agent, permissionMode, ...(guard ? { guardSource: /** @type {"ask" | "deny"} */ (guard) } : {}) };
   if (modeId === "plan") {
     /*
      * 쓰기 도구를 뺀다. 그게 전부다.

@@ -12,7 +12,7 @@
  */
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import {
   ENCODING_TOOLS,
   LOGIN_ERROR,
@@ -29,6 +29,7 @@ import {
 } from "../../provider-claude-cli/src/index.mjs";
 import { encodingCleanup, encodingPostToolUse, encodingPreToolUse, restoreAll } from "../../provider-claude-cli/src/legacy-encoding.mjs";
 import { diskScanDecision } from "../../provider-claude-cli/src/disk-scan-guard.mjs";
+import { writeGuardDecision } from "../../core/src/safety/write-guard.mjs";
 import { noAnswerText } from "../../cli/src/mcp/answers.mjs";
 
 /**
@@ -90,37 +91,30 @@ export async function foregroundAgents(input) {
   };
 }
 
-/** 파일을 고치는 도구. 자동 모드에서도 프로젝트 소스를 건드리면 묻는다(sourceEditGate). */
-export const SOURCE_EDIT_TOOLS = "Edit|Write|MultiEdit|NotebookEdit";
-/* axnavi 가 쓰는 산출물 자리 — 리포트 · 세션 · 하네스. 여기까지 물으면 harness-init 이 다시 승인 창투성이가 된다. */
-const ARTIFACT_DIRS = new Set(["_workspace", ".axnavi", ".claude"]);
+/** 소스 쓰기 가드가 보는 도구. 파일 도구와 셸 둘 다다 — v1 은 셸을 빼서 `python -c` 로 승인 없이 고쳐졌다. */
+export const SOURCE_EDIT_TOOLS = "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell";
 
 /**
- * 자동 모드의 파일 수정을 승인 창으로 돌린다 — 대상이 프로젝트 소스일 때만.
+ * 소스 쓰기를 승인 창으로 돌린다(계획 모드는 거부).
  *
- * 자동 모드는 Claude Code 분류기가 판단해, 작고 되돌리기 쉬운 수정은 묻지 않고 허용한다. 그러면 canUseTool 에
- * 오지 않아 바뀌는 줄을 보여 줄 기회가 없다(/modify 데모 녹화 실측). PreToolUse 에서 "ask" 를 돌려주면 판단이
- * canUseTool 로 넘어와 우리 승인 화면(바뀌는 줄 · 이번 세션 허용)이 그린다. 산출물 자리와 루트 CLAUDE.md 는 묻지
- * 않는다. 프로젝트 밖 파일은 묻는다.
- * @param {any} input  PreToolUse 훅 입력(tool_input · cwd)
+ * 자동 모드는 Claude Code 분류기가 판단해, 작고 되돌리기 쉬운 수정과 "안전해 보이는" 셸 명령은 묻지 않고 허용한다.
+ * 그러면 canUseTool 에 오지 않아 바뀌는 줄을 보여 줄 기회가 없다(/modify 데모 녹화 · 실제 레거시 벤치 실측).
+ * PreToolUse 에서 "ask" 를 돌려주면 판단이 canUseTool 로 넘어와 우리 승인 화면이 그린다.
+ * 판정은 core 의 write-guard 가 한다 — 산출물 자리(_workspace · .axnavi · .claude/skills 등)와 임시 폴더는 묻지 않는다.
+ * @param {any} input  PreToolUse 훅 입력(tool_name · tool_input · cwd)
  * @param {string} [cwd]
+ * @param {{ roots?: readonly string[], mode?: "ask" | "deny", pluginRoot?: string }} [opts]
  * @returns {import("@anthropic-ai/claude-agent-sdk").HookJSONOutput}
  */
-export function sourceEditGate(input, cwd) {
-  const ti = input?.tool_input ?? {};
-  const raw = typeof ti.file_path === "string" ? ti.file_path : typeof ti.notebook_path === "string" ? ti.notebook_path : "";
-  if (!raw) return {};
-  const root = resolve(cwd || input?.cwd || process.cwd());
-  const rel = relative(root, resolve(root, raw));
-  const inside = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
-  if (inside && (ARTIFACT_DIRS.has(rel.split(/[\\/]/)[0] ?? "") || rel.toLowerCase() === "claude.md")) return {};
-  return {
-    hookSpecificOutput: {
-      hookEventName: /** @type {const} */ ("PreToolUse"),
-      permissionDecision: /** @type {const} */ ("ask"),
-      permissionDecisionReason: "axnavi: 자동 모드여도 프로젝트 소스 수정은 바뀌는 줄을 보여 주고 묻는다",
-    },
-  };
+export function sourceEditGate(input, cwd, opts = {}) {
+  const base = resolve(cwd || input?.cwd || process.cwd());
+  const tool = typeof input?.tool_name === "string" && input.tool_name ? input.tool_name : "Edit";
+  return /** @type {any} */ (writeGuardDecision(tool, input?.tool_input ?? {}, {
+    cwd: base,
+    roots: opts.roots?.length ? [...opts.roots] : [base],
+    ...(opts.pluginRoot ? { pluginRoot: opts.pluginRoot } : {}),
+    ...(opts.mode === "deny" ? { mode: "plan" } : {}),
+  }));
 }
 
 /**
@@ -221,9 +215,19 @@ export class AgentSdkProvider {
      * 없으면 selectProvider 가 애초에 이 연결을 고르지 않는다(claude -p 연결로 간다).
      */
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
-    /* 자동 모드의 소스 수정 승인(sourceEditGate). 꺼져 있으면 훅 목록을 비운다 — 항목을 빼는 스프레드는 훅 배열의 타입 추론을 깬다. */
+    /*
+     * 소스 쓰기 가드(sourceEditGate). 디스크 전체 검색 차단이 먼저다 — 거부가 묻기보다 앞선다.
+     * 꺼져 있으면(빠름 · 전부승인) 디스크 검색 차단만 남는다.
+     */
+    const guardOpts = { ...(spec.sourceRoots ? { roots: spec.sourceRoots } : {}), ...(spec.guardSource ? { mode: spec.guardSource } : {}), pluginRoot: this.options.pluginDir ?? "" };
     /** @type {import("@anthropic-ai/claude-agent-sdk").HookCallback[]} */
-    const editGate = spec.askSourceEdits && spec.permissionMode === "auto" ? [async (input) => sourceEditGate(input, this.options.cwd)] : [];
+    const editGate = [async (/** @type {any} */ input) => {
+      if (input?.tool_name === "Bash" || input?.tool_name === "PowerShell") {
+        const disk = diskScanDecision(input.tool_input);
+        if (disk.hookSpecificOutput) return /** @type {any} */ (disk);
+      }
+      return spec.guardSource ? sourceEditGate(input, this.options.cwd, guardOpts) : {};
+    }];
     const stream = query({
       prompt,
       options: {
@@ -246,9 +250,8 @@ export class AgentSdkProvider {
         hooks: {
           PreToolUse: [
             { matcher: "Agent", hooks: [/** @type {any} */ (foregroundAgents)] },
+            // 소스 쓰기 가드 + 디스크 전체 검색 차단(disk-scan-guard.mjs).
             { matcher: SOURCE_EDIT_TOOLS, hooks: editGate },
-            // 디스크 전체를 뒤지는 셸 명령은 실행 전에 막는다(disk-scan-guard.mjs).
-            { matcher: "Bash|PowerShell", hooks: [async (input) => /** @type {any} */ (diskScanDecision(/** @type {any} */ (input).tool_input))] },
             // EUC-KR 등 레거시 인코딩 파일은 도구가 도는 동안만 UTF-8 로 바꿨다가 원래 인코딩으로 되돌린다.
             { matcher: ENCODING_TOOLS, hooks: [async (input) => encodingPreToolUse(input)] },
           ],

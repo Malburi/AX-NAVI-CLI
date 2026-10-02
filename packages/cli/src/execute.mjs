@@ -142,10 +142,14 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
    * 조직에 배포하는 도구에서 "누가 이 파일을 쓰게 했나" 는 나중에 반드시 묻는 질문이다.
    */
   const approvalAudit = createAuditSink(paths);
+  /* 소스로 지킬 저장소들 — 여럿을 함께 열었으면 모두다. 승인 · 쓰기 가드 · 턴 뒤 감사가 같은 목록을 쓴다. */
+  const sourceRoots = discovery.roots.length ? discovery.roots.map((r) => r.paths.root) : [paths.root];
   const approver = createApprover({
     ask: (question, options, opts) => elicitor.ask(question, options, opts),
     always: sessionApprovals,
     pluginRoot: REPO_ROOT,
+    roots: sourceRoots,
+    cwd: root,
     trustAll: () => sessionMode() === "trust",
     onDecision: ({ tool, input, allowed, how }) => {
       approvalAudit.record({
@@ -286,6 +290,22 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
    * 모드는 역할·지침을 고치고, 모델은 frontmatter 선언을 덮어쓴다.
    */
   agent = applyMode(agent, sessionMode());
+  if (agent.guardSource) agent = { ...agent, sourceRoots };
+  /*
+   * API 키 연결은 우리 Gateway 가 도구를 직접 돌린다. 위임 연결은 훅이 지키지만 이쪽은 Gateway 가 지켜야 한다 —
+   * v1 은 승인 없이 바로 썼다(리뷰 지적).
+   */
+  if (agent.guardSource && !provider.capabilities.ownsAgentLoop) {
+    const mode = agent.guardSource;
+    Object.assign(ctx, {
+      guard: {
+        mode,
+        roots: sourceRoots,
+        pluginRoot: REPO_ROOT,
+        approve: (/** @type {string} */ tool, /** @type {Record<string, unknown>} */ input) => approver.decide(tool, input),
+      },
+    });
+  }
   const chosenModel = sessionModel();
   if (chosenModel) agent = { ...agent, tier: chosenModel };
 

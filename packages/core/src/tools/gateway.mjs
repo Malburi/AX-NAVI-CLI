@@ -12,12 +12,15 @@
  *   3) 부수효과 도구를 읽기 전용 역할이 부르는가
  *   4) 입력이 스키마에 맞는가
  *   5) 취소 신호
- *   6) 실행 (경로·예산 검사는 각 도구가 ctx.allowedRoots로 수행)
- *   7) 감사 기록
+ *   6) 소스 쓰기 가드 (ctx.guard — 사람에게 묻거나 계획 모드면 막는다)
+ *   7) 실행 (경로·예산 검사는 각 도구가 ctx.allowedRoots로 수행)
+ *   8) 감사 기록
  *
  * 실패를 예외로 던지지 않고 isError 결과로 돌려주는 이유는, 모델이 그 사유를 읽고
  * 스스로 고칠 수 있어야 하기 때문이다. 조용히 넘어가는 경로는 만들지 않는다.
  */
+
+import { describeSourceWrite, sourceWrite } from "../safety/write-guard.mjs";
 
 /** @typedef {import("../../types/tools.js").ToolHandler} ToolHandler */
 /** @typedef {import("../../types/tools.js").ToolContext} ToolContext */
@@ -134,7 +137,22 @@ export class ToolGateway {
     // 5) 취소
     if (ctx.signal.aborted) return deny("취소됨");
 
-    // 6) 실행
+    // 6) 소스 쓰기 가드 — 셸 명령으로 쓰는 것까지 사람에게 묻는다(계획 모드는 막는다)
+    if (ctx.guard) {
+      const input = /** @type {Record<string, unknown>} */ (call.input);
+      const write = sourceWrite(call.name, input, {
+        cwd: ctx.paths.root,
+        roots: [...ctx.guard.roots],
+        ...(ctx.guard.pluginRoot ? { pluginRoot: ctx.guard.pluginRoot } : {}),
+      });
+      if (write) {
+        if (ctx.guard.mode === "deny") return deny(`계획 모드에서는 소스를 바꾸지 않는다 (${describeSourceWrite(write, ctx.paths.root)}).`);
+        const decision = await ctx.guard.approve(call.name, input);
+        if (decision.behavior === "deny") return deny(decision.message);
+      }
+    }
+
+    // 7) 실행
     try {
       const result = await handler.run(call.input, ctx);
       ctx.audit.record({

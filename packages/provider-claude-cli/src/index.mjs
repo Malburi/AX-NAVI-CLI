@@ -515,7 +515,7 @@ export class ClaudeCliProvider {
        * scaffold-feature 가 "인덱싱 스크립트 경로를 확보하지 못해 갱신 못함"이라 보고).
        * 값은 우리 설치 경로다 — 스크립트가 실제로 거기 있다.
        */
-      env: delegatedEnv(process.env, this.options),
+      env: { ...delegatedEnv(process.env, this.options), ...guardEnv(spec, this.options.pluginDir) },
     });
     child.stdin.end(payload, "utf8");
     const background = createBackgroundWatch();
@@ -678,6 +678,22 @@ export function delegatedEnv(base, options) {
 }
 
 /**
+ * 소스 쓰기 가드 훅에 넘길 값. 가드가 꺼진 실행(빠름 · 전부승인)은 훅이 아무것도 하지 않는다.
+ * @param {{ guardSource?: "ask" | "deny", sourceRoots?: readonly string[] }} spec
+ * @param {string} [pluginDir]
+ * @returns {Record<string, string>}
+ */
+export function guardEnv(spec, pluginDir) {
+  if (!spec.guardSource) return { AXNAVI_WRITE_GUARD: "0" };
+  return {
+    AXNAVI_WRITE_GUARD: "1",
+    AXNAVI_SOURCE_ROOTS: JSON.stringify(spec.sourceRoots ?? []),
+    ...(spec.guardSource === "deny" ? { AXNAVI_MODE: "plan" } : {}),
+    ...(pluginDir ? { AXNAVI_PLUGIN_ROOT: pluginDir } : {}),
+  };
+}
+
+/**
  * 끝나기 전에 죽은 백그라운드 작업을 가려낸다.
  *
  * 상한에 걸려 죽어도 claude 의 result 는 success 다. 스트림의 `system/task_updated`
@@ -772,7 +788,7 @@ function pluginMuteSettings() {
   }
   try {
     const file = join(mkdtempSync(join(tmpdir(), "axnavi-settings-")), "settings.json");
-    writeFileSync(file, JSON.stringify(delegatedSettings(names, FOREGROUND_HOOK_COMMAND, ENCODING_HOOK_COMMAND, DISK_SCAN_HOOK_COMMAND), null, 2), "utf8");
+    writeFileSync(file, JSON.stringify(delegatedSettings(names, FOREGROUND_HOOK_COMMAND, ENCODING_HOOK_COMMAND, DISK_SCAN_HOOK_COMMAND, WRITE_GUARD_HOOK_COMMAND), null, 2), "utf8");
     mutePath = file;
   } catch {
     // 임시 폴더에 못 쓰면 설정 없이 돈다. 안내문의 "뒤에서 돌리지 마라" 가 남은 방어선이다.
@@ -794,6 +810,13 @@ const FOREGROUND_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${FO
 /* 디스크 전체를 뒤지는 셸 명령을 막는 훅(disk-scan-guard.mjs 를 명령으로 돌린다). */
 const DISK_SCAN_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "disk-scan-guard.mjs");
 const DISK_SCAN_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${DISK_SCAN_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
+/*
+ * 소스 쓰기 가드(core/src/safety/write-guard.mjs 를 명령으로 돌린다). v1 은 claude -p 연결에 소스 수정 승인이 아예 없었다.
+ * 설정 파일은 프로세스에 한 번 만들므로, 실행마다 다른 값(루트 · 모드)은 환경변수로 넘긴다(guardEnv).
+ */
+export const WRITE_GUARD_TOOLS = "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell";
+const WRITE_GUARD_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "core", "src", "safety", "write-guard.mjs");
+const WRITE_GUARD_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${WRITE_GUARD_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
 /* EUC-KR 등 레거시 인코딩 파일을 읽고 고칠 때 인코딩을 지키는 훅(legacy-encoding.mjs). 뒤에 pre|post 를 붙인다. */
 const ENCODING_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "legacy-encoding-hook.mjs");
 const ENCODING_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${ENCODING_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
@@ -852,8 +875,9 @@ export function encodingHookEvents(hooks) {
  * @param {string} hookCommand
  * @param {string} [encodingCommand]  인코딩 보존 훅 명령(뒤에 pre|post 를 붙인다)
  * @param {string} [diskScanCommand]  디스크 전체 검색을 막는 훅 명령
+ * @param {string} [writeGuardCommand]  소스 쓰기 가드 훅 명령. 실행마다 AXNAVI_WRITE_GUARD 환경변수로 켜고 끈다
  */
-export function delegatedSettings(pluginNames, hookCommand, encodingCommand, diskScanCommand) {
+export function delegatedSettings(pluginNames, hookCommand, encodingCommand, diskScanCommand, writeGuardCommand) {
   return {
     ...(pluginNames.length ? { enabledPlugins: Object.fromEntries(pluginNames.map((n) => [n, false])) } : {}),
     hooks: {
@@ -861,6 +885,7 @@ export function delegatedSettings(pluginNames, hookCommand, encodingCommand, dis
         { matcher: "Agent", hooks: [{ type: "command", command: hookCommand }] },
         ...(encodingCommand ? [{ matcher: ENCODING_TOOLS, hooks: [{ type: "command", command: `${encodingCommand} pre` }] }] : []),
         ...(diskScanCommand ? [{ matcher: "Bash|PowerShell", hooks: [{ type: "command", command: diskScanCommand }] }] : []),
+        ...(writeGuardCommand ? [{ matcher: WRITE_GUARD_TOOLS, hooks: [{ type: "command", command: writeGuardCommand }] }] : []),
       ],
       ...(encodingCommand ? encodingHookEvents((phase) => [{ type: "command", command: `${encodingCommand} ${phase}` }]) : {}),
     },

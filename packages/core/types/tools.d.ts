@@ -77,6 +77,16 @@ export interface ToolContext {
   readonly elicitor: Elicitor;
   readonly progress: ProgressSink;
   readonly signal: AbortSignal;
+  /**
+   * 소스 쓰기 가드. 있으면 Gateway 가 Write·Edit 와 소스를 쓰는 Bash 를 실행 전에 사람에게 묻는다
+   * ("deny" 면 막는다). API 키 연결은 v1 에서 승인 없이 바로 썼다.
+   */
+  readonly guard?: {
+    readonly mode: "ask" | "deny";
+    readonly roots: readonly string[];
+    readonly pluginRoot?: string;
+    approve(tool: string, input: Record<string, unknown>): Promise<{ behavior: "allow" } | { behavior: "deny", message: string }>;
+  };
 }
 
 export interface ToolResult {

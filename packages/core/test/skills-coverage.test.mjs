@@ -166,7 +166,7 @@ test("스킬 본문을 넣는 자리마다 치환을 거친다", () => {
 
 test("위임 프로세스에 CLAUDE_PLUGIN_ROOT 를 채워 준다 — 두 번째 방어선", async () => {
   const src = readFileSync(join(REPO, "packages", "provider-claude-cli", "src", "index.mjs"), "utf8");
-  assert.match(src, /env: delegatedEnv\(process\.env, this\.options\)/, "위임 프로세스가 delegatedEnv 를 거치지 않는다");
+  assert.match(src, /env: \{ \.\.\.delegatedEnv\(process\.env, this\.options\), \.\.\.guardEnv\(spec/, "위임 프로세스가 delegatedEnv · guardEnv 를 거치지 않는다");
   const { delegatedEnv } = await import("../../provider-claude-cli/src/index.mjs");
   assert.equal(delegatedEnv({}, { pluginDir: "C:/axnavi" })["CLAUDE_PLUGIN_ROOT"], "C:/axnavi");
 });

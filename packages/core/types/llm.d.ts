@@ -56,8 +56,13 @@ export interface SessionSpec {
   readonly allowDelegation?: boolean;
   /** 권한 판단 방식. "auto" 면 Claude Code 자동 모드(분류기)가 판단한다. Agent SDK 연결만 쓴다. */
   readonly permissionMode?: "default" | "auto";
-  /** 자동 판단이어도 프로젝트 소스 파일 수정은 승인을 받는다. 산출물(_workspace·.axnavi·.claude·CLAUDE.md)은 빼고. */
-  readonly askSourceEdits?: boolean;
+  /**
+   * 프로젝트 소스 쓰기 가드. Edit·Write 뿐 아니라 셸 명령(python -c · sed -i · > …)으로 쓰는 것까지
+   * 사람에게 묻거나("ask") 막는다("deny", 계획 모드). 산출물(_workspace·.axnavi·.claude/skills 등)은 빼고.
+   */
+  readonly guardSource?: "ask" | "deny";
+  /** 소스로 볼 프로젝트 루트들. 여러 저장소를 함께 열었을 때 모두 지킨다. */
+  readonly sourceRoots?: readonly string[];
   /*
    * 이어갈 이전 대화의 Provider 쪽 식별자.
    *
