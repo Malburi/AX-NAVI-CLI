@@ -11,7 +11,7 @@ import { COMMANDS } from "../../../../indexer/index.mjs";
 
 const COMMAND_NAMES = /** @type {const} */ ([
   "summary", "search", "symbol", "callers", "callees", "trace", "sql",
-  "table", "endpoint", "transaction", "schema", "dead",
+  "table", "endpoint", "transaction", "schema", "dead", "column",
 ]);
 
 /** @type {ToolHandler} */
@@ -29,7 +29,7 @@ export const queryIndexTool = {
       properties: {
         command: { type: "string", enum: [...COMMAND_NAMES] },
         id: { type: "string", description: "심볼 id (callers/callees/trace/transaction)" },
-        name: { type: "string", description: "심볼 이름 (symbol)" },
+        name: { type: "string", description: "심볼 이름 (symbol) · 컬럼·화면 필드 이름 (column)" },
         file: { type: "string" },
         table: { type: "string", description: "테이블명 (table/schema)" },
         path: { type: "string", description: "엔드포인트 경로 (endpoint)" },

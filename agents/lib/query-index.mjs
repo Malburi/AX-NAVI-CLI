@@ -488,7 +488,7 @@ const COMMANDS = {
     const meta = loadIndex(root, "_meta", indexDir);
     const sizes = {};
     for (const name of meta.indexes || []) {
-      const path = indexPath(root, name);
+      const path = indexPath(root, name, indexDir);
       if (existsSync(path)) sizes[name] = `${(statSync(path).size / 1048576).toFixed(1)}MB`;
     }
     return {

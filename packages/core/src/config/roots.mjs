@@ -97,19 +97,23 @@ function rootAt(dir) {
  * api_contract 병합 전용이라 가져다 쓸 수 없다. 여기서 보는 것은 두 줄뿐이다.
  *
  * @param {string} dir
- * @returns {{ partner: string | null, role: string }}
+ * 1:N 허브는 `partner_root` 를 여러 줄 쓰거나 `partner_root[n]` 을 쓴다(build-index.mjs 의 pairConfig 와 같은 규칙).
+ * 예전에는 첫 줄만 읽어 형제 폴더가 아닌 두 번째 파트너부터 빠졌다.
+ *
+ * @param {string} dir
+ * @returns {{ partners: string[], role: string }}
  */
-function pairInfo(dir) {
+export function pairInfo(dir) {
   try {
     const text = readFileSync(join(dir, "_workspace", "pair_config.md"), "utf8");
-    const partner = /^partner_root:s*(.+)$/m.exec(text)?.[1]?.trim();
-    const role = /^project_type:s*(.+)$/m.exec(text)?.[1]?.trim();
-    return {
-      partner: partner && partner !== "unknown" ? resolve(partner) : null,
-      role: role && role !== "unknown" ? role : "",
-    };
+    const partners = [...text.matchAll(/^partner_root(?:\[\d+\])?:\s*(.+)$/gm)]
+      .map((m) => (m[1] ?? "").trim())
+      .filter((p) => p && p !== "unknown")
+      .map((p) => resolve(p));
+    const role = /^project_type:\s*(.+)$/m.exec(text)?.[1]?.trim();
+    return { partners: [...new Set(partners)], role: role && role !== "unknown" ? role : "" };
   } catch {
-    return { partner: null, role: "" };
+    return { partners: [], role: "" };
   }
 }
 
@@ -149,10 +153,11 @@ export function discoverRoots(rootArg) {
   // 3) pair_config 가 가리키는 파트너가 목록 밖이면 더한다 (형제가 아닌 경우).
   for (const info of [...found]) {
     if (!info.hasPair) continue;
-    const { partner } = pairInfo(info.paths.root);
-    if (!partner || found.some((r) => r.paths.root === partner)) continue;
-    const extra = rootAt(partner);
-    if (extra) found.push(extra);
+    for (const partner of pairInfo(info.paths.root).partners) {
+      if (found.some((r) => r.paths.root === partner)) continue;
+      const extra = rootAt(partner);
+      if (extra) found.push(extra);
+    }
   }
 
   if (!found.length) return { primary, roots: [], scanned: MAX_DEPTH > 0 };
