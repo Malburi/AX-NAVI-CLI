@@ -16,11 +16,13 @@
  */
 
 import { readFileSync } from "node:fs";
+import { basename, resolve, sep } from "node:path";
 import { diffPreview } from "./diff.mjs";
+import { describeSourceWrite, shellWrites, sourceWrite, splitShell } from "../../core/src/safety/write-guard.mjs";
 
 /** @typedef {import("./diff.mjs").PreviewLine} PreviewLine */
 
-/** 파일을 바꾸는 도구. 한 묶음으로 "이번 세션 허용" 을 건다 — Claude Code 도 그렇다. */
+/** 파일을 바꾸는 도구. "이번 세션 허용" 은 저장소 단위로 건다 — 한 번 허용으로 모든 저장소가 열리지 않게. */
 const EDIT_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 /** 화면 한 줄에 싣는 명령 길이 상한. 넘으면 자른다. */
@@ -37,18 +39,36 @@ const MAX_DETAIL = 160;
  * Bash 를 도구 이름 하나로 묶으면 `npm test` 를 허용한 순간 `rm -rf` 까지 열린다.
  * 첫 단어(명령 이름)로 묶는다. 파일 수정은 한 묶음이다.
  *
+ * 저장소 목록을 주면 파일 수정은 저장소마다 따로 기억한다(`파일 수정 · xu25`).
+ *
  * @param {string} tool
  * @param {Record<string, unknown>} input
+ * @param {{ cwd: string, roots: string[] }} [where]
  * @returns {string}
  */
-export function approvalKey(tool, input) {
-  if (EDIT_TOOLS.has(tool)) return "파일 수정";
+export function approvalKey(tool, input, where) {
+  if (EDIT_TOOLS.has(tool)) {
+    if (!where?.roots.length) return "파일 수정";
+    const w = sourceWrite(tool, input, where);
+    return w?.files[0]?.root ? `파일 수정 · ${basename(w.files[0].root)}` : "파일 수정 · 저장소 밖";
+  }
   if (tool === "Bash") {
     const command = typeof input["command"] === "string" ? input["command"].trim() : "";
     const { names } = analyzeBash(command);
     return names.length ? `Bash(${names.join(", ")})` : "Bash";
   }
   return tool;
+}
+
+/**
+ * 셸 명령이 소스를 바꿀 때 함께 허용받아야 하는 표지들.
+ * @param {import("../../core/src/safety/write-guard.mjs").SourceWrite} w
+ * @returns {string[]}
+ */
+function shellWriteKeys(w) {
+  const keys = [...new Set(w.files.map((f) => `파일 수정 · ${f.root ? basename(f.root) : "저장소 밖"}`))];
+  if (w.unknown.length) keys.push("셸로 파일 쓰기");
+  return keys;
 }
 
 /*
@@ -67,79 +87,6 @@ const READ_ONLY = new Set([
 ]);
 const READ_ONLY_GIT = new Set(["status", "log", "diff", "show", "rev-parse", "ls-files", "describe", "blame", "grep", "cat-file", "ls-tree", "shortlog", "reflog", "rev-list"]);
 const SCRIPT_RUNNERS = new Set(["node", "node.exe", "python", "python3", "python.exe", "py"]);
-
-/**
- * 셸 명령을 따옴표를 존중하며 `&&`·`||`·`;`·`|`·`&`·줄바꿈 단위로 자른다.
- * 따옴표 밖의 파일 리다이렉트·명령 치환이 있으면 `risky` 로 알린다.
- * @param {string} command
- * @returns {{ segments: string[][], risky: boolean }}
- */
-function splitShell(command) {
-  /** @type {string[][]} */
-  const segments = [[]];
-  let word = "";
-  let quote = "";
-  let risky = false;
-  const endWord = () => { if (word) segments.at(-1)?.push(word); word = ""; };
-  for (let i = 0; i < command.length; i += 1) {
-    const c = command[i];
-    const n = command[i + 1];
-    if (quote) {
-      if (c === quote) quote = "";
-      /* bash: 큰따옴표 안의 `\` 는 $ ` " \ 줄바꿈 앞에서만 이스케이프다 — 그 밖은 글자다("C:\Users\…" 경로). */
-      else if (c === "\\" && quote === "\"" && n && "$`\"\\\n".includes(n)) { word += n; i += 1; }
-      else {
-        if (quote === "\"" && (c === "`" || (c === "$" && n === "("))) risky = true;
-        word += c;
-      }
-      continue;
-    }
-    if (c === "'" || c === "\"") { quote = c; continue; }
-    /*
-     * heredoc(`python3 - <<'EOF' … EOF`). 본문은 명령이 아니라 그 명령의 입력이다 — 줄마다 잘라
-     * 명령으로 읽으면 승인 창에 `Bash(python3, import, with, …)` 가 뜬다. 본문을 건너뛰고,
-     * 판단은 heredoc 을 받는 명령(`python3 -` → 묻는다, `cat` → 읽기 전용)으로 한다.
-     */
-    if (c === "<" && n === "<" && command[i + 2] !== "<") {
-      const spec = command.slice(i + 2).match(/^-?\s*(['"]?)([A-Za-z_][\w-]*)\1/);
-      const lineEnd = command.indexOf("\n", i);
-      if (spec && lineEnd >= 0) {
-        const delim = spec[2];
-        const lines = command.slice(lineEnd + 1).split("\n");
-        let offset = lineEnd + 1;
-        for (const line of lines) {
-          offset += line.length + 1;
-          if (line.trim() === delim) break;
-        }
-        endWord();
-        i = offset - 2; // 다음 반복에서 본문 끝 줄바꿈부터 이어 읽는다
-        continue;
-      }
-    }
-    if (c === "`" || (c === "$" && n === "(") || (c === "<" && n === "(")) { risky = true; word += c; continue; }
-    if (c === ">") {
-      /* `2>&1`·`>&2`·`>/dev/null`·`2>/dev/null` 은 파일을 쓰지 않는다. */
-      const rest = command.slice(i + 1).replace(/^>/, "").trimStart();
-      if (!(n === "&" || /^\/dev\/null\b/.test(rest) || /^NUL\b/i.test(rest))) risky = true;
-      if (/^\/dev\/null\b/.test(rest)) { i = command.indexOf("/dev/null", i) + "/dev/null".length - 1; }
-      else if (n === "&") i += 2;
-      endWord();
-      continue;
-    }
-    if (c === "&" || c === "|" || c === ";" || c === "\n") {
-      endWord();
-      if ((c === "&" || c === "|") && n === c) i += 1;
-      if (segments.at(-1)?.length) segments.push([]);
-      continue;
-    }
-    if (c === undefined) break;
-    if (/\s/.test(c)) { endWord(); continue; }
-    word += c;
-  }
-  endWord();
-  if (quote) risky = true;
-  return { segments: segments.filter((s) => s.length), risky };
-}
 
 /**
  * 한 조각의 이름과 읽기 전용 여부.
@@ -179,11 +126,18 @@ function classifySegment(words, pluginRoot) {
   if (SCRIPT_RUNNERS.has(base)) {
     /* axnavi 자신의 스크립트(인덱서·검증기). 제품의 일부라 묻지 않는다 — 산출물은 _workspace 에 쓴다. */
     /* Git Bash 는 `C:\…` 를 `/c/…` 로 쓴다 — 같은 경로로 맞춰 비교한다. */
+    /*
+     * 경로는 resolve 로 정규화한 뒤 비교한다. v1 은 문자열 접두사만 봐서
+     * `<root>/agents/lib/../../_workspace/x.py` 가 우리 스크립트로 통과했다(리뷰 지적).
+     */
     const unify = (/** @type {string} */ path) => path.replace(/\\/g, "/").replace(/^\/([a-zA-Z])\//, "$1:/");
-    const script = unify(args.find((arg) => !arg.startsWith("-")) ?? "");
-    const root = unify(pluginRoot).replace(/\/+$/, "").toLowerCase();
-    const ours = /^\$(?:env:)?\{?CLAUDE_PLUGIN_ROOT\}?\/agents\/lib\//.test(script)
-      || (root !== "" && script.toLowerCase().startsWith(`${root}/agents/lib/`));
+    const rawScript = unify(args.find((arg) => !arg.startsWith("-")) ?? "");
+    const viaVar = /^\$(?:env:)?\{?CLAUDE_PLUGIN_ROOT\}?\//.exec(rawScript);
+    const lib = pluginRoot ? resolve(pluginRoot, "agents", "lib") + sep : "";
+    const script = viaVar ? (pluginRoot ? resolve(pluginRoot, rawScript.slice(viaVar[0].length)) : "") : rawScript ? resolve(rawScript) : "";
+    const ours = viaVar && !pluginRoot
+      ? !rawScript.slice(viaVar[0].length).split("/").includes("..") && rawScript.slice(viaVar[0].length).startsWith("agents/lib/")
+      : lib !== "" && script.toLowerCase().startsWith(lib.toLowerCase());
     return { name: base.replace(/\.exe$/, ""), readOnly: ours && !args.some((arg) => arg === "-e" || arg === "-c" || arg === "--eval") };
   }
   if (!READ_ONLY.has(base)) return { name: base || head, readOnly: false };
@@ -202,7 +156,15 @@ function classifySegment(words, pluginRoot) {
 export function analyzeBash(command, pluginRoot = "") {
   const { segments, risky } = splitShell(command);
   if (!segments.length) return { readOnly: false, names: [] };
-  const classified = segments.map((words) => classifySegment(words, pluginRoot));
+  /*
+   * 읽기 전용 목록에 있어도 쓰는 형태가 있다 — `sort -o f`·`uniq a b`·`sed 's/x/y/w f'`·`tree -o f`·`date -s`.
+   * v1 은 이들을 묻지 않고 통과시켰다(리뷰 지적). 쓰기 판정기가 잡은 조각은 읽기 전용이 아니다.
+   */
+  let classified = segments.map((seg) => classifySegment(seg.words, pluginRoot));
+  if (classified.every((item) => item.readOnly)) {
+    const writes = shellWrites(command, { cwd: process.cwd(), ...(pluginRoot ? { pluginRoot } : {}) });
+    if (writes.targets.length || writes.unknown.length) classified = classified.map((item) => ({ ...item, readOnly: false }));
+  }
   const names = [...new Set(classified.filter((item) => (item.readOnly === false || risky) && item.name).map((item) => item.name))];
   return { readOnly: !risky && classified.every((item) => item.readOnly), names };
 }
@@ -221,7 +183,7 @@ export function describeToolUse(tool, input) {
   const pick = (/** @type {string} */ key) => (typeof input[key] === "string" ? String(input[key]) : "");
   let detail = "";
   if (EDIT_TOOLS.has(tool)) detail = pick("file_path") || pick("notebook_path");
-  else if (tool === "Bash") detail = pick("command");
+  else if (tool === "Bash" || tool === "PowerShell") detail = pick("command");
   else if (tool === "WebFetch") detail = pick("url");
   else if (tool === "WebSearch") detail = pick("query");
   else {
@@ -349,6 +311,8 @@ export function previewToolUse(tool, input, readText = readTextOrNull) {
  * @typedef {object} Approver
  * @property {(tool: string, input: Record<string, unknown>) => Promise<Decision>} decide
  * @property {() => string[]} remembered   이번 세션에 "묻지 않음" 으로 둔 것들
+ * @property {() => { files: Set<string>, shellUnknown: boolean }} approvedWrites
+ *           이번 승인기로 허용된 소스 쓰기. 턴 뒤 diff 감사가 "승인 없이 바뀐 파일" 을 가리는 데 쓴다
  */
 
 /**
@@ -361,9 +325,15 @@ export function previewToolUse(tool, input, readText = readTextOrNull) {
  * @param {(path: string) => string | null} [args.readText]  미리보기용 파일 읽기
  * @param {string} [args.pluginRoot]  axnavi 설치 루트 — 이 아래 agents/lib 스크립트는 묻지 않는다
  * @param {() => boolean} [args.trustAll]  "전부 승인" 모드인가 (/mode 전부승인)
+ * @param {string[]} [args.roots]  프로젝트 루트들. 주면 소스 쓰기를 저장소 단위로 묻고 기억한다
+ * @param {string} [args.cwd]      상대경로를 풀 기준
  * @returns {Approver}
  */
-export function createApprover({ ask, onDecision, always = new Set(), readText = readTextOrNull, pluginRoot = "", trustAll = () => false }) {
+export function createApprover({ ask, onDecision, always = new Set(), readText = readTextOrNull, pluginRoot = "", trustAll = () => false, roots = [], cwd = process.cwd() }) {
+  const where = { cwd, roots, ...(pluginRoot ? { pluginRoot } : {}) };
+  /** @type {Set<string>} */
+  const approvedFiles = new Set();
+  let shellUnknown = false;
   /* "이번 세션 동안 모두 묻지 않음" 의 기억 표지. 도구 이름과 겹치지 않는 값이다. */
   const ALL = "*";
   /*
@@ -374,10 +344,20 @@ export function createApprover({ ask, onDecision, always = new Set(), readText =
   let deniedOnce = false;
   return {
     remembered: () => [...always],
+    approvedWrites: () => ({ files: new Set(approvedFiles), shellUnknown }),
     async decide(tool, input) {
       const safeInput = input && typeof input === "object" ? input : {};
+      const shell = tool === "Bash" || tool === "PowerShell";
+      const write = roots.length ? sourceWrite(tool, safeInput, where) : null;
       const allow = (/** @type {string} */ how) => {
         onDecision?.({ tool, input: safeInput, allowed: true, how });
+        if (write) {
+          for (const f of write.files) approvedFiles.add(resolve(f.path).toLowerCase());
+          if (write.unknown.length) shellUnknown = true;
+        } else if (EDIT_TOOLS.has(tool)) {
+          const raw = typeof safeInput["file_path"] === "string" ? safeInput["file_path"] : "";
+          if (raw) approvedFiles.add(resolve(cwd, raw).toLowerCase());
+        }
         return /** @type {Decision} */ ({ behavior: "allow", updatedInput: safeInput });
       };
       if (trustAll()) return allow("모드: 전부 승인");
@@ -386,15 +366,18 @@ export function createApprover({ ask, onDecision, always = new Set(), readText =
       /*
        * 셸 명령은 조각별로 본다. 예전에는 첫 단어만 봐서 `ls …; cd .. && git push` 가
        * `Bash(ls)` 허용 하나로 통째로 지나갔다. 이제는 읽기 전용이 아닌 조각이 전부
-       * 세션 허용돼 있어야 지나간다.
+       * 세션 허용돼 있어야 지나간다. 소스를 바꾸는 셸 명령은 그 저장소의 "파일 수정" 허용도 있어야 한다 —
+       * `Bash(python)` 하나로 소스 수정까지 열리던 v1 의 구멍이다.
        */
-      const bash = tool === "Bash" ? analyzeBash(typeof safeInput["command"] === "string" ? safeInput["command"] : "", pluginRoot) : null;
-      if (bash?.readOnly) return allow("자동 허용(읽기 전용·axnavi 스크립트)");
-      const keys = bash ? (bash.names.length ? bash.names.map((name) => `Bash(${name})`) : ["Bash"]) : [approvalKey(tool, safeInput)];
+      const bash = shell ? analyzeBash(typeof safeInput["command"] === "string" ? safeInput["command"] : "", pluginRoot) : null;
+      if (bash?.readOnly && !(write && write.via === "shell")) return allow("자동 허용(읽기 전용·axnavi 스크립트)");
+      const keys = bash
+        ? [...(bash.names.length ? bash.names.map((name) => `Bash(${name})`) : ["Bash"]), ...(write ? shellWriteKeys(write) : [])]
+        : [approvalKey(tool, safeInput, roots.length ? where : undefined)];
       if (keys.every((key) => always.has(key)) && !(bash && deniedOnce)) return allow("세션 허용");
 
-      const key = bash ? `Bash(${bash.names.join(", ") || "?"})` : /** @type {string} */ (keys[0]);
-      const what = describeToolUse(tool, safeInput);
+      const key = bash ? `Bash(${bash.names.join(", ") || "?"})${write ? ` + ${shellWriteKeys(write).join(", ")}` : ""}` : /** @type {string} */ (keys[0]);
+      const what = describeToolUse(tool, safeInput) + (write?.via === "shell" ? `\n셸 명령으로 소스를 바꿉니다: ${describeSourceWrite(write, cwd)}` : "");
       const YES = "예";
       const ALWAYS = `예, 이번 세션 동안 ${key}은(는) 묻지 않음`;
       const EVERYTHING = "예, 이번 세션 동안 모두 묻지 않음";
