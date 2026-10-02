@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { closeTurn, openTurn, recordAgentEnd, recordAgentStart, recordLine } from "./record.mjs";
 import { unwrittenClaims } from "./claims.mjs";
 import { createApprover } from "./approval.mjs";
+import { auditTurn, describeAudit, revertChanges, takeSnapshot } from "./turn-audit.mjs";
 import { learnFromError, modelUnavailableHint, startWithLearnedModels } from "./models.mjs";
 
 /*
@@ -567,6 +568,12 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
   }, 200);
   queueWatch.unref?.();
 
+  /*
+   * 턴 전 git 상태. 승인 게이트가 글자로 못 알아본 쓰기를 턴 뒤에 실제 파일로 잡는다(turn-audit.mjs).
+   * 승인을 받기로 한 모드(자동 · 매번 묻기 · 계획)에서만 — 빠름 · 전부승인은 사람이 덜 묻기를 골랐다.
+   */
+  const snapshot = agent.guardSource ? takeSnapshot(sourceRoots) : null;
+
   try {
     for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt: prompt, ...(conversation ? { conversation } : {}) })) {
       if (event.type === "text") {
@@ -831,7 +838,43 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
     }
     // 모델을 바꿔 다시 돌 첫 시도는 답이 아니다. 대화에 남기지 않는다.
     if (!retryModel) onAnswer?.(answer);
+    if (snapshot) await reviewTurnChanges(snapshot);
     await audit.flush();
+  }
+
+  /**
+   * 턴 뒤 감사 — 승인 없이 바뀐 소스 파일을 보여 주고 되돌릴지 묻는다. 인코딩이 바뀐 파일은 되돌려 쓴다.
+   * @param {import("./turn-audit.mjs").Snapshot} snap
+   */
+  async function reviewTurnChanges(snap) {
+    let result;
+    try {
+      result = auditTurn(snap, sourceRoots, approver.approvedWrites());
+    } catch (error) {
+      debug(ui.dim(`  턴 뒤 감사 실패: ${error instanceof Error ? error.message : String(error)}\n`));
+      return;
+    }
+    const lines = describeAudit(result, root);
+    if (!lines.length) return;
+    for (const line of lines) emit(ui.yellow(`  ⚠ ${line}`));
+    approvalAudit.record({
+      at: new Date().toISOString(), role: agent.name, tool: "턴 뒤 감사", input: { unapproved: result.unapproved.map((c) => c.path), encoding: result.encoding.map((n) => `${n.change.path}:${n.result}`) },
+      outcome: result.unapproved.length ? "denied" : "ok", reason: "승인 없이 바뀐 소스 · 인코딩 점검", durationMs: 0,
+    });
+    const broken = result.encoding.filter((n) => n.result === "broken").map((n) => n.change);
+    const suspects = [...result.unapproved, ...broken.filter((c) => !result.unapproved.includes(c))];
+    if (!suspects.length || background || !(elicitor.canAsk?.() ?? true)) return;
+    const REVERT = `되돌리기 (${suspects.length}개 파일을 이번 턴 전 내용으로)`;
+    const KEEP = "그대로 두기";
+    let picked = "";
+    try {
+      picked = (await elicitor.ask("승인 없이 바뀌었거나 글자가 깨진 파일이 있습니다. 어떻게 할까요?", [REVERT, KEEP], { header: "턴 뒤 감사" }))[0] ?? "";
+    } catch {
+      picked = "";
+    }
+    if (picked !== REVERT) return;
+    const { reverted, failed } = revertChanges(snap, suspects);
+    emit(ui.dim(`  ↩ ${reverted.length}개 파일을 되돌렸습니다${failed.length ? ` · 실패 ${failed.length}개: ${failed.map((f) => `${f.change.rel} (${f.reason})`).join(", ")}` : ""}`));
   }
 
   // 다시 도는 쪽이 마무리 줄을 찍는다. 여기서 찍으면 한 요청에 두 줄이 남는다.
