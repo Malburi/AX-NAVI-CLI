@@ -140,6 +140,7 @@ function CLAUDE_CLI(version, cwd, mcp) {
  * @param {import("../../provider-agent-sdk/src/index.mjs").Host} host
  * @param {string} [cwd]
  * @param {{ configPath: string, env: Record<string, string> }} [mcp]
+ * @returns {{ provider: import("@ax-navi/core").LLMProvider, note: string, short: string }}
  */
 function AGENT_SDK(host, cwd, mcp) {
   /*
@@ -157,13 +158,14 @@ function AGENT_SDK(host, cwd, mcp) {
     ...(mute.length ? { enabledPlugins: Object.fromEntries(mute.map((n) => [n, false])) } : {}),
   });
   return {
-    provider: new AgentSdkProvider({
+    // SDK 이벤트는 런타임에서 ProviderEvent 와 같은 모양이지만 리터럴 추론이 넓어 구조 비교가 실패한다.
+    provider: /** @type {import("@ax-navi/core").LLMProvider} */ (/** @type {unknown} */ (new AgentSdkProvider({
       host,
       pluginDir: REPO_ROOT,
       settings,
       ...(cwd ? { cwd } : {}),
       ...(mcp ? { mcpConfigPath: mcp.configPath, mcpEnv: mcp.env } : {}),
-    }),
+    }))),
     short: "agent-sdk · 구독 인증",
     note: "agent-sdk · 구독 인증 · 질문·승인은 axnavi 화면이 직접 받습니다",
   };

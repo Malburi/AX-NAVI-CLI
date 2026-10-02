@@ -87,13 +87,12 @@ export async function cmdInit(root) {
 
 /* ---------- doctor ---------- */
 
-/** @param {string} root */
 /* 한글은 두 칸이다. padEnd 는 글자 수로 채워 doctor 라벨이 어긋났다(리뷰 실측). */
 function padCells(/** @type {string} */ s, /** @type {number} */ width) {
   return s + " ".repeat(Math.max(0, width - visibleLength(s)));
 }
 
-/*
+/**
  * 구독 인증 경로는 로그인이 돼 있어야 돈다. 설치만 보고 ✓ 를 주면 첫 요청에서
  * "Not logged in · Please run /login" 으로 실패한다(리뷰 실측 — /login 은 axnavi 명령도 아니다).
  * macOS 는 키체인에 두므로 파일로는 알 수 없다 — 그때는 줄을 내지 않는다.
@@ -109,6 +108,7 @@ function loginState(providerId) {
   return { ok: "warn", detail: "로그인 기록 없음 — 터미널에서 claude 를 한 번 실행해 로그인하세요" };
 }
 
+/** @param {string} root */
 export async function cmdDoctor(root) {
   const paths = resolveProjectPaths(root);
   const state = inspectProject(paths);
@@ -278,14 +278,15 @@ export async function cmdIndex(root, sub, opts) {
     const out = opts.out ? resolve(opts.out) : join(paths.reportsDir, "coverage.md");
     await mkdir(dirname(out), { recursive: true });
     await writeFile(out, markdown, "utf8");
-    const f = summary.files;
+    const f = /** @type {any} */ (summary.files);
+    const quality = /** @type {any} */ (summary.quality);
     const pct = (/** @type {number} */ n) => (f.indexed ? `${Math.round((n / f.indexed) * 1000) / 10}%` : "-");
     const rate = (/** @type {number | null} */ v) => (v === null ? "-" : `${Math.round(v * 1000) / 10}%`);
     process.stdout.write(
       `${ui.bold("커버리지 진단")}  ${paths.root}\n` +
         `  인덱싱 ${f.indexed}개 · 자동 변경 가능 ${f.full}개(${pct(f.full)}) · 원문 확인 후 변경 ${f.partial}개(${pct(f.partial)})\n` +
         `  분석 불가 ${f.discovery_only}개 · 읽지 않는 코드 후보 ${f.unindexed_code_candidates}개 · 제외 ${f.excluded}개\n` +
-        `  호출 확정률 ${rate(summary.quality.call_resolution)} · SQL 연결률 ${rate(summary.quality.sql_linked)}\n` +
+        `  호출 확정률 ${rate(quality.call_resolution)} · SQL 연결률 ${rate(quality.sql_linked)}\n` +
         ui.dim(`  ${out}\n`),
     );
     return 0;
@@ -834,6 +835,10 @@ export const LANGUAGE_RULE = "- 사용자에게 보이는 모든 문장은 한�
  */
 export const SEARCH_SCOPE_RULE = "- 파일 탐색은 프로젝트 루트 안에서만 한다. `find /` 처럼 디스크 전체를 뒤지지 마라. 프레임워크·라이브러리(jar) 안의 클래스는 소스가 없으니 '저장소 밖이라 확인하지 못함'으로 보고한다.";
 
+/**
+ * @param {Array<{ name: string, paths: { root: string } }>} roots
+ * @param {string} agentName
+ */
 function delegationLines(roots, agentName) {
   if (roots.length <= 1) {
     return ["- 이 런타임에 없는 기능(서브에이전트 호출 등)은 네가 직접 수행하고, 그 사실만 짧게 밝혀라."];

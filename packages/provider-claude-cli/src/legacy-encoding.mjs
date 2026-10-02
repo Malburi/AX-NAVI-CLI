@@ -105,7 +105,7 @@ export function legacyEncodingOf(buffer, path = "") {
 /** @type {Map<string, { decode: Map<number, string>, encode: Map<number, number[]> }>} */
 const tables = new Map();
 
-/*
+/**
  * CP949(UHC) 확장 한글. Node 의 `TextDecoder("euc-kr")`(ICU) 는 KS X 1001 완성형 2,350자만 풀고,
  * 윈도(MS949)가 저장한 나머지 8,822자(갂·똠·햏 등)는 U+FFFD 로 만든다(실측 0x8141 → FFFD).
  * UHC 는 KS X 1001 에 없는 완성형 한글을 유니코드 순서대로 아래 자리에 채운 것이라 규칙으로 만든다.
@@ -353,7 +353,7 @@ export function restoreFile(file, cwd, state = stateFor(file, cwd)) {
     utimesSync(file, atime, mtime); // 도구가 남긴 수정 시각 그대로 — Claude 의 기록과 맞춘다
   } catch (error) {
     // 읽기 전용 원본 등. 조용히 넘기면 모델은 반영된 줄 안다(리뷰 지적).
-    return { ok: false, reason: `axnavi: ${file} 를 원래 인코딩(${marker.encoding})으로 되돌려 쓰지 못했습니다(${/** @type {Error} */ (error).code ?? error}). 파일이 읽기 전용이거나 잠겨 있을 수 있습니다. 이 파일의 수정 결과를 신뢰하지 말고 보고에 남기세요.` };
+    return { ok: false, reason: `axnavi: ${file} 를 원래 인코딩(${marker.encoding})으로 되돌려 쓰지 못했습니다(${/** @type {NodeJS.ErrnoException} */ (error).code ?? error}). 파일이 읽기 전용이거나 잠겨 있을 수 있습니다. 이 파일의 수정 결과를 신뢰하지 말고 보고에 남기세요.` };
   }
   drop();
   return { ok: true, changed, encoding: marker.encoding };

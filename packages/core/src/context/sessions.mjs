@@ -61,7 +61,7 @@ async function ensureDir(paths) {
   return paths.sessionsDir;
 }
 
-/*
+/**
  * `.axnavi/` 에는 세션·감사 기록·레거시 인코딩 백업이 쌓인다. 예전에는 `axnavi init` 만 .gitignore 를
  * 만들어, init 없이 쓰면 고객 저장소에 대화 기록이 커밋될 수 있었다(리뷰 지적). 처음 쓸 때 만든다.
  * 인코딩 보존 훅(provider-claude-cli/src/legacy-encoding.mjs)도 같은 목록을 쓴다.

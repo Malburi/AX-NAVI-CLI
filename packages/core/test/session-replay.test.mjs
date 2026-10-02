@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { claudeTranscriptPath, humanText, renderClaudeSession } from "../../cli/src/session-replay.mjs";
 
-const plain = { dim: (s) => s, cyan: (s) => s, bold: (s) => s, green: (s) => s, yellow: (s) => s, red: (s) => s };
+const id = (/** @type {string} */ s) => s;
+const plain = { dim: id, cyan: id, bold: id, green: id, yellow: id, red: id };
 
 test("Claude 기록 파일 위치는 작업 폴더 경로의 영숫자 아닌 글자를 '-' 로 바꾼 폴더다", () => {
   assert.equal(claudeTranscriptPath("C:\\Users\\a\\x-y", "s1", "H"), join("H", ".claude", "projects", "C--Users-a-x-y", "s1.jsonl"));

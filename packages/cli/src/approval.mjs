@@ -132,6 +132,7 @@ function splitShell(command) {
       if (segments.at(-1)?.length) segments.push([]);
       continue;
     }
+    if (c === undefined) break;
     if (/\s/.test(c)) { endWord(); continue; }
     word += c;
   }

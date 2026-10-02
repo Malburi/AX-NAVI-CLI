@@ -67,6 +67,9 @@ export interface ApplyAiPatchResult {
 /** AI 보강 패치를 허용된 op만 골라 병합한다. */
 export declare function applyAiPatch(root: string, patchPath: string, indexDir?: string): ApplyAiPatchResult;
 
+/** 인덱스로 지원 수준 · 분석 불가 · 연결 품질 진단서를 만든다. */
+export declare function buildCoverageReport(root: string, indexDir?: string): { summary: Record<string, unknown>; markdown: string };
+
 export declare function mergeAiPatchEdges(graph: unknown, patch: unknown): unknown;
 
 /** 인덱스 디렉터리 경로 결정. indexDir 생략 시 `<root>/_workspace/index`. */

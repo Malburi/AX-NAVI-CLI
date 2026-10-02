@@ -26,7 +26,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 const PATH =
   /(?:[A-Za-z]:)?[\\/]?(?:[\w.\- ]+[\\/])*_workspace[\\/]reports[\\/][^\s\\/:*?"'<>|`]+\.(?:md|json)/g;
 
-/*
+/**
  * `reports/{impact,safety}_x.md` 같은 묶음 표기를 파일마다 푼다. 실측: 세 리포트를 모두 쓴 실행의
  * 마지막 줄 "리포트: _workspace/reports/{impact,pattern_conformance,safety}_x.md" 를 글자 그대로
  * 파일 이름으로 보고 "쓰이지 않았다" 고 잘못 경고했다.
@@ -35,8 +35,8 @@ const PATH =
  */
 function expandBraces(path) {
   const group = /\{([^{}]*,[^{}]*)\}/.exec(path);
-  if (!group) return [path];
-  return group[1].split(",").flatMap((part) => expandBraces(path.slice(0, group.index) + part + path.slice(group.index + group[0].length)));
+  if (!group || group[1] === undefined) return [path];
+  return group[1].split(",").flatMap((/** @type {string} */ part) => expandBraces(path.slice(0, group.index) + part + path.slice(group.index + group[0].length)));
 }
 
 /**

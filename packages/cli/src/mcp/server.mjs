@@ -34,7 +34,7 @@ const ONLY_TOOLS = (process.env["AXNAVI_MCP_TOOLS"] ?? "").split(",").map((s) =>
 
 /** @type {import("node:net").Socket | null} */
 let socket = null;
-/** @type {Map<string, (answers: string[]) => void>} */
+/** @type {Map<string, (res: { answers?: string[], reason?: string }) => void>} */
 const waiting = new Map();
 let buffer = "";
 
@@ -70,7 +70,7 @@ function ensureSocket() {
  * @param {string[]} options
  * @param {boolean} multiSelect
  * @param {string} [header]
- * @returns {Promise<string[]>}
+ * @returns {Promise<{ answers?: string[], reason?: string }>}
  */
 function askUser(question, options, multiSelect, header) {
   return requestFull({ question, options, multiSelect, header });
