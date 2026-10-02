@@ -204,3 +204,20 @@ export async function test(register, assert) {
     }
   });
 }
+
+export async function testLargeFile(register, assert) {
+  register("호출이 많은 큰 번들 JS 도 몇 초 안에 인덱싱한다 — 멤버 호출 판정이 제곱으로 느려지지 않는다", () => {
+    /* 실측: 번들 라이브러리 pdfmake.js(1.4MB) 하나에 수 분, 인덱스 갱신 전체 8분 30초. 원인은 호출마다 본문 앞부분을 잘라 끝 공백 정규식을 돌린 것. */
+    const root = mkdtempSync(join(tmpdir(), "ax-big-js-"));
+    try {
+      const chunk = Array.from({ length: 4000 }, (_, i) => `    a${i % 50} .  call${i}(x);\n        \n    helper${i % 7}(y);\n`).join("");
+      write(root, "web/src/big.js", `function bundle() {\n${chunk}}\nfunction helper0(){} function helper1(){}\n`);
+      const started = Date.now();
+      buildIndex({ root, mode: "init", tier: "Standard", config: null });
+      const ms = Date.now() - started;
+      assert.ok(ms < 8000, `큰 파일 인덱싱이 ${ms}ms 걸렸다`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}

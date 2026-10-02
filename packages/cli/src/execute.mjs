@@ -24,7 +24,7 @@ import { closeTurn, openTurn, recordAgentEnd, recordAgentStart, recordLine } fro
 import { unwrittenClaims } from "./claims.mjs";
 import { createApprover } from "./approval.mjs";
 import { auditTurn, describeAudit, revertChanges, takeSnapshot } from "./turn-audit.mjs";
-import { ensureFreshIndexes } from "./freshness.mjs";
+import { ensureFreshIndexesAsync } from "./freshness.mjs";
 import { describePostVerify, postVerify } from "./post-verify.mjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { learnFromError, modelUnavailableHint, startWithLearnedModels } from "./models.mjs";
@@ -149,11 +149,33 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
    * 백그라운드 작업은 건너뛴다 — 전경 턴과 같은 인덱스를 동시에 다시 쓰면 안 된다.
    */
   if (!background) {
-    const fresh = ensureFreshIndexes(
+    /*
+     * 다시 만들기는 자식 프로세스로 돈다 — 그동안 경과 시간을 한 줄에서 갱신하고, Esc · Ctrl+C 로 건너뛰면 옛 인덱스로 진행한다.
+     * 예전에는 같은 프로세스에서 동기로 돌아 끝날 때까지 커서 · 키 입력이 멈췄다(실측 8분 30초).
+     */
+    const skip = beginTurn();
+    const onSkip = () => skip.abort();
+    process.on("SIGINT", onSkip);
+    const tty = Boolean(process.stderr.isTTY);
+    let label = "";
+    const fresh = await ensureFreshIndexesAsync(
       (discovery.roots.length ? discovery.roots.map((r) => r.paths) : [paths]).map((p) => ({ root: p.root, ...(p.indexDir && p.root === paths.root ? { indexDir: p.indexDir } : {}), primary: p.root === discovery.primary?.root || p.root === paths.root })),
-      { onStart: (r, why) => process.stderr.write(ui.dim(`  인덱스 갱신 중 — ${r.split(/[\\/]/).at(-1)} (${why})\n`)) },
+      {
+        signal: skip.signal,
+        onStart: (r, why) => {
+          label = `인덱스 갱신 중 — ${r.split(/[\\/]/).at(-1)} (${why})`;
+          process.stderr.write(tty ? ui.dim(`  ${label} · 0초 · Esc 로 건너뛰기`) : ui.dim(`  ${label}\n`));
+        },
+        onTick: (_r, sec) => { if (tty) process.stderr.write(`\r\x1b[2K${ui.dim(`  ${label} · ${sec}초 · Esc 로 건너뛰기`)}`); },
+      },
     );
-    for (const note of fresh) if (note.state === "failed") process.stderr.write(ui.yellow(`  ! 인덱스 ${note.root}: ${note.reason}\n`));
+    process.off("SIGINT", onSkip);
+    endTurn(skip);
+    for (const note of fresh) {
+      if (note.state === "rebuilt" && tty) process.stderr.write(`\r\x1b[2K${ui.dim(`  인덱스 갱신 완료 — ${note.root.split(/[\\/]/).at(-1)} · ${Math.round((note.ms ?? 0) / 1000)}초`)}\n`);
+      if (note.state === "failed") process.stderr.write(`\r\x1b[2K${ui.yellow(`  ! 인덱스 ${note.root}: ${note.reason}`)}\n`);
+      if (note.state === "skipped" && note.reason.startsWith("중단")) process.stderr.write(`\r\x1b[2K${ui.yellow(`  인덱스 갱신을 건너뛰었습니다 — 옛 인덱스로 진행합니다 (${note.root.split(/[\\/]/).at(-1)})`)}\n`);
+    }
   }
 
   const approvalAudit = createAuditSink(paths);

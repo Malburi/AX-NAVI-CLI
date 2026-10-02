@@ -99,3 +99,18 @@ test("지시문 예산 — 우리 텍스트(스킬 본문 · 사전 영향도 �
   assert.doesNotMatch(agent, /서브에이전트를.*하나씩/, "저장소마다 띄우라는 지시가 남아 있다");
   assert.match(agent, /서브에이전트를 띄우지 마라/);
 });
+
+test("인덱스 갱신을 자식 프로세스로 돌려 경과 시간을 알리고, 중단하면 옛 인덱스로 진행한다", async () => {
+  const { ensureFreshIndexesAsync } = await import("../../cli/src/freshness.mjs");
+  const { server, client } = pair();
+  write(client, "js/tree3.js", `function more() { $.ajax({ url: "/TransData.do", data: "worker=CategoryService&action=listParentTree", success: function (d) { x(d.rtInfo[1][0]); } }); }`);
+  /** @type {string[]} */
+  const ticks = [];
+  const notes = await ensureFreshIndexesAsync([{ root: server, primary: true }, { root: client }], { onTick: (r) => ticks.push(r) });
+  assert.deepEqual(notes.map((n) => n.state), ["rebuilt", "rebuilt"]);
+  write(client, "js/tree4.js", "function y() {}");
+  const ctrl = new AbortController();
+  ctrl.abort();
+  const skipped = await ensureFreshIndexesAsync([{ root: server, primary: true }, { root: client }], { signal: ctrl.signal });
+  assert.ok(skipped.every((n) => n.state === "skipped"), JSON.stringify(skipped));
+});

@@ -12,7 +12,7 @@ import { test as registerVerifyTargetTests } from "./verify-target.test.mjs";
 import { test as registerAnalysisWikiTests } from "./analysis-wiki.test.mjs";
 import { test as registerSiteTests } from "./site.test.mjs";
 import { test as registerCoverageReportTests } from "./coverage-report.test.mjs";
-import { test as registerDispatchTests } from "./dispatch.test.mjs";
+import { test as registerDispatchTests, testLargeFile as registerLargeFileTests } from "./dispatch.test.mjs";
 
 const tests = [];
 function test(name, fn) {
@@ -30,6 +30,7 @@ const assert = {
 
 await registerIndexerTests(test, assert);
 await registerDispatchTests(test, assert);
+await registerLargeFileTests(test, assert);
 await registerBudgetTests(test, assert);
 await registerValidateHarnessTests(test, assert);
 await registerPatternProfileTests(test, assert);

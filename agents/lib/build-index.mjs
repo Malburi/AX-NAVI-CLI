@@ -665,6 +665,18 @@ function extractStringLiterals(text) {
   return literals;
 }
 
+/*
+ * 앞쪽 공백을 건너뛴 첫 글자가 `.` 인가 — `obj .call()` 같은 멤버 호출 판정.
+ * 예전에는 `body.slice(0, i).replace(/\s+$/, "").endsWith(".")` 로 했는데, 호출마다 본문 앞부분 전체를 자르고
+ * 끝 공백 정규식이 공백 덩어리마다 끝까지 다시 훑어 큰 파일에서 제곱으로 느려졌다. 실측(번들 라이브러리
+ * pdfmake.js 1.4MB 가 든 클라이언트 저장소): 이 한 파일에 수 분, 인덱스 갱신 전체 8분 30초.
+ */
+function precededByDot(text, index) {
+  let i = index - 1;
+  while (i >= 0 && /\s/.test(text[i])) i -= 1;
+  return i >= 0 && text[i] === ".";
+}
+
 function matchingBrace(text, open) {
   if (open < 0 || text[open] !== "{") return text.length;
   let depth = 0;
@@ -767,7 +779,7 @@ function extractLegacySymbols(text, clean, rel, workspace) {
       for (const match of body.matchAll(/\b([A-Za-z_$][\w$]*)(?:\s*\.\s*([A-Za-z_$][\w$]*))?\s*\(/g)) {
         const name = match[2] || match[1];
         if (CALL_KEYWORDS.has(name) || (!match[2] && name === method.name && match.index < 120)) continue;
-        if (!match[2] && body.slice(0, match.index).replace(/\s+$/, "").endsWith(".")) continue;
+        if (!match[2] && precededByDot(body, match.index)) continue;
         callSites.push({ caller: method.id, name, qualifier: match[2] ? match[1] : "", file: rel, line: atLine(method.start + match.index), workspace: workspace.id });
       }
     }
@@ -1458,7 +1470,7 @@ function extractSymbols(text, clean, rel, workspace) {
        * 스킵한다(2026-08-19 추가. 실측: 백엔드 "get()" 미해결 1,582건 중 다수가 이 패턴
        * — `Map.get`/`List.get` 같은 JDK 호출을 프로젝트 내부 동명 메서드로 오판할 뻔했다).
        */
-      if (!match[2] && body.slice(0, match.index).replace(/\s+$/, "").endsWith(".")) continue;
+      if (!match[2] && precededByDot(body, match.index)) continue;
       callSites.push({ caller: method.id, name, qualifier: match[2] ? match[1] : "", file: rel, line: atLine(method.start + match.index), workspace: workspace.id });
     }
   }
