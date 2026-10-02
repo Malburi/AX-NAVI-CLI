@@ -263,6 +263,8 @@
     .stop .idx { margin-top: 6px; margin-left: 46px; }
   }
   .measure { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin-top: 30px; border-top: 1px solid var(--line); }
+  .measure.m4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 900px) { .measure.m4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) { .measure { grid-template-columns: minmax(0, 1fr); } }
   .measure div { padding: 18px 16px 4px 0; }
   .measure b { display: block; font-family: var(--font-display); font-weight: 800; font-size: 30px; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
@@ -373,9 +375,10 @@
         <path d="M11 23 V27 M21 23 V27 M6 28 H26" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round"/>
       </svg>
       <span class="brand-name">AX-NAVI</span>
-      <span class="brand-ver">v0.1.0-alpha.38</span>
+      <span class="brand-ver">v2.0.0-alpha.3</span>
     </a>
     <nav class="nav" aria-label="주요 메뉴">
+      <a href="#v2">v2</a>
       <a href="#demo">데모</a>
       <a href="#map">코드 지도</a>
       <a href="#safety">안전장치</a>
@@ -401,7 +404,7 @@
         <ul class="facts" aria-label="구성">
           <li><b>19</b><span>전문 에이전트</span></li>
           <li><b>24</b><span>워크플로우 스킬</span></li>
-          <li><b>10</b><span>종의 코드 인덱스</span></li>
+          <li><b>11</b><span>종의 코드 인덱스</span></li>
           <li><b>0</b><span>필수 런타임 의존성</span></li>
         </ul>
       </div>
@@ -409,7 +412,7 @@
       <figure class="term" aria-label="axnavi 에서 기능 위치를 찾는 예시 화면" style="margin:0">
         <div class="term-bar"><i></i><i></i><i></i><span class="title">axnavi — 예시 프로젝트</span></div>
 <pre><span class="t-cy">  ╭─────────╮</span>
-<span class="t-cy">  │ ◉ ─── ◉ │</span>   <span class="t-b">AX-NAVI</span> <span class="t-dim">v0.1.0-alpha.38</span>
+<span class="t-cy">  │ ◉ ─── ◉ │</span>   <span class="t-b">AX-NAVI</span> <span class="t-dim">v2.0.0-alpha.3</span>
 <span class="t-cy">  ╰──┬───┬──╯</span>   <span class="t-dim">인덱스  최신 · 파일 2,704개 · Full</span>
 
 <span class="t-cy">AX-NAVI</span> <span class="t-dim">&gt;</span> <span class="t-b">/find 결제 승인 기능 찾아줘</span>
@@ -432,6 +435,55 @@
     </div>
   </section>
 
+  <section class="sec" id="v2">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker">v2 · 2.0.0-alpha.3</div>
+        <div>
+          <h2>코드에 안 보이는 연결까지,<br>고치기 전에 찾아냅니다.</h2>
+          <p>레거시 화면은 서버를 <code>TransData.do?worker=…&amp;action=…</code> 처럼 문자열로 부르고, 결과를 <code>rtInfo[1][2]</code> 처럼 위치로 읽는 일이 흔합니다. 호출이 코드에 없으니 grep 으로도, 백엔드만 봐서도 보이지 않습니다. v2 의 인덱스는 이 연결을 설정 없이 찾아 백엔드 메서드 · SQL 컬럼 순서와 잇고, <code>impact</code> 한 번으로 다른 저장소 화면까지 "이 컬럼을 빼면 어디가 깨지는지"를 돌려줍니다.</p>
+        </div>
+      </div>
+      <div class="split">
+        <figure class="term" aria-label="쿼리 컬럼을 빼면 영향받는 화면을 인덱스로 계산한 예시" style="margin:0">
+          <div class="term-bar"><i></i><i></i><i></i><span class="title">/impact — 백엔드 + 화면 저장소</span></div>
+<pre><span class="t-cy">AX-NAVI</span> <span class="t-dim">&gt;</span> <span class="t-b">/impact CATEGORY_TREE_S01 첫 컬럼 PARENT_NO 를 빼면?</span>
+<span class="t-dim">  사전 영향도를 인덱스로 계산해 넣었습니다 · 0.4초</span>
+
+<span class="t-gr">결론</span>
+  PARENT_NO 를 빼면 화면 <span class="t-b">24곳</span>이 깨집니다 <span class="t-dim">(저장소 2개)</span>
+  결과를 위치로 읽어 뒤 컬럼이 한 칸씩 밀립니다
+  SELECT [<span class="t-ye">0: PARENT_NO</span> | 1: PATH | 2: NO]
+
+<span class="t-rd">영향받는 곳 (전체 24)</span>
+  client/js/tree.js:842     onResult — rtInfo[1][2] <span class="t-dim">NO → undefined</span>
+  client/js/select.js:67    onResult — rtInfo[1][1] <span class="t-dim">PATH → NO</span>
+  server/jsp/check.jsp:249  onResult — rtInfo[1][2] <span class="t-dim">NO → undefined</span>
+  <span class="t-dim">… 21곳</span>
+
+<span class="t-dim">  1m 2s · $0.12</span></pre>
+        </figure>
+        <div>
+          <ul class="points">
+            <li><span class="mk" aria-hidden="true"></span><div><h3>문자열 디스패치를 스스로 알아냅니다</h3><p>화면의 호출 모양에서 "이 파라미터가 빈 이름, 저 파라미터가 메서드"라는 규칙을 추론하고, 빈과 메서드가 실제로 있을 때만 잇습니다. 그래서 이런 메서드를 죽은 코드로 잘못 보지 않습니다.</p></div></li>
+            <li><span class="mk" aria-hidden="true"></span><div><h3>"안 쓰는 것 같으니 빼줘"에 멈춥니다</h3><p>요청의 전제가 인덱스 사실과 다르면 쓰는 곳 목록과 함께 선택지를 내고 멈춥니다. 고친 뒤에도 위치로 읽는 화면이 남아 있으면 런타임이 HOLD 로 알립니다.</p></div></li>
+            <li><span class="mk" aria-hidden="true"></span><div><h3>절차는 가볍게</h3><p>인덱스 신선도는 런타임이 확인하고, 영향도는 인덱스로 먼저 계산해 넣습니다. 저장소마다 띄우던 에이전트와 고친 뒤의 LLM 재평가를 걷어, 같은 일을 절반 이하의 시간에 합니다.</p></div></li>
+          </ul>
+        </div>
+      </div>
+      <div class="route-box" style="margin-top:28px">
+        <div class="route-cap"><span><b>같은 과제 재측정</b> — 방식마다 3회 평균</span><span class="mono">평범한 Claude Code · v1 → v2</span></div>
+        <div class="measure m4">
+          <div><b>24/24</b><span>실제 사내 레거시 영향도 · 평범한 Claude Code 1/24</span></div>
+          <div><b>$0.12</b><span>같은 과제 v1 $0.74 · 4분 34초 → 62초</span></div>
+          <div><b>0/3</b><span>"컬럼 빼줘"에 화면을 깨뜨린 횟수 · v1 2/3</span></div>
+          <div><b>7분</b><span>백 · 프론트 동시 수정 · v1 23분 · $4.45 → $1.36</span></div>
+        </div>
+        <p class="note">실측 · 실제 사내 레거시(백엔드 + 화면 저장소)와 공개 전자정부 저장소 3종, 같은 질문 · 같은 녹화기. 한 저장소 안의 단순한 질문은 평범한 Claude Code 가 여전히 더 싸고 빠릅니다 — v2 가 값을 하는 곳은 다른 저장소 · 문자열 호출 · 위치로 읽는 결과처럼 코드만 봐서는 안 보이는 영향입니다. 칸별 결과는 <a href="https://github.com/Malburi/AX-NAVI-CLI/blob/main/docs/changelog.md">변경 이력</a>에 있습니다.</p>
+      </div>
+    </div>
+  </section>
+
   <section class="sec" id="demo">
     <div class="wrap">
       <div class="sec-head">
@@ -450,7 +502,7 @@
           <div class="term-bar"><i></i><i></i><i></i><span class="title">axnavi — egovframe-web-sample</span></div>
           <img src="assets/demo.gif" width="976" height="1142" loading="lazy" alt="axnavi 를 띄우고 /flow 로 샘플 등록 버튼의 흐름을 물으면, 인덱스를 질의하고 원문을 읽은 뒤 화면 · Controller · Service(ID 채번 SAMPLE-00001, 트랜잭션 context-transaction.xml) · SQL 흐름과 확인했는데 없는 것 · 확인하지 못한 것을 보고하는 녹화">
         </figure>
-        <p class="note demo-note">실제 실행 녹화 · v0.1.0-alpha.35 · 답까지 1분 35초 · $0.22. 기다리는 구간만 빨리감았고(화면 바닥의 경과 시간이 실제 값) 결과 글자는 편집하지 않았습니다 — <a href="assets/demo.cast">원본 녹화</a> · <a href="https://github.com/Malburi/AX-NAVI-CLI/blob/main/docs/assets/demo-script.md">녹화 대본과 정답지</a></p>
+        <p class="note demo-note">v1 에서 녹화 · 실제 실행 녹화 · v0.1.0-alpha.35 · 답까지 1분 35초 · $0.22. 기다리는 구간만 빨리감았고(화면 바닥의 경과 시간이 실제 값) 결과 글자는 편집하지 않았습니다 — <a href="assets/demo.cast">원본 녹화</a> · <a href="https://github.com/Malburi/AX-NAVI-CLI/blob/main/docs/assets/demo-script.md">녹화 대본과 정답지</a></p>
       </div>
       <div role="tabpanel" id="panel-demo-modify" aria-labelledby="tab-demo-modify" hidden>
         <figure class="term demo" style="margin-inline:auto">
@@ -533,19 +585,18 @@
           </div>
           <ul class="points">
             <li><span class="mk" aria-hidden="true"></span><div><h3>찾은 것 · 확인했는데 없는 것 · 확인하지 못한 것</h3><p>셋을 나눠 보고합니다. "관련 컬럼 없음 · SQL 0건" 같은 사실이 판단에 바로 쓰입니다.</p></div></li>
-            <li><span class="mk" aria-hidden="true"></span><div><h3>백엔드와 프론트엔드를 함께</h3><p>두 저장소를 담은 상위 폴더에서 띄우면, 저장소마다 에이전트를 하나씩 띄워 병렬로 훑습니다.</p></div></li>
-            <li><span class="mk warn" aria-hidden="true"></span><div><h3>썼다고 말한 리포트는 정말 썼는지 확인</h3><p>답이 리포트 파일을 안내했는데 이번 실행에서 쓰이지 않았으면 끝에 알려 줍니다. 앞선 실행의 옛 파일을 새 결과로 착각하지 않게 합니다.</p></div></li>
+            <li><span class="mk" aria-hidden="true"></span><div><h3>백엔드와 프론트엔드를 함께</h3><p>짝 저장소를 연결해 두면 한 세션에서 두 저장소를 함께 봅니다. 다른 저장소에 미치는 영향은 인덱스가 한 번에 따라갑니다.</p></div></li>
+            <li><span class="mk warn" aria-hidden="true"></span><div><h3>리포트는 원할 때만</h3><p>기본은 답만 보여 줍니다. <code>/report</code> 를 켜면 이번 답을 그대로 리포트 파일로 남깁니다 — 앞선 실행의 옛 파일을 새 결과로 착각할 일이 없습니다.</p></div></li>
           </ul>
         </div>
-        <figure class="term" aria-label="두 저장소를 병렬로 탐색하는 예시 화면" style="margin:0">
+        <figure class="term" aria-label="두 저장소를 한 세션에서 탐색하는 예시 화면" style="margin:0">
           <div class="term-bar"><i></i><i></i><i></i><span class="title">my-project — 저장소 2개</span></div>
 <pre><span class="t-dim">  인덱스  저장소 2개 — my-client(1,428) · my-server(2,575)</span>
 
 <span class="t-cy">AX-NAVI</span> <span class="t-dim">&gt;</span> <span class="t-b">/find 영상 자막 기능 찾아줘</span>
-<span class="t-cy">●</span> Task(기능 위치 탐색 (client))
-<span class="t-cy">●</span> Task(기능 위치 탐색 (server))
-<span class="t-dim">  ⎿ 기능 위치 탐색 (client) 끝남 · 도구 17회 · 2m 41s</span>
-<span class="t-dim">  ⎿ 기능 위치 탐색 (server) 끝남 · 도구 31회 · 4m 12s</span>
+<span class="t-cy">●</span> QueryIndex(search <span class="t-dim">"자막"</span>, root=my-client)  <span class="t-dim">기능 후보 3곳</span>
+<span class="t-cy">●</span> QueryIndex(search <span class="t-dim">"자막"</span>, root=my-server)  <span class="t-dim">기능 후보 2곳</span>
+<span class="t-cy">●</span> Read(VideoPlayer.js:400-460)
 
 <span class="t-gr">찾은 것</span>
   VideoPlayer.js:420  자막 메뉴 (CaptionMenu)
@@ -590,8 +641,9 @@
           </div>
           <ul class="points">
             <li><span class="mk" aria-hidden="true"></span><div><h3>바뀌는 줄을 파일의 실제 줄 번호로</h3><p>파일 수정은 앞뒤 문맥과 함께, 명령 실행은 명령 전체를 보여 주고 묻습니다. 허용·거부 이력은 감사 기록으로 남습니다.</p></div></li>
+            <li><span class="mk" aria-hidden="true"></span><div><h3>셸로 고쳐도 승인을 거칩니다</h3><p><code>python -c</code> · <code>sed -i</code> · 리다이렉트처럼 셸 명령으로 소스를 쓰려 해도 승인 창이 뜹니다. 턴이 끝나면 승인 없이 바뀐 파일을 보여 주고 되돌릴지 묻고, UTF-8 로 바뀐 EUC-KR 파일은 원래 인코딩으로 되돌려 씁니다.</p></div></li>
             <li><span class="mk" aria-hidden="true"></span><div><h3>영향도 → 변경 → 검증</h3><p><code>/modify</code> 는 쓰는 곳을 먼저 확인하고, 컨벤션에 맞춰 고친 뒤, 검증 명령을 실제로 돌려 GO · HOLD · STOP 을 냅니다. 돌리지 못한 검증은 통과로 치지 않습니다.</p></div></li>
-            <li><span class="mk" aria-hidden="true"></span><div><h3>노력은 위험만큼</h3><p>라벨 한 줄 같은 작은 변경은 가볍게 직접 확인하고, 스키마 · 트랜잭션 · 인증 · 공통 모듈에 닿으면 독립 에이전트가 따로 검증합니다.</p></div></li>
+            <li><span class="mk" aria-hidden="true"></span><div><h3>노력은 위험만큼</h3><p>고친 뒤에는 재영향도 · 검증 명령 같은 결정적 검사를 늘 돌리고, 스키마 · 트랜잭션 · 인증 · 데이터 변경에 닿을 때만 독립 에이전트가 한 번 더 검증합니다.</p></div></li>
             <li><span class="mk" aria-hidden="true"></span><div><h3>사람이 정할 일은 묻습니다</h3><p>프로젝트 구성처럼 사람이 결정할 것만 선택지로 띄웁니다. 선택지 개수에 제한이 없고, 건너뛴 질문은 확정으로 기록하지 않습니다.</p></div></li>
           </ul>
         </div>
@@ -718,7 +770,7 @@
       </div>
 
       <div class="panel" role="tabpanel" id="panel-net" aria-labelledby="tab-net">
-        <div class="cmdbox"><span class="lbl">설치</span><pre>npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.38</pre><button class="copy" type="button" id="copy-net">복사</button></div>
+        <div class="cmdbox"><span class="lbl">설치</span><pre>npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.3</pre><button class="copy" type="button" id="copy-net">복사</button></div>
         <div class="cmdbox"><span class="lbl">확인 · 시작</span><pre>cd 내-프로젝트
 axnavi doctor
 axnavi index build
@@ -728,9 +780,9 @@ axnavi</pre><button class="copy" type="button" id="copy-start">복사</button></
 
       <div class="panel" role="tabpanel" id="panel-closed" aria-labelledby="tab-closed" hidden>
         <p>npm 이 외부 주소에 붙지 못하는 PC 는 파일로 받아 설치합니다. 의존성은 사내 npm 저장소에서 받습니다.</p>
-        <div class="cmdbox"><span class="lbl">GitHub 에는 닿는데 npm 이 막힐 때 (PowerShell)</span><pre>Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.38" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
+        <div class="cmdbox"><span class="lbl">GitHub 에는 닿는데 npm 이 막힐 때 (PowerShell)</span><pre>Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.3" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
 npm i -g "$env:TEMP\axnavi.tgz"</pre><button class="copy" type="button" id="copy-closed">복사</button></div>
-        <div class="cmdbox"><span class="lbl">GitHub 에도 닿지 않을 때 — 배포 담당자에게 받은 파일</span><pre>npm i -g C:\경로\axnavi-0.1.0-alpha.38.tgz --omit=optional</pre><button class="copy" type="button" id="copy-file">복사</button></div>
+        <div class="cmdbox"><span class="lbl">GitHub 에도 닿지 않을 때 — 배포 담당자에게 받은 파일</span><pre>npm i -g C:\경로\axnavi-2.0.0-alpha.3.tgz --omit=optional</pre><button class="copy" type="button" id="copy-file">복사</button></div>
         <p class="hint">PowerShell 에서 <code>running scripts is disabled</code> 가 나오면 <code>axnavi.cmd</code> 로 부르세요.</p>
       </div>
 
