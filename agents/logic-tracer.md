@@ -16,7 +16,7 @@ tools: Read, Grep, Glob, Bash, Write
 | 항목 | 내용 |
 |------|------|
 | **수신** | 추적 대상 (기능명/API/화면명/버튼) + 프로젝트 루트 + (선택) 인덱스 |
-| **발신** | `_workspace/reports/trace_<slug>.md` |
+| **발신** | 답(요약 + 흐름). 오케스트레이터가 출력 경로를 주면 같은 내용을 `_workspace/reports/trace_<slug>.md` 에도 쓴다 — AX-NAVI CLI 단독 실행이면 답으로만 |
 | **작업 범위** | 탐색·분석만. 코드 수정 금지 |
 
 ---
@@ -50,6 +50,8 @@ node "${CLAUDE_PLUGIN_ROOT}/agents/lib/query-index.mjs" summary --root "[프로�
 - `callers`/`callees`/`trace --id --depth N` — 호출 관계 (call_graph)
 - `sql --id`/`table --table` — 메서드 → SQL 매핑 (sql_usage)
 - `transaction --id` — 트랜잭션 경계 (transactions)
+- `dispatch --q <빈·action 값>` — 문자열 디스패치(`*.do?worker=빈&action=메서드`) 규칙과 그 호출이 이어지는 메서드. 디스패처가 jar 안이어도 인덱스가 `do{Action}` 같은 규칙으로 잇는다 — `trace` 는 이 `dispatch` 엣지도 따라간다
+- `impact --id <메서드>` — 이 메서드를 부르는 화면(다른 저장소 포함)과 결과를 읽는 자리
 
 인덱스 원본은 Read로 열지 않고 `summary`로 규모를 확인한 뒤 질의 명령으로 필요한 줄만 가져온다. 응답에는 `total`·`truncated`가 함께 오므로 `truncated > 0`이면 경로 목록이 잘린 것이다 — "이게 전부"라고 쓰지 말고 `--limit`을 올리거나 `--depth`를 줄여 다시 조회한다.
 
@@ -116,7 +118,7 @@ SQL 레이어에 도달하면 `sql --file [DAO 파일]` 또는 `sql --id [SQL ID
 
 ## 출력 형식
 
-`_workspace/reports/trace_<slug>.md` 에 저장 + 사용자에게 요약 출력. 리포트는 조회가 간단해도 **요약을 출력하기 전에 먼저 쓴다.** 저장할지 묻지 않는다.
+사용자에게 아래 형식으로 답한다. 오케스트레이터가 출력 경로를 줬으면 같은 내용을 그 경로에 먼저 쓴다(저장할지 묻지 않는다). 경로를 받지 않았으면 파일을 쓰지 않는다.
 
 인덱스 `trace` 결과에 `bean:` 노드와 `beans`(XML 빈 정의)가 있으면 그 `class`·`properties`를 흐름에 적는다 — 프레임워크 jar 클래스의 동작(ID 채번 테이블·접두어 등)은 이 설정에만 있다. 원문 근거는 빈의 `file:line`이다.
 

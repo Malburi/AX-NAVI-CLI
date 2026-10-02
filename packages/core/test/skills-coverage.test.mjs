@@ -158,9 +158,10 @@ test("스킬 본문을 넣는 자리마다 치환을 거친다", () => {
    * 한 곳만 빼먹으면 그 경로의 스킬만 조용히 실패한다.
    */
   const src = readFileSync(join(REPO, "packages", "cli", "src", "commands.mjs"), "utf8");
-  const wrapped = (src.match(/resolveSkillPaths\(skill\.body\)/g) ?? []).length;
+  /* v2: 실행자 경로는 executorBody 로 구간을 고른 뒤 치환한다 — 그것도 치환을 거친 주입이다. */
+  const wrapped = (src.match(/resolveSkillPaths\((?:executorBody\()?skill\.body\)/g) ?? []).length;
   const raw = (src.match(/^\s+skill\.body,$/gm) ?? []).length;
-  assert.equal(wrapped, 4, `치환을 거치는 주입 지점이 ${wrapped}곳 — 4곳이어야 한다`);
+  assert.ok(wrapped >= 4, `치환을 거치는 주입 지점이 ${wrapped}곳 — 4곳 이상이어야 한다`);
   assert.equal(raw, 0, "치환 없이 본문을 그대로 넣는 자리가 남았다");
 });
 

@@ -129,19 +129,17 @@ export async function test(register, assert) {
    * 일을 앞 단계와 규칙이 이미 해서, 같은 파일을 한 번 더 읽는 데 각 약 2분이 들었다(실측).
    * 다만 위험 신호가 보이면 반드시 normal 로 올려 독립 검증을 받게 한다 — 이 경로가 사라지면 안 된다.
    */
-  register("safe-modify small 은 패턴·안전성 에이전트 없이 직접 확인하고, 위험 신호면 normal 로 올린다", () => {
+  register("safe-modify v2: small 은 에이전트 없이 직접 확인하고 위험 신호면 normal 로, normal 도 change-safety 하나만 부른다", () => {
     const text = read(join(root, "skills", "safe-modify", "SKILL.md"));
     const phase3 = text.slice(text.indexOf("## Phase 3"), text.indexOf("## Phase 4"));
-    assert.ok(phase3.includes("### 3-S. 작은 변경의 직접 확인"), "3-S 절 없음");
-    assert.ok(/`small`은 3-2[^\n]*3-1·3-3 에이전트를 부르지 않고/.test(phase3), "small 이 에이전트를 부르지 않는다는 순서 규칙 없음");
-    const direct = phase3.slice(phase3.indexOf("### 3-S"), phase3.indexOf("### 3-3"));
+    assert.ok(/`small`: 직접 판단/.test(phase3), "small 직접 판단 규칙 없음");
     for (const signal of ["SQL 문자열 결합", "innerHTML", "인증", "트랜잭션", "DDL", "외부 호출"]) {
-      assert.ok(direct.includes(signal), `위험 신호 목록에서 빠짐: ${signal}`);
+      assert.ok(phase3.includes(signal), `위험 신호 목록에서 빠짐: ${signal}`);
     }
-    assert.ok(/하나라도 있으면 규모를 `normal`로 올리고 3-1·3-3을 에이전트로 부른다/.test(direct), "위험 신호 → normal 승격 규칙 없음");
-    assert.ok(!direct.includes('subagent_type="ax-navi:pattern-conformance"') && !direct.includes('subagent_type="ax-navi:change-safety"'), "3-S 에서 에이전트를 부른다");
-    // normal 경로의 독립 검증은 그대로 남아 있어야 한다
-    assert.ok(phase3.includes('subagent_type="ax-navi:pattern-conformance"') && phase3.includes('subagent_type="ax-navi:change-safety"'), "normal 의 3-1·3-3 호출이 사라졌다");
-    assert.ok(!phase3.includes("병렬 합산"), "옛 small 병렬 흐름이 남아 있다");
+    assert.ok(/있으면 `normal` 로 올린다/.test(phase3), "위험 신호 → normal 승격 규칙 없음");
+    assert.ok(phase3.includes('subagent_type="ax-navi:change-safety"'), "normal 의 안전성 평가 호출이 사라졌다");
+    assert.ok(!text.includes('subagent_type="ax-navi:pattern-conformance"'), "v2 는 패턴 대조를 직접 한다 — pattern-conformance 서브에이전트를 부르지 않는다");
+    assert.ok(/orchestrator: true/.test(text), "서브에이전트가 하나라도 지휘 절차임을 frontmatter 로 밝힌다");
+    assert.ok(text.includes("impact"), "사전 영향도의 출발점이 impact 가 아니다");
   });
 }
