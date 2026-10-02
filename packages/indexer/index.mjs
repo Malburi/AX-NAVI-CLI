@@ -21,3 +21,4 @@ export {
 
 export { COMMANDS, loadIndex, clearIndexCache } from "../../agents/lib/query-index.mjs";
 export { buildCoverageReport } from "../../agents/lib/coverage-report.mjs";
+export { selectColumns } from "../../agents/lib/index/dispatch.mjs";

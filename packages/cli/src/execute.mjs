@@ -25,6 +25,7 @@ import { unwrittenClaims } from "./claims.mjs";
 import { createApprover } from "./approval.mjs";
 import { auditTurn, describeAudit, revertChanges, takeSnapshot } from "./turn-audit.mjs";
 import { ensureFreshIndexes } from "./freshness.mjs";
+import { describePostVerify, postVerify } from "./post-verify.mjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { learnFromError, modelUnavailableHint, startWithLearnedModels } from "./models.mjs";
 
@@ -572,10 +573,12 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
   queueWatch.unref?.();
 
   /*
-   * 턴 전 git 상태. 승인 게이트가 글자로 못 알아본 쓰기를 턴 뒤에 실제 파일로 잡는다(turn-audit.mjs).
-   * 승인을 받기로 한 모드(자동 · 매번 묻기 · 계획)에서만 — 빠름 · 전부승인은 사람이 덜 묻기를 골랐다.
+   * 턴 전 git 상태. 턴 뒤에 두 가지를 실제 파일로 본다.
+   *   감사(turn-audit.mjs) — 승인 게이트가 글자로 못 알아본 쓰기. 승인을 받기로 한 모드(자동 · 매번 묻기 · 계획)에서만.
+   *   고친 뒤 검증(post-verify.mjs) — SELECT 순서가 바뀐 SQL 을 위치로 읽는 화면이 남았는지. 모드와 무관하게 늘.
+   * 백그라운드 작업은 찍지 않는다 — 전경 턴의 변경과 섞인다.
    */
-  const snapshot = agent.guardSource ? takeSnapshot(sourceRoots) : null;
+  const snapshot = background ? null : takeSnapshot(sourceRoots);
 
   try {
     for await (const event of runAgent({ provider, agent, registry, gateway, ctx, userPrompt: prompt, ...(conversation ? { conversation } : {}) })) {
@@ -847,6 +850,28 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
   }
 
   /**
+   * 고친 뒤 검증 — SELECT 순서가 바뀐 SQL 을 위치로 읽는 화면 중 이번에 고치지 않은 곳이 남았는지 런타임이 본다.
+   * @param {import("./turn-audit.mjs").Snapshot} snap
+   * @param {import("./turn-audit.mjs").Change[]} changes
+   */
+  function verifyAfterChange(snap, changes) {
+    if (!changes.length) return;
+    try {
+      const pv = postVerify(snap, changes, (discovery.roots.length ? discovery.roots.map((r) => r.paths) : [paths]).map((p) => ({ root: p.root, primary: p.root === discovery.primary?.root || p.root === paths.root })));
+      const lines = describePostVerify(pv, root);
+      if (!lines.length) return;
+      for (const line of lines) emit(pv.verdict === "hold" ? ui.yellow(`  ⚠ ${line}`) : ui.dim(`  ${line}`));
+      approvalAudit.record({
+        at: new Date().toISOString(), role: agent.name, tool: "고친 뒤 검증",
+        input: { sql: pv.columnChanges.map((c) => c.id), unhandled: pv.results.flatMap((r) => r.unhandled.map((u) => `${u.repo}/${u.file}`)) },
+        outcome: pv.verdict === "hold" ? "denied" : "ok", reason: "SELECT 순서 변경 · 위치로 읽는 화면", durationMs: 0,
+      });
+    } catch (error) {
+      debug(ui.dim(`  고친 뒤 검증 실패: ${error instanceof Error ? error.message : String(error)}\n`));
+    }
+  }
+
+  /**
    * 리포트 저장 — v1 처럼 모델이 파일을 쓰게 하지 않고, 답을 그대로 남긴다.
    * @param {string} text
    */
@@ -876,6 +901,8 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
       debug(ui.dim(`  턴 뒤 감사 실패: ${error instanceof Error ? error.message : String(error)}\n`));
       return;
     }
+    verifyAfterChange(snap, [...result.approved, ...result.viaShell, ...result.unapproved]);
+    if (!agent.guardSource) return;
     const lines = describeAudit(result, root);
     if (!lines.length) return;
     for (const line of lines) emit(ui.yellow(`  ⚠ ${line}`));
