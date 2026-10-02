@@ -570,7 +570,7 @@ PARTIAL 대상은 에이전트가 원문을 직접 읽어 확인한 뒤 수정�
 
 ## Claude Code 안에서 쓰기
 
-같은 에이전트 · 스킬을 Claude Code 플러그인으로도 쓸 수 있습니다.
+같은 에이전트 · 스킬을 Claude Code 플러그인으로도 쓸 수 있습니다. 플러그인 저장소([Malburi/AX-NAVI-V2](https://github.com/Malburi/AX-NAVI-V2))는 이 저장소에서 `node scripts/build-plugin.mjs <플러그인 저장소 사본>` 으로 만듭니다 — 실행기 대신 Claude Code 훅이 인덱스 신선도 · 사전 영향도 · 셸 소스 쓰기 승인 · 평가 서브에이전트 1번 · EUC-KR 보존 · 고친 뒤 위치 읽기 화면 확인을 맡습니다(`plugin/hooks.json`, `packages/plugin/src/hooks.mjs`).
 
 ```bash
 claude plugin marketplace add Malburi/AX-NAVI-V2

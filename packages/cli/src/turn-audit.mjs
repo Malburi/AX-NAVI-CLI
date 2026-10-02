@@ -288,3 +288,36 @@ export function describeAudit(audit, cwd) {
   }
   return lines;
 }
+
+/**
+ * 턴 전 상태를 파일로 남길 수 있게 — 플러그인 훅은 질문을 받을 때(UserPromptSubmit)와 답이 끝날 때(Stop)가
+ * 서로 다른 프로세스라 메모리로 넘길 수 없다. 바이트는 base64 로 담는다.
+ * @param {Snapshot} snap
+ * @returns {string}
+ */
+export function serializeSnapshot(snap) {
+  return JSON.stringify({
+    skipped: snap.skipped,
+    repos: [...snap.repos.values()].map((repo) => ({
+      root: repo.root, top: repo.top,
+      dirty: [...repo.dirty.entries()].map(([rel, st]) => [rel, st.hash, st.bytes ? st.bytes.toString("base64") : null]),
+    })),
+  });
+}
+
+/**
+ * @param {string} text
+ * @returns {Snapshot}
+ */
+export function deserializeSnapshot(text) {
+  const raw = JSON.parse(text);
+  /** @type {Snapshot} */
+  const snap = { repos: new Map(), skipped: raw.skipped ?? [] };
+  for (const repo of raw.repos ?? []) {
+    /** @type {Map<string, FileState>} */
+    const dirty = new Map();
+    for (const [rel, hash, b64] of repo.dirty ?? []) dirty.set(rel, { hash, bytes: b64 ? Buffer.from(b64, "base64") : null });
+    snap.repos.set(repo.root, { root: repo.root, top: repo.top, dirty });
+  }
+  return snap;
+}
