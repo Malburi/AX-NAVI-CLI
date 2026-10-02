@@ -282,7 +282,7 @@ const COMMANDS = {
     if (id) {
       for (const r of roots) {
         const graph = tryIndex(r, "call_graph", dirFor(r));
-        for (const node of graph?.nodes || []) if (node.type === "method" && idMatches(node.id, id) && node.source !== "external") methodIds.add(node.id);
+        for (const node of graph?.nodes || []) /* 영향도는 정확히 맞는 메서드만 — 부분 문자열로 맞추면 "list" 가 수천 개를 끌고 온다. */ if (node.type === "method" && (node.id === id || node.id.endsWith(`.${id}`)) && node.source !== "external") methodIds.add(node.id);
       }
     }
     const columns = statements[0]?.columns || [];
@@ -308,7 +308,8 @@ const COMMANDS = {
           if (edge.to !== methodId || edge.type === "dispatch") continue;
           codeCallers.push({ repo: label(r), from: edge.from, type: edge.type, file: edge.file, line: edge.line });
         }
-        methods.push({ repo: label(r), id: methodId, file: node.file, line: node.line });
+        const runs = [...new Set((tryIndex(r, "sql_usage", dirFor(r))?.usages || []).filter((item) => item.method === methodId).map((item) => item.sql_id))];
+        methods.push({ repo: label(r), id: methodId, file: node.file, line: node.line, runs_sql: runs });
         break;
       }
       if (!home) continue;
@@ -703,7 +704,10 @@ function main() {
   }
 }
 
-export { COMMANDS, loadIndex };
+/** 다시 만든 인덱스를 같은 프로세스가 읽게 — REPL 은 한 프로세스로 여러 턴을 돈다. */
+function clearIndexCache() { cache.clear(); }
+
+export { COMMANDS, loadIndex, clearIndexCache };
 
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) process.exit(main());

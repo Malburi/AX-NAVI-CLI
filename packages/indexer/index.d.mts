@@ -109,4 +109,7 @@ export type QueryCommand =
 export declare const COMMANDS: Record<QueryCommand, (args: QueryArgs) => unknown>;
 
 /** 인덱스가 없으면 빈 결과가 아니라 `missingIndex`를 실은 오류를 던진다. */
+/** 한 프로세스 안에서 읽어 둔 인덱스를 버린다 — 다시 만든 뒤 낡은 내용을 읽지 않게. */
+export declare function clearIndexCache(): void;
+
 export declare function loadIndex(root: string, name: IndexName, indexDir?: string): unknown;
