@@ -597,6 +597,7 @@ async function runOrchestratorSkill(root, skill, prompt, providerName, ctx = {})
       sourcePath: skill.sourcePath,
       warnings: [],
       allowDelegation: true,
+      ...(typeof skill.reviewLimit === "number" ? { reviewLimit: skill.reviewLimit } : {}),
       // 하네스 파일을 만들어야 하므로 쓰기가 필요하다. 이 사실은 화면에 드러난다.
       role: { name: skill.name, allowedTools: null, allowMutations: true },
     },

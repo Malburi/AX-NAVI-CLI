@@ -679,13 +679,18 @@ export function delegatedEnv(base, options) {
 
 /**
  * 소스 쓰기 가드 훅에 넘길 값. 가드가 꺼진 실행(빠름 · 전부승인)은 훅이 아무것도 하지 않는다.
- * @param {{ guardSource?: "ask" | "deny", sourceRoots?: readonly string[] }} spec
+ * @param {{ guardSource?: "ask" | "deny", sourceRoots?: readonly string[], reviewLimit?: number }} spec
  * @param {string} [pluginDir]
  * @returns {Record<string, string>}
  */
 export function guardEnv(spec, pluginDir) {
-  if (!spec.guardSource) return { AXNAVI_WRITE_GUARD: "0" };
+  /** @type {Record<string, string>} */
+  const review = typeof spec.reviewLimit === "number"
+    ? { AXNAVI_REVIEW_LIMIT: String(spec.reviewLimit), AXNAVI_REVIEW_COUNTER: join(tmpdir(), `axnavi-review-${process.pid}-${Date.now()}.txt`) }
+    : {};
+  if (!spec.guardSource) return { AXNAVI_WRITE_GUARD: "0", ...review };
   return {
+    ...review,
     AXNAVI_WRITE_GUARD: "1",
     AXNAVI_SOURCE_ROOTS: JSON.stringify(spec.sourceRoots ?? []),
     ...(spec.guardSource === "deny" ? { AXNAVI_MODE: "plan" } : {}),
@@ -788,7 +793,7 @@ function pluginMuteSettings() {
   }
   try {
     const file = join(mkdtempSync(join(tmpdir(), "axnavi-settings-")), "settings.json");
-    writeFileSync(file, JSON.stringify(delegatedSettings(names, FOREGROUND_HOOK_COMMAND, ENCODING_HOOK_COMMAND, DISK_SCAN_HOOK_COMMAND, WRITE_GUARD_HOOK_COMMAND), null, 2), "utf8");
+    writeFileSync(file, JSON.stringify(delegatedSettings(names, FOREGROUND_HOOK_COMMAND, ENCODING_HOOK_COMMAND, DISK_SCAN_HOOK_COMMAND, WRITE_GUARD_HOOK_COMMAND, REVIEW_HOOK_COMMAND), null, 2), "utf8");
     mutePath = file;
   } catch {
     // 임시 폴더에 못 쓰면 설정 없이 돈다. 안내문의 "뒤에서 돌리지 마라" 가 남은 방어선이다.
@@ -817,6 +822,9 @@ const DISK_SCAN_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${DIS
 export const WRITE_GUARD_TOOLS = "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell";
 const WRITE_GUARD_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "core", "src", "safety", "write-guard.mjs");
 const WRITE_GUARD_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${WRITE_GUARD_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
+/* 평가 서브에이전트 한도 훅(core/src/safety/review-budget.mjs). 횟수는 실행마다 새 임시 파일에 센다(guardEnv). */
+const REVIEW_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "core", "src", "safety", "review-budget.mjs");
+const REVIEW_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${REVIEW_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
 /* EUC-KR 등 레거시 인코딩 파일을 읽고 고칠 때 인코딩을 지키는 훅(legacy-encoding.mjs). 뒤에 pre|post 를 붙인다. */
 const ENCODING_HOOK_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "legacy-encoding-hook.mjs");
 const ENCODING_HOOK_COMMAND = `"${process.execPath.replace(/\\/g, "/")}" "${ENCODING_HOOK_SCRIPT.replace(/\\/g, "/")}"`;
@@ -876,13 +884,14 @@ export function encodingHookEvents(hooks) {
  * @param {string} [encodingCommand]  인코딩 보존 훅 명령(뒤에 pre|post 를 붙인다)
  * @param {string} [diskScanCommand]  디스크 전체 검색을 막는 훅 명령
  * @param {string} [writeGuardCommand]  소스 쓰기 가드 훅 명령. 실행마다 AXNAVI_WRITE_GUARD 환경변수로 켜고 끈다
+ * @param {string} [reviewCommand]  평가 서브에이전트 한도 훅 명령. 실행마다 AXNAVI_REVIEW_LIMIT 으로 켠다
  */
-export function delegatedSettings(pluginNames, hookCommand, encodingCommand, diskScanCommand, writeGuardCommand) {
+export function delegatedSettings(pluginNames, hookCommand, encodingCommand, diskScanCommand, writeGuardCommand, reviewCommand) {
   return {
     ...(pluginNames.length ? { enabledPlugins: Object.fromEntries(pluginNames.map((n) => [n, false])) } : {}),
     hooks: {
       PreToolUse: [
-        { matcher: "Agent", hooks: [{ type: "command", command: hookCommand }] },
+        { matcher: "Agent", hooks: [{ type: "command", command: hookCommand }, ...(reviewCommand ? [{ type: "command", command: reviewCommand }] : [])] },
         ...(encodingCommand ? [{ matcher: ENCODING_TOOLS, hooks: [{ type: "command", command: `${encodingCommand} pre` }] }] : []),
         ...(diskScanCommand ? [{ matcher: "Bash|PowerShell", hooks: [{ type: "command", command: diskScanCommand }] }] : []),
         ...(writeGuardCommand ? [{ matcher: WRITE_GUARD_TOOLS, hooks: [{ type: "command", command: writeGuardCommand }] }] : []),

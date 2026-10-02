@@ -61,6 +61,8 @@ export interface SessionSpec {
    * 사람에게 묻거나("ask") 막는다("deny", 계획 모드). 산출물(_workspace·.axnavi·.claude/skills 등)은 빼고.
    */
   readonly guardSource?: "ask" | "deny";
+  /** 평가 서브에이전트(change-safety · pattern-conformance · impact-analyzer) 최대 횟수. 넘으면 훅이 거부한다. */
+  readonly reviewLimit?: number;
   /** 소스로 볼 프로젝트 루트들. 여러 저장소를 함께 열었을 때 모두 지킨다. */
   readonly sourceRoots?: readonly string[];
   /*

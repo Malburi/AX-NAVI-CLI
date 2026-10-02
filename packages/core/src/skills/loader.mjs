@@ -24,6 +24,7 @@ import { parseFrontmatter } from "../agents/loader.mjs";
  * @property {string | null} delegatesTo    별칭 스텁이면 위임 대상 스킬 이름
  * @property {string[]} agents              본문이 지목한 에이전트 이름 (등장 순)
  * @property {boolean} isOrchestrator       여러 에이전트를 지휘하는 절차인가
+ * @property {number} [reviewLimit]          평가 서브에이전트(change-safety 등) 최대 횟수(frontmatter review_limit)
  * @property {string} sourcePath
  */
 
@@ -89,6 +90,7 @@ export async function loadSkill(skillsDir, name) {
     delegatesTo,
     agents,
     isOrchestrator,
+    ...(Number.isFinite(Number(data["review_limit"])) && String(data["review_limit"] ?? "").trim() !== "" ? { reviewLimit: Number(data["review_limit"]) } : {}),
     sourcePath,
   };
 }

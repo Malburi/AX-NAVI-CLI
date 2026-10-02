@@ -30,6 +30,7 @@ import {
 import { encodingCleanup, encodingPostToolUse, encodingPreToolUse, restoreAll } from "../../provider-claude-cli/src/legacy-encoding.mjs";
 import { diskScanDecision } from "../../provider-claude-cli/src/disk-scan-guard.mjs";
 import { writeGuardDecision } from "../../core/src/safety/write-guard.mjs";
+import { reviewBudgetDecision } from "../../core/src/safety/review-budget.mjs";
 import { noAnswerText } from "../../cli/src/mcp/answers.mjs";
 
 /**
@@ -219,6 +220,10 @@ export class AgentSdkProvider {
      * 소스 쓰기 가드(sourceEditGate). 디스크 전체 검색 차단이 먼저다 — 거부가 묻기보다 앞선다.
      * 꺼져 있으면(빠름 · 전부승인) 디스크 검색 차단만 남는다.
      */
+    /* 평가 서브에이전트 한도(review-budget.mjs). 지휘 스킬이 정했을 때만 — 실행마다 새로 센다. */
+    const reviewState = { limit: spec.reviewLimit ?? 0, used: 0 };
+    /** @type {import("@anthropic-ai/claude-agent-sdk").HookCallback[]} */
+    const reviewGate = typeof spec.reviewLimit === "number" ? [async (/** @type {any} */ input) => /** @type {any} */ (reviewBudgetDecision(input?.tool_input, reviewState))] : [];
     const guardOpts = { ...(spec.sourceRoots ? { roots: spec.sourceRoots } : {}), ...(spec.guardSource ? { mode: spec.guardSource } : {}), pluginRoot: this.options.pluginDir ?? "" };
     /** @type {import("@anthropic-ai/claude-agent-sdk").HookCallback[]} */
     const editGate = [async (/** @type {any} */ input) => {
@@ -249,7 +254,7 @@ export class AgentSdkProvider {
         canUseTool,
         hooks: {
           PreToolUse: [
-            { matcher: "Agent", hooks: [/** @type {any} */ (foregroundAgents)] },
+            { matcher: "Agent", hooks: [/** @type {any} */ (foregroundAgents), ...reviewGate] },
             // 소스 쓰기 가드 + 디스크 전체 검색 차단(disk-scan-guard.mjs).
             { matcher: SOURCE_EDIT_TOOLS, hooks: editGate },
             // EUC-KR 등 레거시 인코딩 파일은 도구가 도는 동안만 UTF-8 로 바꿨다가 원래 인코딩으로 되돌린다.

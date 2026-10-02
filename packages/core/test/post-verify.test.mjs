@@ -20,8 +20,8 @@ function write(root, rel, text) {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, text, "utf8");
 }
-const QUERY = (cols) => `<queries><query><id>CATEGORY_PARENT_TREE_S01</id><value>SELECT ${cols} FROM TB_CATEGORY WHERE NO = ?</value></query></queries>`;
-const SCREEN = (a, b) => `function openTree() {
+const QUERY = (/** @type {string} */ cols) => `<queries><query><id>CATEGORY_PARENT_TREE_S01</id><value>SELECT ${cols} FROM TB_CATEGORY WHERE NO = ?</value></query></queries>`;
+const SCREEN = (/** @type {number} */ a, /** @type {number} */ b) => `function openTree() {
   $.ajax({ url: CONTEXT_PATH + "/TransData.do", data: "worker=CategoryService&action=listParentTree&no=" + k, success: onResult });
 }
 function onResult(request) { var data = transData(request); $('#a').val(data.rtInfo[1][${a}]); $('#b').val(data.rtInfo[1][${b}]); }`;

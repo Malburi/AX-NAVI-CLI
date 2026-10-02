@@ -109,6 +109,7 @@ export async function* runAgent({ provider, agent, registry, gateway, ctx, userP
         ...(agent.allowDelegation ? { allowDelegation: true } : {}),
         ...(agent.permissionMode ? { permissionMode: agent.permissionMode } : {}),
         ...(agent.guardSource ? { guardSource: agent.guardSource } : {}),
+        ...(typeof agent.reviewLimit === "number" ? { reviewLimit: agent.reviewLimit } : {}),
         ...(agent.sourceRoots?.length ? { sourceRoots: agent.sourceRoots } : {}),
         ...(conversation?.providerSessionId ? { resumeFrom: conversation.providerSessionId } : {}),
       },

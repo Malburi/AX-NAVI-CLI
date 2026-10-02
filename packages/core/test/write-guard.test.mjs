@@ -165,3 +165,17 @@ test("API 키 연결의 Gateway 도 셸 소스 쓰기를 묻고, 계획 모드�
   assert.equal((await gateway.execute({ id: "2", name: "Bash", input: { command: "ls src" } }, ctx("ask", "deny"))).content, "ok", "읽기는 묻지 않는다");
   assert.deepEqual(asked, ["Bash", "Bash"]);
 });
+
+test("평가 서브에이전트는 한도까지만 — 작업 서브에이전트는 세지 않는다", async () => {
+  const { reviewBudgetDecision } = await import("../src/safety/review-budget.mjs");
+  const state = { limit: 1, used: 0 };
+  assert.deepEqual(reviewBudgetDecision({ subagent_type: "ax-navi:change-safety" }, state), {});
+  assert.deepEqual(reviewBudgetDecision({ subagent_type: "general-purpose" }, state), {}, "작업 서브에이전트는 막지 않는다");
+  const second = /** @type {any} */ (reviewBudgetDecision({ subagent_type: "ax-navi:pattern-conformance" }, state));
+  assert.equal(second.hookSpecificOutput?.permissionDecision, "deny");
+  assert.match(second.hookSpecificOutput?.permissionDecisionReason ?? "", /직접 확인한 근거로 결정/);
+  const { loadSkill } = await import("../src/skills/loader.mjs");
+  const { fileURLToPath } = await import("node:url");
+  const skill = await loadSkill(fileURLToPath(new URL("../../../skills", import.meta.url)), "safe-modify");
+  assert.equal(skill.reviewLimit, 1, "safe-modify 의 review_limit 을 읽지 못했다");
+});
