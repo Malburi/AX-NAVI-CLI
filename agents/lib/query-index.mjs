@@ -18,16 +18,21 @@
  * - 없는 인덱스를 물으면 빈 결과가 아니라 사유를 돌려준다 — "결과 0건"과 "인덱스 없음"은 다르다.
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { positionalEffect } from "./index/dispatch.mjs";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
 
 function parseArgs(argv) {
-  const args = { command: argv[0] || "help", root: process.cwd(), limit: DEFAULT_LIMIT };
+  const args = { command: argv[0] || "help", root: process.cwd(), limit: DEFAULT_LIMIT, roots: [] };
+  let rootSeen = false;
   for (let i = 1; i < argv.length; i += 1) {
-    if (argv[i] === "--root") args.root = argv[++i];
+    /* --root 를 여러 번 주면 첫째가 기준 저장소, 나머지는 함께 볼 저장소다(impact). */
+    if (argv[i] === "--root") { const value = argv[++i]; if (rootSeen) args.roots.push(resolve(value)); else { args.root = value; rootSeen = true; } }
+    else if (argv[i] === "--sql") args.sql = argv[++i];
+    else if (argv[i] === "--column") args.column = argv[++i];
     else if (argv[i] === "--id") args.id = argv[++i];
     else if (argv[i] === "--name") args.name = argv[++i];
     else if (argv[i] === "--file") args.file = argv[++i];
@@ -224,7 +229,153 @@ export function rankFeatures(entries, q, { groups: groupLimit = 8, files: fileLi
   };
 }
 
+/*
+ * 함께 볼 저장소. 명시한 --root 들 + 기준 저장소의 pair_config.md 가 가리키는 짝 저장소.
+ * 인덱스가 없는 저장소는 빼고, 뺀 사실을 돌려준다.
+ */
+function relatedRoots(root, extra = []) {
+  const found = [resolve(root), ...extra.map((item) => resolve(item))];
+  try {
+    const text = readFileSync(join(root, "_workspace", "pair_config.md"), "utf8");
+    for (const m of text.matchAll(/^partner_root(?:\[\d+\])?:\s*(.+)$/gm)) {
+      const value = (m[1] || "").trim();
+      if (value && value !== "unknown") found.push(resolve(value));
+    }
+  } catch { /* 짝 설정이 없다 */ }
+  const unique = [...new Set(found)];
+  return {
+    roots: unique.filter((item) => existsSync(join(item, "_workspace", "index", "_meta.json"))),
+    missing: unique.filter((item) => !existsSync(join(item, "_workspace", "index", "_meta.json"))),
+  };
+}
+
+/** 없으면 null — 여러 저장소를 볼 때 한쪽 인덱스가 빠져도 나머지는 본다. */
+function tryIndex(root, name, indexDir) {
+  try { return loadIndex(root, name, indexDir); } catch (error) { if (error.missingIndex) return null; throw error; }
+}
+
 const COMMANDS = {
+  /*
+   * 영향도 — SQL(·컬럼) 또는 메서드를 바꾸면 어디가 영향받나. 저장소를 넘어 화면까지 따라간다.
+   *
+   * 실측(실제 레거시 xu25): 백엔드만 연 평범한 Claude Code 는 6번 모두 "한 곳뿐" 이라 답했다. 실제로는 화면
+   * 24곳이 문자열 디스패치(`TransData.do?worker=…&action=…`)로 부르고 결과를 위치(`rtInfo[1][2]`)로 읽었다.
+   * 이 명령은 인덱스의 사실만으로 그 24곳과, 컬럼을 빼면 각 자리가 무엇을 읽게 되는지를 돌려준다.
+   */
+  impact({ root, indexDir, roots: extraRoots = [], sql: sqlId, id, column, limit }) {
+    if (!sqlId && !id) throw new Error("impact에는 --sql <SQL id> 또는 --id <메서드>가 필요합니다.");
+    const { roots, missing } = relatedRoots(root, extraRoots);
+    const label = (item) => basename(item);
+    const dirFor = (item) => (item === resolve(root) ? indexDir : undefined);
+
+    /* 1) SQL 과 그 SQL 을 실행하는 메서드 */
+    const statements = [];
+    const methodIds = new Set();
+    for (const r of roots) {
+      const usage = tryIndex(r, "sql_usage", dirFor(r));
+      if (!usage) continue;
+      if (sqlId) {
+        for (const item of usage.sqls || []) if (item.id === sqlId || item.statement_id === sqlId) statements.push({ repo: label(r), id: item.id, type: item.type, file: item.file, line: item.line, columns: item.columns || [] });
+        for (const item of usage.usages || []) if ((item.sql_id === sqlId || String(item.sql_id).endsWith(`.${sqlId}`)) && item.method && item.method !== "unknown") methodIds.add(item.method);
+      }
+    }
+    if (id) {
+      for (const r of roots) {
+        const graph = tryIndex(r, "call_graph", dirFor(r));
+        for (const node of graph?.nodes || []) if (node.type === "method" && idMatches(node.id, id) && node.source !== "external") methodIds.add(node.id);
+      }
+    }
+    const columns = statements[0]?.columns || [];
+    let columnHit = null;
+    if (column) {
+      const upper = column.toUpperCase();
+      const found = columns.find((item) => item.name.toUpperCase() === upper) || columns.find((item) => item.expr.toUpperCase().includes(upper));
+      columnHit = found ? { name: found.name, index: found.index } : { name: column, index: null };
+    }
+
+    /* 2) 메서드마다: 코드 호출자 · 결과 이름 · 화면(디스패치) 호출자 */
+    const methods = [];
+    const codeCallers = [];
+    const screenCalls = [];
+    for (const methodId of methodIds) {
+      let home = null;
+      for (const r of roots) {
+        const graph = tryIndex(r, "call_graph", dirFor(r));
+        const node = (graph?.nodes || []).find((item) => item.id === methodId && item.source !== "external");
+        if (!node) continue;
+        home = r;
+        for (const edge of graph.edges || []) {
+          if (edge.to !== methodId || edge.type === "dispatch") continue;
+          codeCallers.push({ repo: label(r), from: edge.from, type: edge.type, file: edge.file, line: edge.line });
+        }
+        methods.push({ repo: label(r), id: methodId, file: node.file, line: node.line });
+        break;
+      }
+      if (!home) continue;
+      const homeDispatch = tryIndex(home, "dispatch", dirFor(home));
+      const keys = (homeDispatch?.result_keys || []).filter((item) => item.method === methodId && (!sqlId || item.sql_id === sqlId || String(item.sql_id).endsWith(`.${sqlId}`))).map((item) => item.key);
+      const last = methods.at(-1);
+      if (last) last.result_keys = [...new Set(keys)];
+      /* 기준 저장소 안의 호출(해석 결과가 붙어 있다) */
+      for (const call of homeDispatch?.calls || []) if (call.resolved?.method_id === methodId) screenCalls.push({ repo: label(home), call, keys });
+      /* 짝 저장소의 호출 — 기준 저장소 인덱스가 이어 둔 partner_links 로 찾고, 읽기는 그쪽 인덱스에서 가져온다 */
+      const links = (homeDispatch?.partner_links || []).filter((item) => item.method_id === methodId);
+      for (const r of roots) {
+        if (r === home) continue;
+        const partner = tryIndex(r, "dispatch", dirFor(r));
+        if (!partner) continue;
+        const byPlace = new Map((partner.calls || []).map((call) => [`${call.file}:${call.line}`, call]));
+        for (const link of links) {
+          if (link.repo !== label(r)) continue;
+          const call = byPlace.get(`${link.file}:${link.line}`);
+          if (call) screenCalls.push({ repo: label(r), call, keys });
+        }
+      }
+    }
+
+    /* 3) 화면 호출자마다 결과 읽기와 컬럼 변경 영향 */
+    const shaped = screenCalls.map(({ repo, call, keys }) => {
+      const relevant = (call.reads || []).filter((read) => !keys.length || read.key === null || keys.includes(read.key));
+      const reads = relevant.map((read) => {
+        const effect = columnHit && columnHit.index !== null ? positionalEffect(read, columnHit.index, columns) : null;
+        return { line: read.line, text: read.text, ...(read.via ? { via: read.via } : {}), ...(read.col !== null ? { col: read.col } : {}), ...(read.name ? { name: read.name } : {}), ...(effect ? effect : {}) };
+      });
+      const effects = new Set(reads.map((read) => read.effect).filter(Boolean));
+      const verdict = !columnHit || columnHit.index === null ? (reads.some((read) => read.col !== undefined) ? "reads_by_position" : reads.length ? "reads_by_name" : "no_reads_found")
+        : effects.has("reads_removed") || effects.has("shifted") ? "breaks" : reads.length ? "unaffected" : "no_reads_found";
+      return { verdict, repo, file: call.file, line: call.line, function: call.function, callback: call.callback, reads };
+    });
+    const order = { breaks: 0, reads_by_position: 1, no_reads_found: 2, reads_by_name: 3, unaffected: 4 };
+    shaped.sort((a, b) => (order[a.verdict] ?? 9) - (order[b.verdict] ?? 9) || a.repo.localeCompare(b.repo) || a.file.localeCompare(b.file));
+
+    const files = new Set(shaped.map((item) => `${item.repo}/${item.file}`));
+    const notes = [];
+    if (!methodIds.size) notes.push(sqlId ? "이 SQL 을 실행하는 메서드를 인덱스에서 찾지 못했다 — sql 명령으로 사용처를 확인하라." : "메서드를 찾지 못했다 — symbol 명령으로 id 를 확인하라.");
+    if (missing.length) notes.push(`인덱스가 없어 보지 못한 저장소: ${missing.join(", ")} — axnavi index build 를 그 저장소에서 먼저 실행하라.`);
+    if (roots.length < 2) notes.push("저장소 하나만 봤다. 화면이 다른 저장소에 있으면 pair_config 나 --root 를 더 주어야 화면 호출자가 나온다.");
+    if (columnHit && columnHit.index === null) notes.push(`SELECT 목록에서 ${column} 의 위치를 찾지 못했다 — 위치 영향은 계산하지 않았다.`);
+    notes.push("화면 호출자는 문자열 디스패치(worker·action 류 파라미터)와 콜백의 결과 읽기에서 뽑았다. 동적으로 만든 파라미터·다른 파일의 콜백은 빠질 수 있으니, 결론 전에 컬럼 이름으로 한 번 더 grep 하라.");
+
+    return {
+      query: { sql: sqlId || null, id: id || null, column: column || null },
+      summary: {
+        repos: roots.map(label),
+        methods: methods.length,
+        code_callers: codeCallers.length,
+        screen_call_sites: shaped.length,
+        screen_files: files.size,
+        breaks_if_column_removed: columnHit && columnHit.index !== null ? shaped.filter((item) => item.verdict === "breaks").length : null,
+        reads_by_position: shaped.filter((item) => item.reads.some((read) => read.col !== undefined)).length,
+      },
+      ...(columnHit ? { column: columnHit } : {}),
+      sql: statements.map(({ repo, id: sid, type, file, line, columns: cols }) => ({ repo, id: sid, type, file, line, columns: cols.map((item) => `${item.index}: ${item.name}`) })),
+      methods,
+      code_callers: cap(codeCallers, limit),
+      screen_callers: cap(shaped, limit),
+      notes,
+    };
+  },
+
   /* 심볼 위치 조회 — "이 클래스·메서드 어디 있나" */
   symbol({ root, indexDir, name, file, limit }) {
     const symbols = loadIndex(root, "symbols", indexDir).symbols || [];
@@ -388,9 +539,15 @@ const COMMANDS = {
 
   /* 데드 코드 후보 (실측 38MB — 페이지 단위로만 준다) */
   dead({ root, indexDir, file, limit }) {
-    const dead = loadIndex(root, "dead_code", indexDir).unused_methods || [];
+    const index = loadIndex(root, "dead_code", indexDir);
+    const dead = index.unused_methods || [];
     const hits = dead.filter((item) => (file ? matches(item.file, file) : true));
-    return { query: { file }, ...cap(hits.map(({ id, file: f, line, reason }) => ({ id, file: f, line, reason })), limit) };
+    const viaDispatch = (index.dispatch_unlinked || []).filter((item) => (file ? matches(item.file, file) : true));
+    return {
+      query: { file }, ...cap(hits.map(({ id, file: f, line, reason }) => ({ id, file: f, line, reason })), limit),
+      ...(viaDispatch.length ? { dispatch_unlinked: cap(viaDispatch.map(({ id, file: f, line }) => ({ id, file: f, line })), limit) } : {}),
+      note: "후보일 뿐이다. 문자열 디스패치(dispatch_unlinked)·리플렉션·외부 호출로 불릴 수 있다 — 지우기 전에 impact --id 와 grep 으로 확인하라.",
+    };
   },
 
   /*
@@ -508,6 +665,9 @@ function printHelp() {
   node query-index.mjs <명령> --root <프로젝트> [옵션]
 
   summary                                   규모와 인덱스별 크기 먼저 확인
+  impact      --sql <SQL id> [--column C] | --id <메서드>
+                                            바꾸면 영향받는 곳 — 코드 호출자 + 다른 저장소 화면까지
+                                            (pair_config 의 짝 저장소를 함께 본다. --root 를 여러 번 줘도 된다)
   search      --q <말> [--kind <종류>]        업무 용어로 전체 검색 (SQL 본문·설명까지)
   column      --name <컬럼명>                 그 DB 컬럼을 보여 주는 화면(그리드 열)과 SQL
   symbol      --name <이름> [--file <경로>]  심볼 위치

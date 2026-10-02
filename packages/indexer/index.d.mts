@@ -16,7 +16,7 @@ export type IndexMode = "init" | "incremental" | "feature-scoped";
 export type IndexName =
   | "symbols" | "call_graph" | "sql_usage" | "transactions" | "external_io"
   | "env_branches" | "schema" | "api_contract" | "dead_code" | "ui_flow"
-  | "client_index" | "data_flow" | "_meta";
+  | "client_index" | "data_flow" | "dispatch" | "_meta";
 
 export interface BuildIndexOptions {
   root: string;
@@ -87,6 +87,10 @@ export interface QueryArgs {
   path?: string;
   depth?: number;
   limit?: number;
+  /** impact: SQL id · 빼거나 바꿀 컬럼 · 함께 볼 저장소 */
+  sql?: string;
+  column?: string;
+  roots?: string[];
 }
 
 /** 상한이 걸린 응답. 잘렸으면 truncated로 밝힌다 — 조용히 자르지 않는다. */
@@ -100,7 +104,7 @@ export interface CappedResult<T = unknown> {
 
 export type QueryCommand =
   | "symbol" | "callers" | "callees" | "trace" | "sql" | "table"
-  | "endpoint" | "transaction" | "schema" | "dead" | "summary";
+  | "endpoint" | "transaction" | "schema" | "dead" | "summary" | "impact" | "column" | "search";
 
 export declare const COMMANDS: Record<QueryCommand, (args: QueryArgs) => unknown>;
 

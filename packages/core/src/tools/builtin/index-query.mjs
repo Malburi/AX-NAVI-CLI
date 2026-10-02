@@ -10,7 +10,7 @@ import { COMMANDS } from "../../../../indexer/index.mjs";
 /** @typedef {import("../../../types/tools.js").ToolHandler} ToolHandler */
 
 const COMMAND_NAMES = /** @type {const} */ ([
-  "summary", "search", "symbol", "callers", "callees", "trace", "sql",
+  "summary", "impact", "search", "symbol", "callers", "callees", "trace", "sql",
   "table", "endpoint", "transaction", "schema", "dead", "column",
 ]);
 
@@ -21,6 +21,7 @@ export const queryIndexTool = {
     description:
       "결정론적 인덱스에 질의한다. 원본 JSON을 직접 열지 말고 항상 이 도구를 쓴다. " +
       `명령: ${COMMAND_NAMES.join(", ")}. 응답에 total·truncated가 함께 온다. ` +
+      "impact(sql=SQL id[, column=컬럼] 또는 id=메서드)는 바꾸면 영향받는 곳을 저장소를 넘어 돌려준다 — 코드 호출자 + 문자열 디스패치로 부르는 화면 + 그 화면이 결과를 위치(rtInfo[1][2])로 읽는지와 컬럼을 빼면 무엇을 읽게 되는지. 영향도 · 수정 전에는 이것부터 부른다. " +
       "업무 용어로 찾을 때는 search 를 먼저 쓴다 — 나머지 명령은 코드 식별자·파일명으로만 걸려서 한글 용어가 안 맞는다(실측: symbol '로그인' 0건, search '로그인' 384건).",
     mutates: false,
     inputSchema: {
@@ -28,7 +29,9 @@ export const queryIndexTool = {
       required: ["command"],
       properties: {
         command: { type: "string", enum: [...COMMAND_NAMES] },
-        id: { type: "string", description: "심볼 id (callers/callees/trace/transaction)" },
+        id: { type: "string", description: "심볼 id (callers/callees/trace/transaction/impact)" },
+        sql: { type: "string", description: "SQL id (impact)" },
+        column: { type: "string", description: "빼거나 바꿀 SELECT 컬럼 (impact)" },
         name: { type: "string", description: "심볼 이름 (symbol) · 컬럼·화면 필드 이름 (column)" },
         file: { type: "string" },
         table: { type: "string", description: "테이블명 (table/schema)" },
@@ -47,7 +50,7 @@ export const queryIndexTool = {
     }
     /** @type {Record<string, unknown>} */
     const args = { root: ctx.paths.root, indexDir: ctx.paths.indexDir };
-    for (const key of ["id", "name", "file", "table", "path", "depth", "limit", "q", "kind"]) {
+    for (const key of ["id", "name", "file", "table", "path", "depth", "limit", "q", "kind", "sql", "column"]) {
       if (input[key] !== undefined) args[key] = input[key];
     }
     try {

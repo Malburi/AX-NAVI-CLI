@@ -157,7 +157,8 @@ const TOOLS = [
     description:
       "AX-NAVI 결정론적 인덱스에 질의한다. 인덱스 JSON을 직접 열지 말고 이 도구를 써라 " +
       "(대형 레거시에서 sql_usage.json은 143MB까지 커진다). " +
-      "명령: summary, search, symbol, callers, callees, trace, sql, table, column, endpoint, transaction, schema, dead. " +
+      "명령: summary, impact, search, symbol, callers, callees, trace, sql, table, column, endpoint, transaction, schema, dead. " +
+      "impact(sql=SQL id[, column=컬럼] 또는 id=메서드)는 바꾸면 영향받는 곳을 저장소를 넘어 돌려준다 — 코드 호출자 + 문자열 디스패치로 부르는 화면 + 그 화면이 결과를 위치(rtInfo[1][2])로 읽는지와 컬럼을 빼면 무엇을 읽게 되는지. 영향도 · 수정 전에는 이것부터 부른다. " +
       "column(name=컬럼명)은 그 DB 컬럼을 보여 주는 화면 그리드 열과 SQL 을 준다 — 컬럼 변경의 화면 영향. " +
       "업무 용어로 찾을 때는 search 를 먼저 쓴다 — 나머지 명령은 코드 식별자·파일명으로만 걸려서 한글 용어가 안 맞는다(실측: symbol '로그인' 0건, search '로그인' 384건). " +
       "한글 질의의 search 결과 맨 앞 features 는 용어가 화면 제목·파일 머리말·설명에 나온 위치로 매긴 기능 후보 순위다 — " +
@@ -173,6 +174,8 @@ const TOOLS = [
             "질의할 저장소의 절대경로. 저장소가 여럿인 프로젝트에서만 쓴다 — 생략하면 기본 저장소를 본다.",
         },
         id: { type: "string" },
+        sql: { type: "string", description: "SQL id (impact)" },
+        column: { type: "string", description: "빼거나 바꿀 SELECT 컬럼 (impact)" },
         name: { type: "string" },
         file: { type: "string" },
         table: { type: "string" },
@@ -245,7 +248,7 @@ async function callTool(name, args) {
         ? { root: PROJECT_ROOT, ...(INDEX_DIR ? { indexDir: INDEX_DIR } : {}) }
         // 다른 저장소를 짚었으면 그쪽의 기본 인덱스 경로를 쓴다. 우리 INDEX_DIR 은 남의 것이다.
         : { root: useRoot };
-      for (const key of ["id", "name", "file", "table", "path", "depth", "limit", "q", "kind"]) {
+      for (const key of ["id", "name", "file", "table", "path", "depth", "limit", "q", "kind", "sql", "column"]) {
         if (args[key] !== undefined) query[key] = args[key];
       }
       return { text: JSON.stringify(handler(query), null, 2) };
