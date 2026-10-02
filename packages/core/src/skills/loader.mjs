@@ -70,12 +70,17 @@ export async function loadSkill(skillsDir, name) {
    * 뒤쪽은 **스킬 본문 자체가 지휘자의 지침**이라 특정 에이전트에게 넘기면 안 된다.
    * (실측: harness-init을 pipeline-runner에게 넘겼더니 자기가 뭘 해야 하는지 몰랐다.)
    */
-  const isOrchestrator =
+  /*
+   * frontmatter `orchestrator: true` 가 있으면 그대로 따른다. v2 safe-modify 는 서브에이전트를 change-safety 하나만
+   * 부르게 줄여, 에이전트 수로 판별하면 단일 에이전트 스킬로 잘못 분류된다(본문 전체가 지휘자의 지침이다).
+   */
+  const declared = String(data["orchestrator"] ?? "").trim().toLowerCase();
+  const isOrchestrator = declared === "true" || (declared !== "false" && (
     agents.length > 1 ||
     /TaskCreate|작업 그래프/.test(body) ||
     // general-purpose 서브에이전트를 띄우는 것도 지휘다. ax-navi: 접두사가 없어 위에서 안 잡힌다
     // (cross-repo-scaffold가 그 경우였다).
-    /subagent_type\s*=\s*["']general-purpose["']/.test(body);
+    /subagent_type\s*=\s*["']general-purpose["']/.test(body)));
 
   return {
     name: selfName,
