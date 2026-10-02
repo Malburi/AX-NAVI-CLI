@@ -1,16 +1,16 @@
 {
   "name": "axnavi",
-  "version": "0.1.0-alpha.38",
+  "version": "2.0.0-alpha.1",
   "type": "module",
   "description": "AX-NAVI CLI — ITO/SI/SM 레거시 코드베이스를 위한 AI 개발 내비게이터. 에이전트 19종과 워크플로우 스킬 24종을 터미널에서 부른다.",
   "license": "MIT",
-  "homepage": "https://github.com/Malburi/AX-NAVI-CLI",
+  "homepage": "https://github.com/Malburi/AX-NAVI-CLI-v2",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Malburi/AX-NAVI-CLI.git"
+    "url": "git+https://github.com/Malburi/AX-NAVI-CLI-v2.git"
   },
   "bugs": {
-    "url": "https://github.com/Malburi/AX-NAVI-CLI/issues"
+    "url": "https://github.com/Malburi/AX-NAVI-CLI-v2/issues"
   },
   "keywords": [
     "claude",
@@ -50,7 +50,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:harness": "node agents/lib/tests/run.js",
-    "test:cli": "node --test packages/core/test/*.test.mjs",
+    "test:cli": "node --test packages/core/test/",
     "test": "npm run test:harness && npm run test:cli",
     "validate:plugin": "claude plugin validate . --strict",
     "prepublishOnly": "npm test && npm run typecheck"

@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 
-const REPO = "Malburi/AX-NAVI-CLI";
+const REPO = "Malburi/AX-NAVI-CLI-v2";
 const TAGS_URL = `https://api.github.com/repos/${REPO}/tags`;
 /** 설치에 쓰는 주소. git clone 경로는 사내망에서 막히므로 tarball 을 쓴다. */
 export const installUrl = (/** @type {string} */ tag) =>

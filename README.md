@@ -6,7 +6,7 @@
 
 ITO/SI/SM 현장을 위한 AI 개발 내비게이터 — 코드베이스 지도를 먼저 만들고, 그 지도를 근거로 찾고 · 따라가고 · 고칩니다.
 
-[![release](https://img.shields.io/github/v/release/Malburi/AX-NAVI-CLI?include_prereleases&label=release)](https://github.com/Malburi/AX-NAVI-CLI/releases)
+[![release](https://img.shields.io/github/v/release/Malburi/AX-NAVI-CLI-v2?include_prereleases&label=release)](https://github.com/Malburi/AX-NAVI-CLI-v2/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#라이선스)
 [![node](https://img.shields.io/badge/node-%E2%89%A518.18-339933)](#요구-사항)
 [![platform](https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-supported-555)](#설치)
@@ -48,7 +48,7 @@ ITO/SI/SM 현장을 위한 AI 개발 내비게이터 — 코드베이스 지도�
 Claude 구독 로그인(`claude`)만 돼 있으면 API 키도 추가 비용도 필요 없습니다.
 
 ```bash
-npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.38
+npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI-v2/tar.gz/refs/tags/v2.0.0-alpha.1
 
 cd /path/to/레거시-프로젝트
 axnavi index build      # 1) 코드베이스 지도 만들기 — AI 를 쓰지 않아 비용 0
@@ -100,7 +100,7 @@ axnavi                  # 3) 대화형으로 들어가서 물어보기
 - [지원 스택](#지원-스택)
 - [Claude Code 안에서 쓰기](#claude-code-안에서-쓰기)
 
-현재 버전 **v0.1.0-alpha.38**
+현재 버전 **v2.0.0-alpha.1**
 
 ---
 
@@ -118,7 +118,7 @@ axnavi                  # 3) 대화형으로 들어가서 물어보기
 ### 인터넷이 되는 PC
 
 ```bash
-npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.38
+npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI-v2/tar.gz/refs/tags/v2.0.0-alpha.1
 ```
 
 git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm i -g github:…` 형식은 쓰지 마세요.
@@ -127,7 +127,7 @@ git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm
 `connect EACCES` 가 나면 보안 프로그램이 npm 의 외부 연결을 막는 경우입니다. 파일로 받아 설치합니다.
 
 ```powershell
-Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v0.1.0-alpha.38" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
+Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI-v2/tar.gz/refs/tags/v2.0.0-alpha.1" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
 npm i -g "$env:TEMP\axnavi.tgz"
 ```
 
@@ -136,15 +136,15 @@ npm i -g "$env:TEMP\axnavi.tgz"
 배포 담당자에게 받은 설치 파일로 설치합니다.
 
 ```powershell
-npm i -g C:\경로\axnavi-0.1.0-alpha.38.tgz --omit=optional
+npm i -g C:\경로\axnavi-2.0.0-alpha.1.tgz --omit=optional
 ```
 
 `--omit=optional` 을 빼면 설치가 몇 분 멈춘 것처럼 보일 수 있습니다.
 
 > **배포 담당자** — 태그를 체크아웃한 깨끗한 폴더에서 `npm pack` 으로 만듭니다.
 > ```powershell
-> git checkout v0.1.0-alpha.38
-> npm pack    # axnavi-0.1.0-alpha.38.tgz
+> git checkout v2.0.0-alpha.1
+> npm pack    # axnavi-2.0.0-alpha.1.tgz
 > ```
 
 ### PowerShell 에서 실행되지 않으면
