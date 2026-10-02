@@ -12,6 +12,15 @@ claude plugin marketplace add Malburi/AX-NAVI-V2
 claude plugin install ax-navi@ax-navi --scope user
 ```
 
+이전 주소(Malburi/AX-NAVI)로 등록해 둔 경우에는 다시 등록합니다.
+
+```bash
+claude plugin uninstall ax-navi@ax-navi --scope user
+claude plugin marketplace remove ax-navi
+claude plugin marketplace add Malburi/AX-NAVI-V2
+claude plugin install ax-navi@ax-navi --scope user
+```
+
 이미 설치돼 있으면 갱신합니다.
 
 ```bash
