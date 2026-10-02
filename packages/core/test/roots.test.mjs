@@ -242,15 +242,16 @@ test("저장소가 여럿일 때만 위임을 연다", () => {
    * (실측: 단일 3분 43초 · $0.59 대 병렬 17분 11초).
    */
   const src = readFileSync(join(SRC_CLI, "execute.mjs"), "utf8");
-  assert.match(src, /const multiRoot = discovery\.roots\.length > 1/, "다중 루트 판정이 없다");
-  assert.match(src, /if \(multiRoot && !agent\.allowDelegation\)/, "조건 없이 위임을 열거나 아예 안 연다");
+  /* v2: 저장소가 여럿이어도 위임을 열지 않는다 — 다른 저장소 영향은 impact 가 한 번에 따라간다. */
+  assert.doesNotMatch(src, /allowDelegation: true/, "단일 에이전트 실행에 위임을 연다");
 });
 
-test("지시문이 저장소 수에 따라 갈린다", () => {
-  const src = readFileSync(join(SRC_CLI, "commands.mjs"), "utf8");
-  assert.match(src, /function delegationLines/, "지시문 분기가 없다");
-  assert.match(src, /저장소마다 하나씩/, "저장소별로 띄우라는 말이 없다");
-  assert.match(src, /각 저장소의 .*_workspace\/reports/, "리포트를 양쪽에 남기라는 말이 없다");
+test("지시문이 저장소 수에 따라 갈린다 — 여럿이면 impact 로 한 번에 보고 서브에이전트를 띄우지 않는다", async () => {
+  const { multiRootLines } = await import("../../cli/src/skill-prompt.mjs");
+  assert.deepEqual(multiRootLines([{ name: "a", paths: { root: "/a" } }]), []);
+  const two = multiRootLines([{ name: "a", paths: { root: "/a" } }, { name: "b", paths: { root: "/b" } }]).join("\n");
+  assert.match(two, /impact/);
+  assert.match(two, /서브에이전트를 띄우지 마라/);
 });
 
 test("보고 형식이 '확인했는데 없는 것'을 요구한다", () => {
@@ -259,7 +260,7 @@ test("보고 형식이 '확인했는데 없는 것'을 요구한다", () => {
    * "study_screen.js 실물이 두 저장소 어디에도 없음". 찾은 것만 적으면 읽는 사람이
    * 나머지를 직접 다시 뒤져야 한다.
    */
-  const src = readFileSync(join(SRC_CLI, "commands.mjs"), "utf8");
+  const src = readFileSync(join(SRC_CLI, "skill-prompt.mjs"), "utf8");
   assert.match(src, /확인했는데 없는 것/);
   assert.match(src, /확인하지 못한 것/);
   assert.match(src, /오탐/);

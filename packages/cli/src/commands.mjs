@@ -20,12 +20,15 @@ import {
 import {
   discoverRoots,
   inspectProject,
+  loadAgent,
   loadAllAgents,
   loadAllSkills,
   resolveSkill,
   resolveProjectPaths,
 } from "../../core/src/index.mjs";
-import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, sessionReport, ui } from "./runtime.mjs";
+import { agentInstruction, inlineInstruction, orchestratorInstruction, procedureInstruction } from "./skill-prompt.mjs";
+import { PRECOMPUTE_SKILLS, precomputeImpact } from "./precompute.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
 import { firstSentence } from "./completion.mjs";
@@ -214,18 +217,31 @@ export function resolveSkillPaths(body) {
  * @param {string} request
  * @returns {Promise<string>}
  */
-export async function inlineSkill(name, request) {
+export async function inlineSkill(name, request, root = process.cwd()) {
   const bare = name.trim().replace(/^\//, "").replace(/^ax-navi:/, "");
   if (!existsSync(join(SKILLS_DIR, bare, "SKILL.md"))) return `그런 스킬이 없다: ${name}. 스킬 이름을 확인하라.`;
   const { skill } = await resolveSkill(SKILLS_DIR, bare);
-  return [
-    `'${skill.name}' 스킬의 지침이다. 이 턴 안에서 아래 절차를 그대로 수행하라. 같은 스킬로 이 도구를 다시 부르지 마라.`,
-    ...(request ? [``, `요청: ${request}`] : []),
-    ``,
-    `<스킬 절차: ${skill.name}>`,
-    resolveSkillPaths(skill.body),
-    `</스킬 절차>`,
-  ].join("\n");
+  const body = resolveSkillPaths(skill.body);
+  const agentName = skill.isOrchestrator ? null : skill.agents[0];
+  if (!agentName) {
+    return [
+      `'${skill.name}' 스킬의 지침이다. 이 턴 안에서 아래 절차를 그대로 수행하라. 같은 스킬로 이 도구를 다시 부르지 마라.`,
+      ...(request ? [``, `요청: ${request}`] : []),
+      ``,
+      `<스킬 절차: ${skill.name}>`,
+      body,
+      `</스킬 절차>`,
+    ].join("\n");
+  }
+  /* 실행자 지침까지 함께 준다 — 같은 세션에서 실행자처럼 수행하게. */
+  let agentBody = "";
+  try {
+    agentBody = (await loadAgent(join(AGENTS_DIR, `${agentName}.md`), { pluginRoot: REPO_ROOT, projectRoot: resolveProjectPaths(root).root })).systemPrompt;
+  } catch {
+    agentBody = `(${agentName} 지침을 읽지 못했다 — 스킬 절차대로 수행하라)`;
+  }
+  const precomputed = PRECOMPUTE_SKILLS.has(skill.name) ? precomputeImpact(resolveProjectPaths(root).root, request) : null;
+  return inlineInstruction({ skill: { name: skill.name, body }, agentBody, request, precomputed, reportOn: sessionReport() });
 }
 
 /* ---------- index ---------- */
@@ -487,63 +503,21 @@ export async function runSkill(root, name, prompt, providerName, ctx = {}) {
    *
    * 그래서 사용자 요청을 맨 앞에 두고, 스킬 본문은 "산출물 규약 참고"로 격하한다.
    */
-  // 저장소가 여럿이면 지시문이 달라진다 — executeAgent 가 위임도 그때만 연다.
   const { roots } = discoverRoots(root);
-  const instruction = [
-    `# 요청`,
-    prompt,
-    ``,
-    `프로젝트 루트: ${resolveProjectPaths(root).root}`,
-    ``,
-    `---`,
-    ``,
-    `위 요청은 '${skill.name}' 스킬 경로로 들어왔다. 너는 그 스킬이 호출하는 실행자(${agentName})다.`,
-    `아래는 그 스킬의 오케스트레이션 절차이며 **참고 자료**다.`,
-    ``,
-    `- 절차 자체를 설명하지 마라. 요청을 수행하라.`,
-    LANGUAGE_RULE,
-    SEARCH_SCOPE_RULE,
-    `- 절차 중 네 역할에 해당하는 부분만 하고, 산출물 경로·형식 규약은 지켜라.`,
-    /*
-     * 실측(trace-logic, egovframe-web-sample 두 번): 실행자가 "간단 조회 성격"이라며 리포트를 쓰지 않고
-     * "저장해 드릴까요?"로 끝냈다. 되묻는 사이 대화가 끝나 산출물 없는 실행이 되고, 끝에 "약속한 산출물이
-     * 쓰이지 않았다" 경고가 붙는다. 산출물은 선택이 아니라 스킬의 결과물이다.
-     */
-    `- 네 에이전트 지침에 산출물 파일(\`_workspace/reports/...\`)이 정해져 있으면 **답하기 전에 이번 결과로 그 파일을 써라.** 조회가 간단해도 쓴다. 저장할지 묻지 마라.`,
-    ...delegationLines(roots, agentName),
-    ``,
-    /*
-     * "없음의 확인"을 요구한다.
-     *
-     * 같은 질문을 플러그인에 던진 답과 비교해 보니 값진 부분이 찾은 목록이 아니라
-     * **확인했는데 없더라**였다 — "DB 컬럼 없음, SQL 0건, 업로드 화면 없음",
-     * "study_screen.js 실물이 두 저장소 어디에도 없음". 찾은 것만 적으면 읽는 사람은
-     * 나머지를 직접 다시 뒤져야 한다.
-     */
-    `## 보고 형식`,
-    ``,
-    `찾은 것만 적지 마라. 셋을 나눠서 보고하라.`,
-    `1. **찾은 것** — 파일 경로와 줄 번호를 함께.`,
-    `2. **확인했는데 없는 것** — 무엇을 어떻게 확인했는지 함께(어떤 인덱스를 질의했고 무엇을 grep 했는지).`,
-    /*
-     * 실측(trace-logic, egovframe-web-sample): `NotEmpty|NotNull|Size|Pattern` 을 grep 해 0건이 나오자
-     * "SampleVO 에 검증 제약이 없어 @Valid 가 사실상 항상 통과한다"고 보고했다. 실제로는 전자정부 전용
-     * `@EgovNullCheck` 가 세 필드에 붙어 있었다. 이름 목록 grep 0건은 "그 이름이 없다"일 뿐이다.
-     */
-    `   이름 목록으로 grep 해 0건이면 "그 이름들은 없다"까지만 쓴다. 기능(검증·권한·트랜잭션 등)이 없다고 쓰려면 대상 파일을 직접 열어 확인하라 — 프레임워크 전용 이름(예: @EgovNullCheck)이 흔하다.`,
-    `3. **확인하지 못한 것** — 왜 못 했는지(소스 미확보·분석 범위 밖·인덱스 없음).`,
-    `오탐을 걸러냈으면 무엇을 왜 걸렀는지 한 줄로 남겨라.`,
-    ``,
-    `<스킬 절차: ${skill.name}>`,
-    resolveSkillPaths(skill.body),
-    `</스킬 절차>`,
-  ].join("\n");
+  const projectRoot = resolveProjectPaths(root).root;
+  /* 영향도 · 수정이면 인덱스로 먼저 계산해 둔다(모델 호출 없음, 실측 0.2초). */
+  const precomputed = PRECOMPUTE_SKILLS.has(skill.name) ? precomputeImpact(projectRoot, prompt) : null;
+  if (precomputed) process.stderr.write(ui.dim(`  사전 영향도를 인덱스로 계산해 넣었습니다${NEWLINE}`));
+  const instruction = agentInstruction({
+    skill: { name: skill.name, body: resolveSkillPaths(skill.body) },
+    agentName, prompt, projectRoot, roots, precomputed, reportOn: sessionReport(),
+  });
 
   return executeAgent({
     root,
     agentName,
     prompt: instruction,
-    onSkillRequest: inlineSkill,
+    onSkillRequest: (n, r) => inlineSkill(n, r, root),
     /*
      * 스킬 실행도 **같은 대화에 얹는다.**
      *
@@ -594,51 +568,13 @@ async function runOrchestratorSkill(root, skill, prompt, providerName, ctx = {})
 
 
 
-  const instruction = [
-    `# 실행 지시`,
-    ``,
-    `아래 절차(${skill.name})를 **지금 이 프로젝트에 실제로 수행**하라. 절차를 설명하지 마라.`,
-    `프로젝트 루트: ${resolveProjectPaths(root).root}`,
-    prompt ? `사용자가 덧붙인 조건: ${prompt}` : `사용자가 덧붙인 조건: 없음`,
-    LANGUAGE_RULE,
-    SEARCH_SCOPE_RULE,
-    ``,
-    `## 이 런타임에서 위임하는 법`,
-    ``,
-    `- 절차에 적힌 \`ax-navi:<에이전트>\` 이름을 **그대로** 쓴다. 19종이 그대로 올라가 있다.`,
-    `  → \`Task\`의 \`subagent_type\`에 \`ax-navi:analyzer\` 처럼 넣어라.`,
-    `  → 절차 본문에 "플러그인이 없으면 general-purpose로 폴백하라"는 대목이 있어도 **따르지 마라.**`,
-    `    그 폴백은 여기서 필요 없고, 쓰면 역할 지침 없이 도는 에이전트가 생긴다.`,
-    `- 서브에이전트는 백그라운드로 뜨고 여러 개가 동시에 돈다.`,
-    `  → 앞 단계의 산출물이 있어야 도는 단계는 **결과를 받고 나서** 다음으로 가라.`,
-    `  → 서로 의존하지 않는 단계는 함께 띄워도 된다. 그게 이 경로의 이점이다.`,
-    `  ★ **띄운 서브에이전트의 결과를 받기 전에 턴을 끝내지 마라.**`,
-    `    "백그라운드에서 돌고 있다, 완료되면 이어서 진행하겠다" 하고 답변을 마치면 안 된다 —`,
-    `    이 실행 경로에는 네가 나중에 깨어날 방법이 없다. 그 자리에서 파이프라인이 죽고,`,
-    `    사용자는 확인할 수단도 없이 기다리게 된다(실측으로 그랬다).`,
-    `    \`TaskOutput\` 으로 결과를 받아 끝까지 진행하라.`,
-    `  → 정말로 더 기다릴 수 없으면(상한·중단) 끝났다고 하지 말고,`,
-    `    **어느 단계가 어디까지 갔는지와 다음에 무엇을 이어야 하는지를 체크포인트 파일에 적고** 그 사실을 알려라.`,
-    `- \`TaskCreate\`/\`TaskUpdate\`가 없다.`,
-    `  → 절차에 적힌 대로 \`_workspace/00_pipeline_status.md\` 체크리스트로 진행 상황을 관리하라.`,
-    `- 사용자에게 물어야 하면 \`mcp__axnavi__AskUserQuestion\` 도구를 써라.`,
-    `  → 되물을 수 없다고 단정하고 기본값으로 넘어가지 마라. 그 도구가 실제 사용자에게 닿는다.`,
-    `  → 다만 답이 비어 오면(무응답) 그때는 기본값으로 진행하고 무엇을 가정했는지 밝혀라.`,
-    `  ★ **무응답으로 적용한 기본값을 "사용자 확인"으로 기록하지 마라.**`,
-    `    파일에 남길 때는 미확인임을 함께 적고(\`unconfirmed: true\`), 다음 실행에서 다시 물어라.`,
-    `    한 번의 무응답이 영구 결정이 되면 사용자는 고른 적 없는 값에 묶인다.`,
-    `- **절차의 스킵 조건에 걸려 이전 결정을 재사용할 때는 화면에 밝혀라.**`,
-    `  → "무엇 때문에 어느 단계를 건너뛰고 어떤 값을 재사용하는지" 한 줄로 적는다.`,
-    `    예: "00_init_scope.md 가 있어 Phase -1 을 건너뛴다 — init_layout: single-root 재사용".`,
-    `  → 조용히 넘어가면 사용자는 묻지 않은 것과 이미 답한 것을 구분할 수 없다.`,
-    `  → 재사용하려는 값이 미확인(\`unconfirmed\`)으로 기록돼 있으면 건너뛰지 말고 다시 물어라.`,
-    `- AX-NAVI 인덱스 질의는 \`mcp__axnavi__QueryIndex\` 도구를 쓸 수 있다.`,
-    `- 스크립트 경로는 이미 절대경로로 치환돼 있다. 그대로 \`Bash\`로 실행하라.`,
-    ``,
-    `## 절차: ${skill.name}`,
-    ``,
-    resolveSkillPaths(skill.body),
-  ].join("\n");
+  const projectRoot = resolveProjectPaths(root).root;
+  const precomputed = PRECOMPUTE_SKILLS.has(skill.name) && prompt ? precomputeImpact(projectRoot, prompt) : null;
+  if (precomputed) process.stderr.write(ui.dim(`  사전 영향도를 인덱스로 계산해 넣었습니다${NEWLINE}`));
+  const instruction = orchestratorInstruction({
+    skill: { name: skill.name, body: resolveSkillPaths(skill.body) },
+    prompt, projectRoot, roots: discoverRoots(root).roots, precomputed, reportOn: sessionReport(),
+  });
 
   /*
    * 지휘자 역할.
@@ -649,7 +585,7 @@ async function runOrchestratorSkill(root, skill, prompt, providerName, ctx = {})
   return executeAgent({
     root,
     prompt: instruction,
-    onSkillRequest: inlineSkill,
+    onSkillRequest: (n, r) => inlineSkill(n, r, root),
     agent: {
       name: `${skill.name}`,
       description: skill.description,
@@ -764,33 +700,12 @@ const SPECIAL_SKILLS = {
  */
 async function runProcedureSkill(root, skill, prompt, providerName, ctx = {}) {
   const paths = resolveProjectPaths(root);
-  const instruction = [
-    `# 실행 지시`,
-    ``,
-    `아래 절차(${skill.name})를 **지금 이 프로젝트에 실제로 수행**하라. 절차를 설명하지 마라.`,
-    `프로젝트 루트: ${paths.root}`,
-    prompt ? `사용자가 덧붙인 조건: ${prompt}` : `사용자가 덧붙인 조건: 없음`,
-    LANGUAGE_RULE,
-    SEARCH_SCOPE_RULE,
-    ``,
-    `## 이 런타임에서의 실행 방법`,
-    ``,
-    `- 이 절차는 대부분 결정론적 스크립트 실행이다. 스크립트 경로는 이미 절대경로로`,
-    `  치환돼 있으니 그대로 \`Bash\`로 실행하라.`,
-    `- 파이썬은 \`python3\`을 먼저 시도하고 실패하면 \`python\`을 쓴다. 이름을 단정하지 마라.`,
-    `- 서브에이전트는 띄울 수 없다. 절차에 위임이 적혀 있으면 네가 직접 그 일을 하라.`,
-    `- 사용자에게 물어야 하면 \`mcp__axnavi__AskUserQuestion\` 도구를 써라.`,
-    `- 스크립트가 실패하면 **성공으로 보고하지 마라.** 어느 명령이 어떤 오류로 실패했는지 그대로 알려라.`,
-    ``,
-    `## 절차: ${skill.name}`,
-    ``,
-    resolveSkillPaths(skill.body),
-  ].join(NEWLINE);
+  const instruction = procedureInstruction({ skill: { name: skill.name, body: resolveSkillPaths(skill.body) }, prompt, projectRoot: paths.root });
 
   return executeAgent({
     root,
     prompt: instruction,
-    onSkillRequest: inlineSkill,
+    onSkillRequest: (n, r) => inlineSkill(n, r, root),
     agent: {
       name: skill.name,
       description: skill.description,
@@ -809,49 +724,5 @@ async function runProcedureSkill(root, skill, prompt, providerName, ctx = {}) {
     ...(providerName ? { providerName } : {}),
   });
 }
-
-/**
- * 위임에 관해 실행자에게 할 말.
- *
- * 저장소가 하나면 "없다"고 말해야 한다 — 없는 도구를 부르려다 한 턴을 날린다.
- * 여럿이면 반대로 **저장소마다 하나씩** 띄우라고 해야 한다. 실측으로 같은 질문에
- * 플러그인은 백엔드·프론트엔드에 하나씩 붙여 병렬로 훑었고, 우리는 단일 에이전트로
- * 한쪽만 보고 답했다.
- *
- * @param {ReadonlyArray<{ name: string, paths: { root: string } }>} roots
- * @param {string} agentName
- * @returns {string[]}
- */
-/*
- * 화면에 보이는 진행 문장의 언어. 규칙이 어디에도 없어서, 녹화용 /flow 를 세 번 돌리는 동안 매번
- * 리포트를 쓰기 직전에 "Now I will write the trace report." 같은 영어 한 줄이 섞였다(실측).
- */
-export const LANGUAGE_RULE = "- 사용자에게 보이는 모든 문장은 한국어로 쓴다. 도구를 부르기 전의 짧은 진행 설명도 마찬가지다. 코드·경로·식별자는 원문 그대로 둔다.";
-
-/*
- * 탐색 범위. 실측(safe-modify 녹화 두 번 연속): SampleVO 의 `@EgovNullCheck` 가 어디서 오는지 보려고
- * `find / -path "*egovframe/rte/ptl/reactive/validation*"` 을 돌려 120초 제한에 걸렸고, 멈추고 다시 가는 데 2분을 썼다.
- * 프레임워크 jar 안은 소스가 없으니 찾을 것이 없다.
- */
-export const SEARCH_SCOPE_RULE = "- 파일 탐색은 프로젝트 루트 안에서만 한다. `find /` 처럼 디스크 전체를 뒤지지 마라. 프레임워크·라이브러리(jar) 안의 클래스는 소스가 없으니 '저장소 밖이라 확인하지 못함'으로 보고한다.";
-
-/**
- * @param {Array<{ name: string, paths: { root: string } }>} roots
- * @param {string} agentName
- */
-function delegationLines(roots, agentName) {
-  if (roots.length <= 1) {
-    return ["- 이 런타임에 없는 기능(서브에이전트 호출 등)은 네가 직접 수행하고, 그 사실만 짧게 밝혀라."];
-  }
-  return [
-    `- **저장소가 ${roots.length}개다.** 한쪽만 보고 답하지 마라.`,
-    `  → \`Task\` 의 \`subagent_type\` 에 \`ax-navi:${agentName}\` 을 넣어 **저장소마다 하나씩** 띄운다.`,
-    `  → 각 서브에이전트의 프롬프트에 담당 루트를 절대경로로 못 박아라:`,
-    ...roots.map((r) => `     ${r.name} → --root "${r.paths.root}"`),
-    `  → 결과를 전부 받은 뒤 합쳐서 보고한다. 결과를 받기 전에 턴을 끝내지 마라.`,
-    `  → 산출물(리포트)은 **각 저장소의 \`_workspace/reports/\` 에 각각** 남긴다.`,
-    `  ★ 같은 이름의 리포트가 이미 있어도 **이번 실행의 결과로 새로 써라.**`,
-    `    앞선 실행이 남긴 파일을 읽고 "확인했다"로 갈음하지 마라 — 사용자는 새 내용인 줄 알고 옛 글을 읽는다(실측).`,
-    `    쓰지 않은 파일의 경로를 답에 적지 마라. 적었으면 반드시 그 자리에 써 두어라.`,
-  ];
-}
+/* 지시문 규칙은 skill-prompt.mjs 로 옮겼다. 다른 모듈 · 시험이 여기서 가져가던 이름을 그대로 내보낸다. */
+export { LANGUAGE_RULE, SEARCH_SCOPE_RULE } from "./skill-prompt.mjs";

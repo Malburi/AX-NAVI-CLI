@@ -237,6 +237,22 @@ export function setSessionModel(tier) {
 }
 
 /*
+ * 리포트 저장. v1 은 모델이 답하기 전에 리포트 파일을 꼭 쓰게 해, 간단한 질문에도 쓰기 한 번과 승인 · 토큰이
+ * 들었다. v2 는 기본으로 쓰지 않고, 켜면(/report · --report) 런타임이 최종 답을 그대로 저장한다.
+ */
+let reportOn = process.argv.includes("--report") || process.env["AXNAVI_REPORT"] === "1";
+
+/** @returns {boolean} */
+export function sessionReport() {
+  return reportOn;
+}
+
+/** @param {boolean} on */
+export function setSessionReport(on) {
+  reportOn = on;
+}
+
+/*
  * 턴이 도는 동안 사용자가 치고 있는 글.
  *
  * 상태 표시 줄이 이걸 보여 줘야 한다 — 그 구간에는 readline 을 물러나게 하므로

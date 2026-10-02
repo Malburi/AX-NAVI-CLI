@@ -21,15 +21,15 @@ import {
   saveSession,
   toTitle,
 } from "../../core/src/index.mjs";
-import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, setPanelMode, takeFolded, sessionMode, sessionModel, setLineReader, setSessionMode, setSessionModel, setTypingProbe, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, createHostElicitor, interruptTurn, setPanelMode, takeFolded, sessionMode, sessionModel, setLineReader, setSessionMode, setSessionModel, setSessionReport, sessionReport, setTypingProbe, ui } from "./runtime.mjs";
 import { block, readStack, renderBanner, row } from "./banner.mjs";
 import { buildCommands, firstSentence, menuItems, renderCommandMenu } from "./completion.mjs";
 import { clipToWidth, visibleLength } from "./width.mjs";
 import { attachAutocomplete } from "./autocomplete.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
-import { cmdIndex, runSkill } from "./commands.mjs";
-import { discoverRoots } from "../../core/src/index.mjs";
+import { cmdIndex, inlineSkill, runSkill } from "./commands.mjs";
+import { discoverRoots, resolveSkill } from "../../core/src/index.mjs";
 import { allTasks, runningCount, startTask, stopAllTasks, stopTask } from "./tasks.mjs";
 import { openViewer } from "./viewer.mjs";
 import { elapsed } from "./activity.mjs";
@@ -669,11 +669,18 @@ export async function startRepl(paths, state, version = "0.1.0-alpha.0", opts = 
            * 여기서 그 요청을 받아 턴이 끝난 뒤 실행한다 — LLM 턴 안에서 또 한 번
            * 도는 것보다 확실하고, 출력도 섞이지 않는다.
            */
-          onSkillRequest: (name, request) => {
+          onSkillRequest: async (name, request) => {
             const wanted = name.replace(/^\//, "").trim();
             if (!skillByName.has(wanted)) {
               return `그런 스킬이 없다: ${wanted}. 쓸 수 있는 것: ${[...skillByName.keys()].join(", ")}`;
             }
+            /*
+             * v2: 단일 에이전트 · 절차 스킬은 이 세션 안에서 수행한다(지침을 도구 결과로 돌려준다).
+             * v1 은 인격의 턴이 끝난 뒤 스킬을 새 세션으로 다시 돌려 요청 하나에 세션이 둘이었다.
+             * 서브에이전트를 지휘하는 스킬(harness-init · safe-modify 등)만 턴 뒤 따로 돌린다 — 승인 · 위임이 필요하다.
+             */
+            const { skill } = await resolveSkill(SKILLS_DIR, wanted);
+            if (!skill.isOrchestrator) return inlineSkill(wanted, request || line, paths.root);
             pendingSkill = { name: wanted, request: request || line };
             // 모델에게 주는 지시는 도구 설명에 있다. 여기서는 짧게 끝낸다 — 모델이 이걸 따라 적을 수 있다.
             return "시작한다.";
@@ -873,6 +880,15 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
       const at = labels.indexOf(picked);
       setSessionModel(at <= 0 ? null : /** @type {any} */ (MODEL_CHOICES[at - 1]).tier);
       process.stdout.write(`  ${ui.green("모델")} ${ui.dim(describeModel())}${NL}`);
+      return 0;
+    }
+
+    case "report": {
+      /* 인자가 없으면 뒤집는다. 켜면 런타임이 최종 답을 _workspace/reports/ 에 저장한다(모델은 파일을 쓰지 않는다). */
+      const arg = (rest[0] ?? "").toLowerCase();
+      const on = ["켜기", "on", "1", "켜"].includes(arg) ? true : ["끄기", "off", "0", "꺼"].includes(arg) ? false : !sessionReport();
+      setSessionReport(on);
+      process.stdout.write(`  ${ui.green("리포트")} ${ui.dim(on ? "켜짐 — 답을 _workspace/reports/ 에 저장합니다" : "꺼짐 — 답만 보여 줍니다")}${NL}`);
       return 0;
     }
 

@@ -77,6 +77,8 @@ function scan() {
     if (file.includes(`${sep}mcp${sep}`)) continue;
     // persona.mjs 는 파일 전체가 AX-NAVI 인격의 시스템 프롬프트다.
     if (file.endsWith(`${sep}persona.mjs`)) continue;
+    // skill-prompt.mjs · precompute.mjs 는 스킬 실행 지시문 · 사전 영향도 블록이다 — 읽는 쪽이 모델이다.
+    if (file.endsWith(`${sep}skill-prompt.mjs`) || file.endsWith(`${sep}precompute.mjs`)) continue;
     const lines = readFileSync(file, "utf8").split(NL);
     let inBlock = false;
     let inPrompt = false;
@@ -157,5 +159,5 @@ test("주석과 모델 지시문은 이 검사에 걸리지 않는다", () => {
    */
   const commands = readFileSync(join(SRC, "commands.mjs"), "utf8");
   assert.match(commands, /너는 AX-NAVI의 오케스트레이터다/, "지시문이 존댓말로 바뀌었다");
-  assert.match(commands, /절차를 설명하지 마라/, "지시문이 존댓말로 바뀌었다");
+  assert.match(readFileSync(join(SRC, "skill-prompt.mjs"), "utf8"), /절차를 설명하지 마라/, "지시문이 존댓말로 바뀌었다");
 });

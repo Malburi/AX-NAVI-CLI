@@ -152,13 +152,14 @@ test("같은 경로를 여러 번 적어도 한 번만 센다", () => {
   });
 });
 
-test("지침도 함께 막는다 — 읽고 '확인했다'로 갈음하지 못하게", () => {
+test("v2: 모델은 리포트 파일을 쓰지 않는다 — 켜면 런타임이 답을 저장한다", async () => {
   /*
-   * 런타임 경고는 사후 통보다. 애초에 그러지 않게 말해 두는 편이 낫고, 둘 다 있어야
-   * 한쪽이 새도 다른 쪽이 잡는다.
+   * v1 은 모델에게 리포트를 꼭 쓰게 해, 앞선 실행의 파일을 읽고 '확인했다'로 갈음하는 사고와 쓰기 비용이 함께 났다.
+   * v2 는 모델이 쓰지 않으므로 갈음할 파일 자체가 없다. 켜면 런타임이 이번 답을 그대로 저장한다.
    */
-  const src = readFileSync(new URL("../../cli/src/commands.mjs", import.meta.url), "utf8");
-  assert.match(src, /이번 실행의 결과로 새로 써라/);
-  assert.match(src, /갈음하지 마라/);
-  assert.match(src, /쓰지 않은 파일의 경로를 답에 적지 마라/);
+  const { reportRule } = await import("../../cli/src/skill-prompt.mjs");
+  assert.match(reportRule(false), /리포트 파일은 쓰지 않는다/);
+  assert.match(reportRule(true), /런타임이 쓴다/);
+  const exec = readFileSync(new URL("../../cli/src/execute.mjs", import.meta.url), "utf8");
+  assert.match(exec, /function saveReport/);
 });

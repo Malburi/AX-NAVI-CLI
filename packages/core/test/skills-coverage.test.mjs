@@ -197,7 +197,7 @@ test("답할 사람이 없는 실행이면 기본값으로 넘어가지 말고 �
 });
 
 test("스킵할 때 무엇을 재사용하는지 밝히라고 지시한다", () => {
-  const src = readFileSync(join(REPO, "packages", "cli", "src", "commands.mjs"), "utf8");
+  const src = readFileSync(join(REPO, "packages", "cli", "src", "skill-prompt.mjs"), "utf8");
   assert.match(src, /스킵 조건에 걸려 이전 결정을 재사용할 때는 화면에 밝혀라/);
   // 미확인 값이면 스킵하지 말고 다시 물어야 한다 — 이게 없으면 위 사고가 반복된다.
   assert.match(src, /unconfirmed.*기록돼 있으면 건너뛰지 말고/);
@@ -231,7 +231,7 @@ test("서브에이전트 상태를 관측한 대로만 적는다", () => {
 });
 
 test("결과를 받기 전에 턴을 끝내지 말라고 지시한다", () => {
-  const src = readFileSync(join(REPO, "packages", "cli", "src", "commands.mjs"), "utf8");
+  const src = readFileSync(join(REPO, "packages", "cli", "src", "skill-prompt.mjs"), "utf8");
   assert.match(src, /띄운 서브에이전트의 결과를 받기 전에 턴을 끝내지 마라/);
   assert.match(src, /TaskOutput/, "결과를 받을 수단을 안 알려 준다");
   // 정말 못 기다릴 때의 출구도 있어야 한다. 없으면 모델이 거짓 완료를 낸다.

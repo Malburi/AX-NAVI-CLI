@@ -52,6 +52,7 @@ ${ui.bold("옵션")}
   --index-dir <경로>  인덱스 위치 (기본: <root>/_workspace/index)
   --tier <등급>       Auto | Standard | Full
   --provider <이름>   auto | agent-sdk | claude-cli | anthropic
+  --report           최종 답을 _workspace/reports/ 에 리포트로 저장
                       auto(기본): API 키와 SDK 가 있으면 anthropic, 없으면 agent-sdk(구독),
                       SDK 가 없으면(폐쇄망 설치) claude-cli
   -c, --continue      마지막 대화를 이어서 시작
@@ -81,6 +82,7 @@ function parseArgs(argv) {
     else if (arg === "-c" || arg === "--continue") out.continueLatest = true;
     else if (arg === "--resume") out.resumeId = argv[++i];
     else if (arg === "--verbose") { /* no-op */ }
+    else if (arg === "--report") { /* runtime.mjs 가 읽는다 — 최종 답을 _workspace/reports 에 저장 */ }
     else if (arg === "-h" || arg === "--help") out.help = true;
     else if (arg === "-v" || arg === "--version") out.version = true;
     else if (arg !== undefined && arg.startsWith("--")) throw new Error(`알 수 없는 옵션: ${arg}`);

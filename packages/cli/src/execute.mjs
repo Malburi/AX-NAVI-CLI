@@ -24,6 +24,8 @@ import { closeTurn, openTurn, recordAgentEnd, recordAgentStart, recordLine } fro
 import { unwrittenClaims } from "./claims.mjs";
 import { createApprover } from "./approval.mjs";
 import { auditTurn, describeAudit, revertChanges, takeSnapshot } from "./turn-audit.mjs";
+import { ensureFreshIndexes } from "./freshness.mjs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { learnFromError, modelUnavailableHint, startWithLearnedModels } from "./models.mjs";
 
 /*
@@ -53,7 +55,7 @@ export async function executeAgent(args) {
  * 턴 안에 두면 매 질문마다 같은 허용을 다시 물어 플러그인과 달라진다.
  */
 const sessionApprovals = new Set();
-import { AGENTS_DIR, REPO_ROOT, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, rememberFolded, sessionMode, sessionModel, setPanelModeSink, debug, ui } from "./runtime.mjs";
+import { AGENTS_DIR, REPO_ROOT, sessionReport, beginTurn, createAuditSink, createHostElicitor, createProgressSink, endTurn, readTyping, rememberFolded, sessionMode, sessionModel, setPanelModeSink, debug, ui } from "./runtime.mjs";
 
 /**
  * @param {object} args
@@ -91,7 +93,6 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
    * 통째로 잃고 grep 으로 내려앉았다.
    */
   const discovery = discoverRoots(root);
-  const multiRoot = discovery.roots.length > 1;
 
   /*
    * 상태 표시를 먼저 만든다 — 질문이 뜰 때 이 줄을 걷어야 하기 때문이다.
@@ -142,6 +143,18 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
    * 도구 사용 승인. 누가 무엇을 허용·거부했는지는 감사 기록에 남긴다 —
    * 조직에 배포하는 도구에서 "누가 이 파일을 쓰게 했나" 는 나중에 반드시 묻는 질문이다.
    */
+  /*
+   * 인덱스 신선도 — 모델이 아니라 런타임이 맞춘다(freshness.mjs). 바뀐 저장소만 그 자리에서 다시 만든다.
+   * 백그라운드 작업은 건너뛴다 — 전경 턴과 같은 인덱스를 동시에 다시 쓰면 안 된다.
+   */
+  if (!background) {
+    const fresh = ensureFreshIndexes(
+      (discovery.roots.length ? discovery.roots.map((r) => r.paths) : [paths]).map((p) => ({ root: p.root, ...(p.indexDir && p.root === paths.root ? { indexDir: p.indexDir } : {}), primary: p.root === discovery.primary?.root || p.root === paths.root })),
+      { onStart: (r, why) => process.stderr.write(ui.dim(`  인덱스 갱신 중 — ${r.split(/[\\/]/).at(-1)} (${why})\n`)) },
+    );
+    for (const note of fresh) if (note.state === "failed") process.stderr.write(ui.yellow(`  ! 인덱스 ${note.root}: ${note.reason}\n`));
+  }
+
   const approvalAudit = createAuditSink(paths);
   /* 소스로 지킬 저장소들 — 여럿을 함께 열었으면 모두다. 승인 · 쓰기 가드 · 턴 뒤 감사가 같은 목록을 쓴다. */
   const sourceRoots = discovery.roots.length ? discovery.roots.map((r) => r.paths.root) : [paths.root];
@@ -211,20 +224,10 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
     ?? (await loadAgent(join(AGENTS_DIR, `${agentName}.md`), { pluginRoot: REPO_ROOT, projectRoot: paths.root }));
 
   /*
-   * 저장소가 여럿이면 위임을 연다.
-   *
-   * loadAgent 는 allowDelegation 을 채우지 않는다 — frontmatter 에도 없다. 그래서
-   * 저장소 전체에서 이 플래그를 켜는 곳이 오케스트레이터 한 곳뿐이었고, /find 같은
-   * 단일 에이전트 스킬은 서브에이전트를 못 띄웠다. 같은 질문을 플러그인에 던지면
-   * 호스트가 저장소별로 하나씩 띄워 병렬로 훑는다.
-   *
-   * 다만 **여럿일 때만** 연다. 단일 저장소에서 위임을 열면 얻는 것 없이 시간과 비용만
-   * 몇 배가 된다(실측: 단일 3분 43초 · $0.59 대 병렬 17분 11초).
-   *
-   * frontmatter 를 고치지 않는 이유는 그것이 플러그인과 공유하는 자산이고, 위임 여부가
-   * **실행 환경의 성질**이지 역할의 성질이 아니기 때문이다.
+   * v1 은 저장소가 여럿이면 위임을 열어 저장소마다 서브에이전트를 띄웠다(실측 3분 43초 · $0.59 → 17분 11초).
+   * v2 는 열지 않는다 — 다른 저장소 영향은 인덱스의 impact 가 한 번에 따라가고, 모델은 한 세션에서
+   * QueryIndex(root=…) 로 양쪽을 본다(skill-prompt.mjs 의 multiRootLines). 오케스트레이터만 스스로 위임을 연다.
    */
-  if (multiRoot && !agent.allowDelegation) agent = { ...agent, allowDelegation: true };
 
   // 경로 치환 같은 내부 적응 기록은 사용자가 볼 것이 아니다.
   for (const warning of agent.warnings ?? []) debug(ui.dim(`  ! ${warning}\n`));
@@ -839,7 +842,26 @@ async function executeAgentOnce({ root, agentName, agent: preset, prompt, conver
     // 모델을 바꿔 다시 돌 첫 시도는 답이 아니다. 대화에 남기지 않는다.
     if (!retryModel) onAnswer?.(answer);
     if (snapshot) await reviewTurnChanges(snapshot);
+    if (sessionReport() && !retryModel && answer.trim()) saveReport(answer);
     await audit.flush();
+  }
+
+  /**
+   * 리포트 저장 — v1 처럼 모델이 파일을 쓰게 하지 않고, 답을 그대로 남긴다.
+   * @param {string} text
+   */
+  function saveReport(text) {
+    try {
+      const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 13);
+      const slug = (title ?? agent.name).replace(/^\//, "").replace(/[^\w가-힣]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "report";
+      const dir = join(paths.root, "_workspace", "reports");
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, `${slug}_${stamp}.md`);
+      writeFileSync(file, `# ${title ?? agent.name}\n\n${text.trim()}\n`, "utf8");
+      emit(ui.dim(`  리포트 ${file}`));
+    } catch (error) {
+      emit(ui.yellow(`  리포트를 쓰지 못했습니다 — ${error instanceof Error ? error.message : String(error)}`));
+    }
   }
 
   /**
