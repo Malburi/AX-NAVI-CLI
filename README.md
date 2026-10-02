@@ -48,7 +48,7 @@ ITO/SI/SM 현장을 위한 AI 개발 내비게이터 — 코드베이스 지도�
 Claude 구독 로그인(`claude`)만 돼 있으면 API 키도 추가 비용도 필요 없습니다.
 
 ```bash
-npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.3
+npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.4
 
 cd /path/to/레거시-프로젝트
 axnavi index build      # 1) 코드베이스 지도 만들기 — AI 를 쓰지 않아 비용 0
@@ -123,7 +123,7 @@ v1(0.1.0-alpha.38)을 평범한 Claude Code 와 같은 과제로 108번 비교�
 - [지원 스택](#지원-스택)
 - [Claude Code 안에서 쓰기](#claude-code-안에서-쓰기)
 
-현재 버전 **v2.0.0-alpha.3**
+현재 버전 **v2.0.0-alpha.4**
 
 ---
 
@@ -141,7 +141,7 @@ v1(0.1.0-alpha.38)을 평범한 Claude Code 와 같은 과제로 108번 비교�
 ### 인터넷이 되는 PC
 
 ```bash
-npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.3
+npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.4
 ```
 
 git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm i -g github:…` 형식은 쓰지 마세요.
@@ -150,7 +150,7 @@ git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm
 `connect EACCES` 가 나면 보안 프로그램이 npm 의 외부 연결을 막는 경우입니다. 파일로 받아 설치합니다.
 
 ```powershell
-Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.3" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
+Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.4" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
 npm i -g "$env:TEMP\axnavi.tgz"
 ```
 
@@ -166,7 +166,7 @@ npm i -g C:\경로\axnavi-2.0.0-alpha.1.tgz --omit=optional
 
 > **배포 담당자** — 태그를 체크아웃한 깨끗한 폴더에서 `npm pack` 으로 만듭니다.
 > ```powershell
-> git checkout v2.0.0-alpha.3
+> git checkout v2.0.0-alpha.4
 > npm pack    # axnavi-2.0.0-alpha.1.tgz
 > ```
 
