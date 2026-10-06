@@ -19,7 +19,6 @@ import { hostPlugins } from "../../provider-agent-sdk/src/host-settings.mjs";
 import { resolveClaudeBin } from "../../provider-claude-cli/src/index.mjs";
 import { ensureFreshIndexesAsync } from "./freshness.mjs";
 import { REPO_ROOT, ui } from "./runtime.mjs";
-import { checkForUpdate } from "./upgrade.mjs";
 
 /**
  * Claude Code 실행 파일. 사용자가 설치한 claude 가 먼저다 — 그 사람의 로그인 · 설정을 그대로 쓴다.
@@ -202,13 +201,6 @@ export async function launch(argv, version) {
     return 1;
   }
 
-  /*
-   * 새 판 알림 — npm 전역 설치는 아무도 안 알려 준다. 하루 한 번 본 결과를 쓰고, 늦게 온 결과는
-   * Claude Code 가 화면을 가진 뒤라면 버린다(그 화면에 끼어 쓰면 깨진다).
-   */
-  let launched = false;
-  if (interactive) checkForUpdate(version, (latest) => { if (!launched) say(`  ${ui.yellow("새 판")} ${ui.dim(`${version} → ${latest} · axnavi upgrade`)}`); });
-
   /* ① 배너 · 인덱스 */
   const indexed = roots.filter((p) => existsSync(join(p.indexDir ?? join(p.root, "_workspace", "index"), "_meta.json")));
   if (interactive) {
@@ -256,7 +248,6 @@ export async function launch(argv, version) {
   if (interactive) say(ui.dim(`  Claude Code 를 띄웁니다${picked.source === "bundled" ? " (axnavi 내장 실행 파일)" : ""} — /ax-navi: 로 시작하는 명령이나 말로 부탁하세요.\n`));
 
   /* ④ 실행 — 화면 · 키 입력은 Claude Code 가 가진다 */
-  launched = true;
   return new Promise((done) => {
     const child = spawn(picked.bin, args, { stdio: "inherit", cwd, env: launchEnv(process.env) });
     const ignore = () => { /* Ctrl+C 는 Claude Code 가 받는다 */ };
