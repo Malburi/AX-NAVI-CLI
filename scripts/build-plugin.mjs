@@ -50,7 +50,7 @@ for (const rel of RUNTIME) {
 }
 /* 훅 · README · 매니페스트 */
 mkdirSync(join(OUT, "hooks"), { recursive: true });
-cpSync(join(SRC, "plugin", "hooks.json"), join(OUT, "hooks", "hooks.json"));
+cpSync(join(SRC, "hooks", "hooks.json"), join(OUT, "hooks", "hooks.json"));
 cpSync(join(SRC, "plugin", "README.md"), join(OUT, "README.md"));
 mkdirSync(join(OUT, ".claude-plugin"), { recursive: true });
 for (const f of ["plugin.json", "marketplace.json"]) cpSync(join(SRC, ".claude-plugin", f), join(OUT, ".claude-plugin", f));

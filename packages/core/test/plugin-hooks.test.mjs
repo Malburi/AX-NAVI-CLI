@@ -40,6 +40,6 @@ test("axnavi CLI 가 띄운 실행에서는 비킨다", () => {
 });
 
 test("플러그인 훅 매니페스트가 모든 이벤트를 훅 스크립트에 잇는다", () => {
-  const manifest = JSON.parse(readFileSync(fileURLToPath(new URL("../../../plugin/hooks.json", import.meta.url)), "utf8"));
+  const manifest = JSON.parse(readFileSync(fileURLToPath(new URL("../../../hooks/hooks.json", import.meta.url)), "utf8"));
   for (const ev of ["SessionStart", "UserPromptSubmit", "PreToolUse", "Stop"]) assert.ok(JSON.stringify(manifest.hooks[ev]).includes("packages/plugin/src/hooks.mjs"), ev);
 });

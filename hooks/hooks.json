@@ -1,7 +1,14 @@
 {
-  "description": "EUC-KR 등 레거시 인코딩 파일을 읽고 고칠 때 인코딩을 지킨다(packages/provider-claude-cli/src/legacy-encoding.mjs). 도구가 도는 동안만 UTF-8 로 바꿨다가 되돌린다. axnavi CLI 로 실행하면 axnavi 가 같은 훅을 직접 걸고 이 훅은 비킨다.",
+  "description": "AX Navi 플러그인 훅 — 인덱스 신선도 · 사전 영향도 · 셸 소스 쓰기 승인 · 디스크 전체 검색 차단 · 평가 서브에이전트 1번 · EUC-KR 보존 · 고친 뒤 위치 읽기 화면 확인(packages/plugin/src/hooks.mjs, packages/provider-claude-cli/src/legacy-encoding-hook.mjs). axnavi CLI 로 실행하면 CLI 가 같은 일을 하고 이 훅들은 비킨다.",
   "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/plugin/src/hooks.mjs\" session-start", "timeout": 180 }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/plugin/src/hooks.mjs\" prompt", "timeout": 60 }] }
+    ],
     "PreToolUse": [
+      { "matcher": "Bash|PowerShell|Agent|Task", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/plugin/src/hooks.mjs\" pre-tool", "timeout": 20 }] },
       { "matcher": "Read|Edit|Write|MultiEdit", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/provider-claude-cli/src/legacy-encoding-hook.mjs\" pre plugin" }] }
     ],
     "PostToolUse": [
@@ -14,7 +21,10 @@
       { "matcher": "Read|Edit|Write|MultiEdit", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/provider-claude-cli/src/legacy-encoding-hook.mjs\" cleanup plugin" }] }
     ],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/provider-claude-cli/src/legacy-encoding-hook.mjs\" cleanup plugin" }] }
+      { "hooks": [
+        { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/provider-claude-cli/src/legacy-encoding-hook.mjs\" cleanup plugin" },
+        { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/plugin/src/hooks.mjs\" stop", "timeout": 180 }
+      ] }
     ],
     "SessionEnd": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/provider-claude-cli/src/legacy-encoding-hook.mjs\" cleanup plugin" }] }
