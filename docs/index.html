@@ -375,7 +375,7 @@
         <path d="M11 23 V27 M21 23 V27 M6 28 H26" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round"/>
       </svg>
       <span class="brand-name">AX-NAVI</span>
-      <span class="brand-ver">v2.0.0-alpha.5</span>
+      <span class="brand-ver">v2.0.0-alpha.4</span>
     </a>
     <nav class="nav" aria-label="주요 메뉴">
       <a href="#v2">v2</a>
@@ -412,7 +412,7 @@
       <figure class="term" aria-label="axnavi 에서 기능 위치를 찾는 예시 화면" style="margin:0">
         <div class="term-bar"><i></i><i></i><i></i><span class="title">axnavi — 예시 프로젝트</span></div>
 <pre><span class="t-cy">  ╭─────────╮</span>
-<span class="t-cy">  │ ◉ ─── ◉ │</span>   <span class="t-b">AX-NAVI</span> <span class="t-dim">v2.0.0-alpha.5</span>
+<span class="t-cy">  │ ◉ ─── ◉ │</span>   <span class="t-b">AX-NAVI</span> <span class="t-dim">v2.0.0-alpha.4</span>
 <span class="t-cy">  ╰──┬───┬──╯</span>   <span class="t-dim">인덱스  최신 · 파일 2,704개 · Full</span>
 
 <span class="t-cy">AX-NAVI</span> <span class="t-dim">&gt;</span> <span class="t-b">/find 결제 승인 기능 찾아줘</span>
@@ -657,15 +657,15 @@
         <div class="kicker">작업 흐름</div>
         <div>
           <h2>지도를 한 번 그리면,<br>그다음은 말로 부탁하면 됩니다.</h2>
-          <p><code>axnavi</code> 는 인덱스를 확인하고 AX Navi 를 실은 Claude Code 를 띄웁니다. 대화 화면 · 승인 창 · 되감기는 Claude Code 것 그대로이고, 명령을 외우지 않아도 "하네스 초기화 해줘", "이거 고치면 어디 영향 가?" 처럼 말하면 알맞은 스킬이 실행됩니다.</p>
+          <p>명령을 외우지 않아도 됩니다. "하네스 초기화 해줘", "이거 고치면 어디 영향 가?" 처럼 말하면 알맞은 스킬이 실행됩니다.</p>
         </div>
       </div>
       <ol class="flow">
-        <li><span class="cmd">axnavi</span><h3>지도 그리고 띄우기</h3><p>소스를 전수 파싱한 인덱스를 확인 · 갱신하고 Claude Code 를 띄웁니다. 짝 저장소도 함께 엽니다.</p><span class="ai none">AI 호출 없음</span></li>
-        <li><span class="cmd">/ax-navi:harness-init</span><h3>프로젝트 익히기</h3><p>구조 · 컨벤션 · 도메인을 분석해 CLAUDE.md 와 패턴 프로필을 만듭니다.</p><span class="ai">분석 · 작성 · 검증 에이전트</span></li>
-        <li><span class="cmd">/ax-navi:find · flow</span><h3>찾고 따라가기</h3><p>기능 위치와 진입점부터 DB 까지의 처리 흐름을 봅니다.</p><span class="ai">인덱스 질의 우선</span></li>
-        <li><span class="cmd">/ax-navi:impact</span><h3>영향 보기</h3><p>바꾸려는 대상을 쓰는 곳과 위험도를 먼저 확인합니다.</p><span class="ai">호출 그래프 · SQL 사용처</span></li>
-        <li><span class="cmd">/ax-navi:modify</span><h3>안전하게 고치기</h3><p>허락을 받아 고치고, 검증까지 마친 뒤 결과를 보고합니다.</p><span class="ai">GO · HOLD · STOP</span></li>
+        <li><span class="cmd">axnavi index build</span><h3>지도 그리기</h3><p>소스를 전수 파싱해 인덱스 10종을 만듭니다.</p><span class="ai none">AI 호출 없음</span></li>
+        <li><span class="cmd">/harness-init</span><h3>프로젝트 익히기</h3><p>구조 · 컨벤션 · 도메인을 분석해 CLAUDE.md 와 패턴 프로필을 만듭니다.</p><span class="ai">분석 · 작성 · 검증 에이전트</span></li>
+        <li><span class="cmd">/find · /flow</span><h3>찾고 따라가기</h3><p>기능 위치와 진입점부터 DB 까지의 처리 흐름을 봅니다.</p><span class="ai">인덱스 질의 우선</span></li>
+        <li><span class="cmd">/impact</span><h3>영향 보기</h3><p>바꾸려는 대상을 쓰는 곳과 위험도를 먼저 확인합니다.</p><span class="ai">호출 그래프 · SQL 사용처</span></li>
+        <li><span class="cmd">/modify</span><h3>안전하게 고치기</h3><p>허락을 받아 고치고, 검증까지 마친 뒤 결과를 보고합니다.</p><span class="ai">GO · HOLD · STOP</span></li>
       </ol>
     </div>
   </section>
@@ -770,23 +770,24 @@
       </div>
 
       <div class="panel" role="tabpanel" id="panel-net" aria-labelledby="tab-net">
-        <div class="cmdbox"><span class="lbl">설치</span><pre>npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.5</pre><button class="copy" type="button" id="copy-net">복사</button></div>
+        <div class="cmdbox"><span class="lbl">설치</span><pre>npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.4</pre><button class="copy" type="button" id="copy-net">복사</button></div>
         <div class="cmdbox"><span class="lbl">확인 · 시작</span><pre>cd 내-프로젝트
 axnavi doctor
-axnavi          # 인덱스 확인 → AX Navi 를 실은 Claude Code</pre><button class="copy" type="button" id="copy-start">복사</button></div>
-        <p class="hint">새 판은 <code>axnavi</code> 를 띄울 때 하루 한 번 알려 줍니다. <code>axnavi upgrade</code> 한 줄로 올립니다. 예전 자체 화면은 <code>axnavi classic</code> 입니다.</p>
+axnavi index build
+axnavi</pre><button class="copy" type="button" id="copy-start">복사</button></div>
+        <p class="hint">새 판은 대화형 모드가 하루 한 번 알려 줍니다. <code>axnavi upgrade</code> 한 줄로 올립니다.</p>
       </div>
 
       <div class="panel" role="tabpanel" id="panel-closed" aria-labelledby="tab-closed" hidden>
         <p>npm 이 외부 주소에 붙지 못하는 PC 는 파일로 받아 설치합니다. 의존성은 사내 npm 저장소에서 받습니다.</p>
-        <div class="cmdbox"><span class="lbl">GitHub 에는 닿는데 npm 이 막힐 때 (PowerShell)</span><pre>Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.5" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
+        <div class="cmdbox"><span class="lbl">GitHub 에는 닿는데 npm 이 막힐 때 (PowerShell)</span><pre>Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.4" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
 npm i -g "$env:TEMP\axnavi.tgz"</pre><button class="copy" type="button" id="copy-closed">복사</button></div>
-        <div class="cmdbox"><span class="lbl">GitHub 에도 닿지 않을 때 — 배포 담당자에게 받은 파일</span><pre>npm i -g C:\경로\axnavi-2.0.0-alpha.5.tgz --omit=optional</pre><button class="copy" type="button" id="copy-file">복사</button></div>
+        <div class="cmdbox"><span class="lbl">GitHub 에도 닿지 않을 때 — 배포 담당자에게 받은 파일</span><pre>npm i -g C:\경로\axnavi-2.0.0-alpha.4.tgz --omit=optional</pre><button class="copy" type="button" id="copy-file">복사</button></div>
         <p class="hint">PowerShell 에서 <code>running scripts is disabled</code> 가 나오면 <code>axnavi.cmd</code> 로 부르세요.</p>
       </div>
 
       <div class="panel" role="tabpanel" id="panel-plugin" aria-labelledby="tab-plugin" hidden>
-        <p>같은 에이전트 · 스킬을 Claude Code 플러그인으로 설치해 씁니다. <code>axnavi</code> 런처를 쓰면 따로 설치하지 않아도 됩니다.</p>
+        <p>같은 에이전트 · 스킬을 Claude Code 안에서도 씁니다.</p>
         <div class="cmdbox"><span class="lbl">Claude Code</span><pre>claude plugin marketplace add Malburi/AX-NAVI-V2
 claude plugin install ax-navi@ax-navi --scope user</pre><button class="copy" type="button" id="copy-plugin">복사</button></div>
       </div>

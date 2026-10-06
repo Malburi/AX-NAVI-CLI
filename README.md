@@ -42,19 +42,18 @@ ITO/SI/SM 현장을 위한 AI 개발 내비게이터 — 코드베이스 지도�
 | 인수인계 문서가 없다 | `/wiki` |
 
 명령을 외우지 않아도 됩니다. **"하네스 초기화 해줘"** 처럼 말로 부탁하면 알맞은 스킬을 바로 실행합니다.
-`axnavi` 가 띄우는 Claude Code 화면에서는 `/ax-navi:flow` 처럼 앞에 `ax-navi:` 가 붙습니다.
 
 ## 5분 체험
 
 Claude 구독 로그인(`claude`)만 돼 있으면 API 키도 추가 비용도 필요 없습니다.
 
 ```bash
-npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.5
+npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.4
 
 cd /path/to/레거시-프로젝트
 axnavi index build      # 1) 코드베이스 지도 만들기 — AI 를 쓰지 않아 비용 0
 axnavi index coverage   # 2) 이 도구로 얼마나 다룰 수 있는지 진단서
-axnavi                  # 3) 인덱스를 확인하고 AX Navi 를 실은 Claude Code 를 띄웁니다
+axnavi                  # 3) 대화형으로 들어가서 물어보기
 ```
 
 `index coverage` 는 AI 없이 바로 나옵니다.
@@ -66,8 +65,7 @@ axnavi                  # 3) 인덱스를 확인하고 AX Navi 를 실은 Claude
   호출 확정률 92.2% · SQL 연결률 100%
 ```
 
-`axnavi` 는 Claude Code 런처입니다. 인덱스를 확인한 뒤 AX Navi 의 에이전트 · 스킬 · 훅을 실어 Claude Code 를 띄우고, 대화 화면 · 승인 창 · 되감기는 Claude Code 것을 그대로 씁니다.
-Claude Code 화면에서 **"하네스 초기화 해줘"** 를 한 번 해 두면, 이후 모든 작업이 이 프로젝트의 구조와 컨벤션에 맞춰 돕니다.
+대화형 모드에서 **"하네스 초기화 해줘"** 를 한 번 해 두면, 이후 모든 작업이 이 프로젝트의 구조와 컨벤션에 맞춰 돕니다.
 사내망 · 폐쇄망 · PowerShell 실행 정책 문제는 [설치](#설치)를 보세요.
 
 ## v2 에서 달라진 것
@@ -78,7 +76,6 @@ v1(0.1.0-alpha.38)을 평범한 Claude Code 와 같은 과제로 108번 비교�
 
 - **인덱스 2.0 — 문자열 디스패치와 "위치로 읽는 화면"을 잇습니다.** `TransData.do?worker=빈&action=메서드` 처럼 문자열로 부르는 호출과, 결과를 `rtInfo[1][2]` 처럼 위치로 읽는 화면을 설정 없이 찾아 백엔드 메서드 · SQL 컬럼 순서와 잇습니다. `query-index impact` 한 번(0.4초, AI 0원)으로 짝 저장소 화면까지 "이 컬럼을 빼면 어디가 깨지는지"가 나옵니다. 이런 메서드를 더 이상 죽은 코드로 보지 않습니다.
 - **런타임 안전.** 소스 수정 승인이 Edit 뿐 아니라 셸 명령(`python -c` · `sed -i` · `>` …)에도 걸리고, 세 실행 경로(Agent SDK · claude -p · API 키) 모두에 적용됩니다. 턴이 끝나면 승인 없이 바뀐 파일을 보여 주고 되돌릴지 묻고, UTF-8 로 바뀐 EUC-KR 파일은 손실 없이 되돌려 씁니다. 고친 뒤 SELECT 순서가 바뀌었는데 위치로 읽는 화면이 남아 있으면 런타임이 HOLD 로 알립니다.
-- **Claude Code 런처 (alpha.5).** `axnavi` 는 인덱스를 확인하고 AX Navi 플러그인을 실어 Claude Code 를 띄웁니다. 자체 대화 화면은 `axnavi classic` 으로 남겼습니다. 같은 실제 레거시 과제(24곳)를 런처로 돌려 24곳을 모두 원문으로 확인했습니다.
 - **가벼운 실행 경로.** 인덱스 신선도는 런타임이 확인하고, 영향도 · 수정 요청이면 인덱스로 계산한 사전 영향도를 먼저 넣습니다. 저장소마다 띄우던 서브에이전트와 리포트 강제를 걷었습니다(리포트는 `/report` · `--report`). 고친 뒤 평가는 결정적 검사(재영향도 · 검증 명령 · 런타임 HOLD)가 기본이고, LLM 평가는 DDL · 트랜잭션 · 인증 · 데이터 변경 같은 위험한 변경에서만 한 번 돕니다.
 
 **같은 과제 재측정 (방식마다 3회 평균)**
@@ -125,9 +122,8 @@ v1(0.1.0-alpha.38)을 평범한 Claude Code 와 같은 과제로 108번 비교�
 - [에이전트 · 스킬 목록](#에이전트--스킬-목록)
 - [지원 스택](#지원-스택)
 - [Claude Code 안에서 쓰기](#claude-code-안에서-쓰기)
-- [부록: classic 화면](#부록-classic-화면)
 
-현재 버전 **v2.0.0-alpha.5**
+현재 버전 **v2.0.0-alpha.4**
 
 ---
 
@@ -145,7 +141,7 @@ v1(0.1.0-alpha.38)을 평범한 Claude Code 와 같은 과제로 108번 비교�
 ### 인터넷이 되는 PC
 
 ```bash
-npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.5
+npm i -g --allow-remote=all https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.4
 ```
 
 git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm i -g github:…` 형식은 쓰지 마세요.
@@ -154,7 +150,7 @@ git 프로토콜이 막힌 사내망에서도 되는 HTTPS 주소입니다. `npm
 `connect EACCES` 가 나면 보안 프로그램이 npm 의 외부 연결을 막는 경우입니다. 파일로 받아 설치합니다.
 
 ```powershell
-Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.5" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
+Invoke-WebRequest "https://codeload.github.com/Malburi/AX-NAVI-CLI/tar.gz/refs/tags/v2.0.0-alpha.4" -OutFile "$env:TEMP\axnavi.tgz" -UseBasicParsing
 npm i -g "$env:TEMP\axnavi.tgz"
 ```
 
@@ -170,7 +166,7 @@ npm i -g C:\경로\axnavi-2.0.0-alpha.1.tgz --omit=optional
 
 > **배포 담당자** — 태그를 체크아웃한 깨끗한 폴더에서 `npm pack` 으로 만듭니다.
 > ```powershell
-> git checkout v2.0.0-alpha.5
+> git checkout v2.0.0-alpha.4
 > npm pack    # axnavi-2.0.0-alpha.1.tgz
 > ```
 
@@ -209,7 +205,6 @@ axnavi doctor
   ✓ git        git version 2.46.0
   ✓ 실행 경로  agent-sdk · 구독 인증 · 질문·승인은 axnavi 화면이 직접 받습니다
   ✓ 로그인     Claude 구독 로그인 기록 있음
-  ✓ 런처       2.1.284 (Claude Code) · 설치된 claude
   ✓ 인덱스     최신 — 소스 지문 일치 — 재인덱싱 불필요
   ✓ 인덱서     v1.16.0
   ✓ 에이전트   19개
@@ -218,49 +213,21 @@ axnavi doctor
 
 ## 사용법
 
-### axnavi 는 Claude Code 를 띄웁니다
+### 대화형 모드
 
-```bash
-cd /path/to/프로젝트
-axnavi                  # 인덱스 확인 → AX Navi 를 실은 Claude Code
-axnavi -c               # 마지막 대화를 이어서 (Claude Code 인자는 그대로 넘깁니다)
-axnavi -p "질문"         # 한 번 묻고 답받기 — 스크립트 · CI 용
-```
+질문은 그대로 대화로 답하고, 스킬이 필요한 부탁은 알맞은 스킬을 바로 실행합니다.
+어느 스킬인지 애매하면 짐작하지 않고 선택지를 띄웁니다.
 
-```
-AX Navi v2.0.0-alpha.5  my-server · my-client
-  인덱스 갱신 중 — my-client (소스 3개 변경) · 4초 · Esc 로 건너뛰기
-  Claude Code 를 띄웁니다 — /ax-navi: 로 시작하는 명령이나 말로 부탁하세요.
-```
-
-띄우기 전에 런처가 하는 일입니다.
-
-1. **저장소를 찾습니다.** 지금 폴더(또는 한 단계 아래)의 인덱스와 `pair_config` 의 짝 저장소를 찾아, 짝 저장소는 `--add-dir` 로 함께 엽니다.
-2. **인덱스를 확인합니다.** 소스가 바뀌었으면 별도 프로세스에서 다시 만들고 경과 시간을 보여 줍니다. 기다리기 싫으면 `Esc` 로 건너뛰고 옛 인덱스로 시작합니다. 인덱스가 없으면 지금 만들지(AI 0원) 묻습니다.
-3. **AX Navi 를 싣습니다.** 설치된 axnavi 폴더를 플러그인으로 실어(`--plugin-dir`) 에이전트 19종 · 스킬 · 훅이 그대로 돕니다. 마켓플레이스로 설치한 `ax-navi` 플러그인이 있으면 두 벌 돌지 않게 이번 실행에서만 끕니다.
-4. **Claude Code 를 띄웁니다.** 사용자가 설치한 `claude` 를 먼저 쓰고(로그인 · 설정 그대로), 없으면 axnavi 와 함께 깔린 실행 파일을 씁니다.
-
-Claude Code 안에서는 플러그인 훅이 실행기의 일을 맡습니다.
-
-- 영향도 · 수정 요청이면 인덱스로 계산한 사전 영향도를 먼저 넣습니다.
-- 셸 명령(`sed -i` · `python -c` · `>` …)으로 소스를 쓰려 하면 묻습니다. 평가 서브에이전트는 한 번만 띄웁니다.
-- EUC-KR 파일이 UTF-8 로 바뀌면 손실 없이 되돌려 씁니다. 고친 뒤 위치로 읽는 화면이 남아 있으면 HOLD 로 알립니다.
-
-**classic 과 다른 점**
-
-| classic 에만 있던 것 | 런처에서는 |
+| 조작 | 하는 일 |
 |---|---|
-| 저장소별 "이번 세션 허용" 승인 · 바뀌는 줄 미리보기 | Claude Code 자체 승인 화면(diff 표시)을 씁니다 |
-| 턴 뒤 "승인 없이 바뀐 파일 되돌리기" 질문 | Claude Code 되감기(`Esc` 두 번)로 되돌립니다 |
-| `/report` | "답을 리포트로 저장해줘" 라고 부탁합니다 |
-| 사내 게이트웨이 · Bedrock 모델 자동 학습 | Claude Code 설정(환경 변수 · `/model`)을 따릅니다 |
-| claude-cli 대체 경로 · API 키 실행기 · JSONL 감사 기록 | `axnavi classic` 에 남아 있습니다 |
-
-모델은 Claude Code 기본값을 따릅니다. 비용을 줄이려면 `axnavi --model sonnet` 처럼 넘기세요(실측: 같은 24곳 과제가 Opus 5.5 로 $0.41 · 57초).
+| `/` | 명령 목록 — 타이핑하면 좁혀집니다 |
+| `Tab` / `↑` `↓` | 후보 이동 |
+| `Esc` | 메뉴 닫기 · 작업 중이면 중단 |
+| `Ctrl+C` | 작업 중단 · 빈 줄에서 두 번이면 종료 |
+| `Shift+Tab` (또는 빈 줄에서 `Tab`) | 실행 모드 바꾸기 |
+| `Ctrl+O` | 접힌 결과(`… +N줄`) 펼쳐 보기 |
 
 ### 자주 쓰는 스킬 단축 별칭
-
-Claude Code 화면에서는 `/ax-navi:find` 처럼 씁니다. classic 화면에서는 `/find` 입니다.
 
 | 별칭 | 스킬 | 하는 일 |
 |---|---|---|
@@ -295,22 +262,137 @@ Claude Code 화면에서는 `/ax-navi:find` 처럼 씁니다. classic 화면에�
 | **Full** (기본) | 심층 분석 · 마이그레이션 · 대규모 수정 계획 | 기준 |
 | **Standard** | 일상 유지보수 | Full 의 약 60% |
 
+### 물어봐야 할 때는 물어봅니다
+
+사람이 정할 일은 선택지를 띄웁니다. 방향키나 번호로 고르고 Enter 입니다. 선택지 개수에 제한이 없고,
+선택지가 없는 질문은 그 자리에서 입력합니다.
+
+```
+╭───────────────╮
+│ 프로젝트 구성 │
+╰───────────────╯
+
+  프로젝트 루트에 my-client, my-server 두 하위 폴더가 있습니다.
+  하네스 초기화를 어떤 구성으로 진행할까요?
+
+  1. 단일 프로젝트로 초기화 (Recommended)
+❯ 2. 서버·클라이언트 함께 초기화 (모노레포)
+  3. 서버·클라이언트 각각 초기화 후 연결 (1:1)
+  4. 기타 (부분 범위 / 허브형 1:N)
+
+  ↑↓ 이동 · Enter 선택 · 번호 입력 · Esc 건너뜀
+```
+
+### 파일을 고치기 전에 허락을 받습니다
+
+파일을 쓰거나 고치거나 명령을 실행하기 전에, 무엇이 바뀌는지 보여 주고 묻습니다.
+
+<details>
+<summary><b>실제 실행 녹화 보기</b> — <code>/modify 카테고리명을 최대 20자까지만 입력되게 해줘</code> (기본 자동 모드)</summary>
+
+<img src="docs/assets/demo-modify.gif" alt="기본 자동 모드에서 /modify 로 카테고리명을 20자로 제한하면, 영향도(DB 컬럼 VARCHAR(50), 기존 회귀 테스트)를 확인하고 JSP 와 검증 스크립트의 바뀌는 줄을 보여 주며 승인을 받은 뒤 고치고 GO 를 판정하는 녹화" width="820">
+
+<sub>실제 실행 녹화입니다(v0.1.0-alpha.37 · 기본 자동 모드 · 6분 43초). 소스 수정 승인 두 번만 실제 속도이고 나머지는 빨리감았습니다 — 화면 바닥의 경과 시간이 실제 값입니다. 승인은 녹화 스크립트가 "예"를 눌렀고 결과 글자는 편집하지 않았습니다 — 원본 <a href="docs/assets/demo-modify.cast">demo-modify.cast</a></sub>
+
+</details>
+
+```
+╭──────╮
+│ 권한 │
+╰──────╯
+
+  +1
+  4       a.setStatus("Y");
+  5 +     a.setApprovedAt(now());
+  6       dao.update(a);
+
+● Edit  C:\proj\src\ApplyService.java
+  실행할까요?
+
+❯ 1. 예
+  2. 예, 이번 세션 동안 파일 수정은(는) 묻지 않음
+  3. 예, 이번 세션 동안 모두 묻지 않음
+  4. 아니오
+```
+
+- 파일 수정은 바뀌는 줄과 줄 번호를, 명령 실행은 명령 전체를 보여 줍니다.
+- 아무것도 바꾸지 않는 명령(`ls` · `git status` 등)과 axnavi 자신의 스크립트는 묻지 않습니다.
+- "이번 세션 동안 묻지 않음" 은 명령 이름 단위로 기억합니다. `npm` 을 허용해도 `rm` 은 따로 묻습니다.
+- 오래 걸리는 초기화는 "모두 묻지 않음" 을 한 번 누르면 됩니다.
+- 허용 · 거부 이력은 `.axnavi/logs/audit.jsonl` 에 남습니다.
+
 ### 저장소가 여럿이면 나눠 찾습니다
 
 백엔드 · 프론트엔드 저장소를 담은 **상위 폴더**에서 띄워도 됩니다. 인덱스를 가진 하위 저장소를 찾아
-Claude Code 에 모두 열어 주고, 인덱스의 `impact` 가 저장소를 넘어 화면까지 따라갑니다.
+저장소마다 에이전트를 하나씩 띄워 병렬로 훑습니다.
 
 ```
   ✓ 인덱스      저장소 2개 — my-client(1428파일·Full), my-server(2575파일·Full)
 ```
+
+### 무엇이 벌어지는지 보입니다
+
+여러 에이전트가 동시에 돌면 화면 바닥에 에이전트마다 최근 활동이 흐르고, 끝나면 한 줄로 정리됩니다.
+
+```
+● Task(기능 위치 탐색 (client))
+● Task(기능 위치 탐색 (server))
+  ⎿ 기능 위치 탐색 (client) 끝남 · 도구 17회 · 2m 41s
+  ⎿ 기능 위치 탐색 (server) 끝남 · 도구 31회 · 4m 12s
+```
+
+지나간 작업은 `/log` 로 에이전트별로 되짚어 볼 수 있습니다.
+
+### 작업 중에도 계속 쓸 수 있습니다
+
+작업이 도는 동안에도 입력할 수 있고, 입력한 요청은 지금 작업이 끝나면 순서대로 실행됩니다.
+
+```
+────────────────────────────────────────────────────────────────────────────
+❯ /index refresh▏
+────────────────────────────────────────────────────────────────────────────
+⠹ harness-init › analyzer · 8m 7s · ↓ 30.6k tokens · Read   agent-sdk · deep · Ctx 27.1k
+```
+
+오래 걸리는 일은 백그라운드로 돌려 두고 다른 대화를 이어갑니다.
+
+```
+AX-NAVI > /bg 하네스 초기화 해줘
+AX-NAVI [⠿ 1] > 이 프로젝트 빌드는 어떻게 해?
+```
+
+### 모드와 모델
+
+`Shift+Tab` 으로 실행 모드를 바꿉니다. `/mode 계획` 처럼 이름으로 지정할 수도 있습니다.
+
+| 모드 | 하는 일 |
+|---|---|
+| **자동** (기본) | 프로젝트 소스 수정은 바뀌는 줄을 보여 주고 묻고, 읽기 · 안전한 명령 · 리포트 쓰기는 판단해서 묻지 않습니다 |
+| **매번 묻기** | 승인이 필요한 작업을 모두 묻습니다 |
+| **계획** | 파일을 고치지 않고 고칠 파일 · 순서 · 검증 방법부터 내놓습니다 |
+| **빠름** | 영향도 · 안전 검토를 건너뛰고 바로 진행합니다 |
+| **전부승인** | 이번 세션의 도구 사용을 묻지 않습니다(감사 기록은 남음). `/mode 전부승인` 으로만 켭니다 |
+
+모델은 `/model` 로 바꿉니다(`haiku` · `sonnet` · `opus` · `기본`). `기본` 은 에이전트마다 정해진 모델을 씁니다.
+
+### 대화가 이어집니다
+
+| 명령 | 하는 일 |
+|---|---|
+| `/sessions` · `/resume` | 저장된 대화 목록 · 이전 대화로 돌아가기 |
+| `/context` · `/new` | 지금 대화 상태 · 새로 시작 |
+| `axnavi --continue` | 터미널에서 마지막 대화 이어서 |
+
+대화가 길어지면 오래된 도구 결과부터 접어서 자동으로 줄입니다.
 
 ---
 
 ## 명령어
 
 ```
-axnavi [Claude Code 인자...]    인덱스 확인 → AX Navi 를 실은 Claude Code (-c · --resume · -p · --model …)
-axnavi classic                  예전 자체 대화 화면 (classic --continue · --resume 도 그대로)
+axnavi                          대화형 모드
+axnavi --continue               마지막 대화를 이어서
+axnavi --resume <세션id>         특정 대화를 이어서
 axnavi ask <요청>               한 번 묻고 답받기 (읽기 전용)
 axnavi init                     .axnavi/ 설정 생성
 axnavi doctor                   실행 환경 진단
@@ -334,7 +416,7 @@ axnavi skill list | run <이름> <요청>
 | `--provider <이름>` | `auto` | `auto` · `agent-sdk` · `claude-cli` · `anthropic` |
 | `--verbose` | 꺼짐 | 도구 목록 · 토큰 내역 · 감사 기록 경로 |
 
-**classic 화면의 슬래시 명령** — `/` 를 치면 아래 목록과 스킬 24종이 함께 뜹니다.
+**대화형 모드의 슬래시 명령** — `/` 를 치면 아래 목록과 스킬 24종이 함께 뜹니다.
 
 | 명령 | 하는 일 |
 |---|---|
@@ -351,8 +433,6 @@ axnavi skill list | run <이름> <요청>
 
 ## 인증과 모델
 
-`axnavi` 런처는 Claude Code 의 로그인 · 설정 · 모델을 그대로 씁니다. 아래의 연결 방식 · API 키 · 모델 자동 전환은 `axnavi classic` · `skill run` · `agent run` · `ask` 에 해당합니다.
-
 ### Claude 구독 (기본 · 권장)
 
 이미 쓰고 있는 `claude` CLI 의 로그인을 그대로 씁니다. **API 키도, 추가 비용도 필요 없습니다.**
@@ -362,7 +442,7 @@ claude     # 한 번 로그인해 두면 됩니다
 axnavi
 ```
 
-classic 화면의 연결 방식은 axnavi 가 알아서 고릅니다.
+연결 방식은 axnavi 가 알아서 고릅니다.
 
 | 연결 | 언제 |
 |---|---|
@@ -373,7 +453,7 @@ classic 화면의 연결 방식은 axnavi 가 알아서 고릅니다.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...        # PowerShell: $env:ANTHROPIC_API_KEY="sk-ant-..."
-axnavi classic --provider anthropic
+axnavi --provider anthropic
 ```
 
 질문 · 대화와 단일 에이전트 스킬에 씁니다. `axnavi index build` 는 인증 없이도 돌아갑니다.
@@ -490,7 +570,7 @@ PARTIAL 대상은 에이전트가 원문을 직접 읽어 확인한 뒤 수정�
 
 ## Claude Code 안에서 쓰기
 
-같은 에이전트 · 스킬을 Claude Code 플러그인으로도 쓸 수 있습니다. 플러그인 저장소([Malburi/AX-NAVI-V2](https://github.com/Malburi/AX-NAVI-V2))는 이 저장소에서 `node scripts/build-plugin.mjs <플러그인 저장소 사본>` 으로 만듭니다 — 실행기 대신 Claude Code 훅이 인덱스 신선도 · 사전 영향도 · 셸 소스 쓰기 승인 · 평가 서브에이전트 1번 · EUC-KR 보존 · 고친 뒤 위치 읽기 화면 확인을 맡습니다(`hooks/hooks.json`, `packages/plugin/src/hooks.mjs`). `axnavi` 런처가 싣는 것도 이 훅입니다 — 런처를 쓰면 플러그인을 따로 설치하지 않아도 됩니다.
+같은 에이전트 · 스킬을 Claude Code 플러그인으로도 쓸 수 있습니다. 플러그인 저장소([Malburi/AX-NAVI-V2](https://github.com/Malburi/AX-NAVI-V2))는 이 저장소에서 `node scripts/build-plugin.mjs <플러그인 저장소 사본>` 으로 만듭니다 — 실행기 대신 Claude Code 훅이 인덱스 신선도 · 사전 영향도 · 셸 소스 쓰기 승인 · 평가 서브에이전트 1번 · EUC-KR 보존 · 고친 뒤 위치 읽기 화면 확인을 맡습니다(`plugin/hooks.json`, `packages/plugin/src/hooks.mjs`).
 
 ```bash
 claude plugin marketplace add Malburi/AX-NAVI-V2
@@ -505,138 +585,6 @@ claude plugin marketplace remove ax-navi
 claude plugin marketplace add Malburi/AX-NAVI-V2
 claude plugin install ax-navi@ax-navi --scope user
 ```
-
----
-
-## 부록: classic 화면
-
-`axnavi classic` 은 alpha.4 까지의 자체 대화 화면입니다. API 키 · claude-cli 경로가 필요한 환경이나 저장소별 세션 승인 · 감사 기록이 필요할 때 씁니다. 한두 판 동안 전환용으로 남깁니다.
-
-질문은 그대로 대화로 답하고, 스킬이 필요한 부탁은 알맞은 스킬을 바로 실행합니다.
-어느 스킬인지 애매하면 짐작하지 않고 선택지를 띄웁니다.
-
-| 조작 | 하는 일 |
-|---|---|
-| `/` | 명령 목록 — 타이핑하면 좁혀집니다 |
-| `Tab` / `↑` `↓` | 후보 이동 |
-| `Esc` | 메뉴 닫기 · 작업 중이면 중단 |
-| `Ctrl+C` | 작업 중단 · 빈 줄에서 두 번이면 종료 |
-| `Shift+Tab` (또는 빈 줄에서 `Tab`) | 실행 모드 바꾸기 |
-| `Ctrl+O` | 접힌 결과(`… +N줄`) 펼쳐 보기 |
-
-### 물어봐야 할 때는 물어봅니다
-
-사람이 정할 일은 선택지를 띄웁니다. 방향키나 번호로 고르고 Enter 입니다. 선택지 개수에 제한이 없고,
-선택지가 없는 질문은 그 자리에서 입력합니다.
-
-```
-╭───────────────╮
-│ 프로젝트 구성 │
-╰───────────────╯
-
-  프로젝트 루트에 my-client, my-server 두 하위 폴더가 있습니다.
-  하네스 초기화를 어떤 구성으로 진행할까요?
-
-  1. 단일 프로젝트로 초기화 (Recommended)
-❯ 2. 서버·클라이언트 함께 초기화 (모노레포)
-  3. 서버·클라이언트 각각 초기화 후 연결 (1:1)
-  4. 기타 (부분 범위 / 허브형 1:N)
-
-  ↑↓ 이동 · Enter 선택 · 번호 입력 · Esc 건너뜀
-```
-
-### 파일을 고치기 전에 허락을 받습니다
-
-파일을 쓰거나 고치거나 명령을 실행하기 전에, 무엇이 바뀌는지 보여 주고 묻습니다.
-
-<details>
-<summary><b>실제 실행 녹화 보기</b> — <code>/modify 카테고리명을 최대 20자까지만 입력되게 해줘</code> (기본 자동 모드)</summary>
-
-<img src="docs/assets/demo-modify.gif" alt="기본 자동 모드에서 /modify 로 카테고리명을 20자로 제한하면, 영향도(DB 컬럼 VARCHAR(50), 기존 회귀 테스트)를 확인하고 JSP 와 검증 스크립트의 바뀌는 줄을 보여 주며 승인을 받은 뒤 고치고 GO 를 판정하는 녹화" width="820">
-
-<sub>실제 실행 녹화입니다(v0.1.0-alpha.37 · 기본 자동 모드 · 6분 43초). 소스 수정 승인 두 번만 실제 속도이고 나머지는 빨리감았습니다 — 화면 바닥의 경과 시간이 실제 값입니다. 승인은 녹화 스크립트가 "예"를 눌렀고 결과 글자는 편집하지 않았습니다 — 원본 <a href="docs/assets/demo-modify.cast">demo-modify.cast</a></sub>
-
-</details>
-
-```
-╭──────╮
-│ 권한 │
-╰──────╯
-
-  +1
-  4       a.setStatus("Y");
-  5 +     a.setApprovedAt(now());
-  6       dao.update(a);
-
-● Edit  C:\proj\src\ApplyService.java
-  실행할까요?
-
-❯ 1. 예
-  2. 예, 이번 세션 동안 파일 수정은(는) 묻지 않음
-  3. 예, 이번 세션 동안 모두 묻지 않음
-  4. 아니오
-```
-
-- 파일 수정은 바뀌는 줄과 줄 번호를, 명령 실행은 명령 전체를 보여 줍니다.
-- 아무것도 바꾸지 않는 명령(`ls` · `git status` 등)과 axnavi 자신의 스크립트는 묻지 않습니다.
-- "이번 세션 동안 묻지 않음" 은 명령 이름 단위로 기억합니다. `npm` 을 허용해도 `rm` 은 따로 묻습니다.
-- 오래 걸리는 초기화는 "모두 묻지 않음" 을 한 번 누르면 됩니다.
-- 허용 · 거부 이력은 `.axnavi/logs/audit.jsonl` 에 남습니다.
-
-### 무엇이 벌어지는지 보입니다
-
-여러 에이전트가 동시에 돌면 화면 바닥에 에이전트마다 최근 활동이 흐르고, 끝나면 한 줄로 정리됩니다.
-
-```
-● Task(기능 위치 탐색 (client))
-● Task(기능 위치 탐색 (server))
-  ⎿ 기능 위치 탐색 (client) 끝남 · 도구 17회 · 2m 41s
-  ⎿ 기능 위치 탐색 (server) 끝남 · 도구 31회 · 4m 12s
-```
-
-지나간 작업은 `/log` 로 에이전트별로 되짚어 볼 수 있습니다.
-
-### 작업 중에도 계속 쓸 수 있습니다
-
-작업이 도는 동안에도 입력할 수 있고, 입력한 요청은 지금 작업이 끝나면 순서대로 실행됩니다.
-
-```
-────────────────────────────────────────────────────────────────────────────
-❯ /index refresh▏
-────────────────────────────────────────────────────────────────────────────
-⠹ harness-init › analyzer · 8m 7s · ↓ 30.6k tokens · Read   agent-sdk · deep · Ctx 27.1k
-```
-
-오래 걸리는 일은 백그라운드로 돌려 두고 다른 대화를 이어갑니다.
-
-```
-AX-NAVI > /bg 하네스 초기화 해줘
-AX-NAVI [⠿ 1] > 이 프로젝트 빌드는 어떻게 해?
-```
-
-### 모드와 모델
-
-`Shift+Tab` 으로 실행 모드를 바꿉니다. `/mode 계획` 처럼 이름으로 지정할 수도 있습니다.
-
-| 모드 | 하는 일 |
-|---|---|
-| **자동** (기본) | 프로젝트 소스 수정은 바뀌는 줄을 보여 주고 묻고, 읽기 · 안전한 명령 · 리포트 쓰기는 판단해서 묻지 않습니다 |
-| **매번 묻기** | 승인이 필요한 작업을 모두 묻습니다 |
-| **계획** | 파일을 고치지 않고 고칠 파일 · 순서 · 검증 방법부터 내놓습니다 |
-| **빠름** | 영향도 · 안전 검토를 건너뛰고 바로 진행합니다 |
-| **전부승인** | 이번 세션의 도구 사용을 묻지 않습니다(감사 기록은 남음). `/mode 전부승인` 으로만 켭니다 |
-
-모델은 `/model` 로 바꿉니다(`haiku` · `sonnet` · `opus` · `기본`). `기본` 은 에이전트마다 정해진 모델을 씁니다.
-
-### 대화가 이어집니다
-
-| 명령 | 하는 일 |
-|---|---|
-| `/sessions` · `/resume` | 저장된 대화 목록 · 이전 대화로 돌아가기 |
-| `/context` · `/new` | 지금 대화 상태 · 새로 시작 |
-| `axnavi classic --continue` | 터미널에서 마지막 대화 이어서 |
-
-대화가 길어지면 오래된 도구 결과부터 접어서 자동으로 줄입니다.
 
 ---
 
