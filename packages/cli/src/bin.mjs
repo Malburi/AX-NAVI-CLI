@@ -15,7 +15,6 @@ import { cmdUpgrade } from "./commands.mjs";
 import { readVersion } from "./upgrade.mjs";
 import { ui } from "./runtime.mjs";
 import { renderBanner } from "./banner.mjs";
-import { launch } from "./launcher.mjs";
 
 /*
  * 버전은 package.json 이 유일한 출처다.
@@ -29,10 +28,9 @@ const VERSION = readVersion();
 const HELP = `${renderBanner(VERSION)}
 
 ${ui.bold("사용법")}
-  axnavi [Claude Code 인자...]    인덱스를 확인하고 AX Navi 플러그인을 실어 Claude Code 를 띄웁니다
-                                  (예: axnavi -c · axnavi --resume <id> · axnavi -p "질문")
-  axnavi classic                  예전 자체 대화 화면 (API 키 · claude-cli 경로가 필요할 때)
-  axnavi classic --continue       자체 대화 화면에서 마지막 대화를 이어서
+  axnavi                          대화형 모드
+  axnavi --continue               마지막 대화를 이어서
+  axnavi --resume <세션id>         특정 대화를 이어서
   axnavi ask <요청>               한 번 묻고 답받기 (읽기 전용)
   axnavi init                     .axnavi/ 설정 생성
   axnavi doctor                   실행 환경 진단
@@ -57,8 +55,8 @@ ${ui.bold("옵션")}
   --report           최종 답을 _workspace/reports/ 에 리포트로 저장
                       auto(기본): API 키와 SDK 가 있으면 anthropic, 없으면 agent-sdk(구독),
                       SDK 가 없으면(폐쇄망 설치) claude-cli
-  -c, --continue      (classic) 마지막 대화를 이어서 시작 — 런처에서는 Claude Code 에 그대로 넘깁니다
-  --resume <id>       (classic) 특정 대화를 이어서 시작 — 런처에서는 Claude Code 에 그대로 넘깁니다
+  -c, --continue      마지막 대화를 이어서 시작
+  --resume <id>       특정 대화를 이어서 시작 (/sessions 로 id 확인)
   --verbose           내부 진단 출력 (도구 목록·토큰 내역·감사기록 경로)
   -h, --help          도움말
   -v, --version       버전
@@ -93,35 +91,10 @@ function parseArgs(argv) {
   return out;
 }
 
-/** axnavi 자신의 하위 명령. 이것이 아니면 런처가 받아 Claude Code 에 넘긴다. */
-const SUBCOMMANDS = new Set(["init", "keys", "doctor", "upgrade", "index", "agent", "skill", "ask", "classic"]);
-/** 값을 받는 옵션 — 그 값을 하위 명령으로 오인하지 않게 건너뛴다. */
-const VALUE_OPTIONS = new Set(["--root", "--index-dir", "--tier", "--provider", "--resume", "-r", "--model", "--permission-mode", "--settings", "--output-format", "--add-dir", "--plugin-dir", "--append-system-prompt"]);
-
-/** @param {string[]} argv @returns {string | undefined} */
-function firstPositional(argv) {
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i] ?? "";
-    if (VALUE_OPTIONS.has(arg)) { i += 1; continue; }
-    if (arg.startsWith("-")) continue;
-    return arg;
-  }
-  return undefined;
-}
-
 async function main() {
-  const argv = process.argv.slice(2);
-  /*
-   * 하위 명령도 도움말 · 판 확인도 아니면 런처다 — 대화 화면은 Claude Code 가 맡는다(launcher.mjs).
-   * 자체 대화 화면은 `axnavi classic` 으로 남긴다.
-   */
-  const head = firstPositional(argv);
-  const wantsHelpOrVersion = argv.some((a) => ["-h", "--help", "-v", "--version"].includes(a));
-  if (!wantsHelpOrVersion && !(head && SUBCOMMANDS.has(head))) return launch(argv, VERSION);
-
   let args;
   try {
-    args = parseArgs(argv.filter((a, i) => !(a === "classic" && i === argv.indexOf("classic"))));
+    args = parseArgs(process.argv.slice(2));
   } catch (error) {
     process.stderr.write(`${ui.red(/** @type {Error} */ (error).message)}\n  axnavi --help\n`);
     return 2;
@@ -138,7 +111,7 @@ async function main() {
 
   const [command, ...rest] = args.rest;
 
-  if (!command || head === "classic") {
+  if (!command) {
     const paths = resolveProjectPaths(args.root);
     return startRepl(paths, inspectProject(paths), VERSION, {
       ...(args.continueLatest ? { continueLatest: true } : {}),

@@ -30,7 +30,6 @@ import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, sessionReport, ui } from "./runtime.
 import { agentInstruction, executorBody, inlineInstruction, orchestratorInstruction, procedureInstruction } from "./skill-prompt.mjs";
 import { PRECOMPUTE_SKILLS, precomputeImpact } from "./precompute.mjs";
 import { selectProvider } from "./provider.mjs";
-import { pickClaudeBin } from "./launcher.mjs";
 import { executeAgent } from "./execute.mjs";
 import { firstSentence } from "./completion.mjs";
 import { visibleLength } from "./width.mjs";
@@ -141,14 +140,6 @@ export async function cmdDoctor(root) {
   rows.push(["error" in picked ? false : true, "실행 경로", "error" in picked ? "없음 — 아래 안내 참조" : picked.note]);
   const login = "error" in picked ? null : loginState(/** @type {any} */ (picked.provider).id);
   if (login) rows.push([login.ok, "로그인", login.detail]);
-  /* 런처(기본 axnavi)가 띄울 Claude Code — 설치된 claude 가 먼저, 없으면 axnavi 내장 실행 파일. */
-  const claude = pickClaudeBin();
-  const claudeVersion = claude ? (spawnSync(claude.bin, ["--version"], { encoding: "utf8" }).stdout || "").trim() : "";
-  rows.push([
-    claude && claudeVersion ? true : "warn",
-    "런처",
-    claude ? `${claudeVersion || "판 확인 실패"} · ${claude.source === "installed" ? "설치된 claude" : "axnavi 내장 실행 파일"}` : "Claude Code 없음 — npm i -g @anthropic-ai/claude-code (자체 화면: axnavi classic)",
-  ]);
 
   rows.push([state.initialized ? true : "warn", "CLI 설정", state.initialized ? paths.configPath : "없음 — axnavi init"]);
 
