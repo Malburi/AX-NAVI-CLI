@@ -7,7 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import { inspectProject, resolveProjectPaths } from "../../core/src/index.mjs";
-import { cmdAdr, cmdAgent, cmdDoc, cmdDoctor, cmdGate, cmdIndex, cmdInit, cmdReview, cmdScan, cmdSkill } from "./commands.mjs";
+import { cmdAdr, cmdAgent, cmdDoc, cmdDoctor, cmdGate, cmdIndex, cmdInit, cmdMcp, cmdReview, cmdScan, cmdSkill } from "./commands.mjs";
 import { cmdKeys } from "./keys.mjs";
 import { executeAgent } from "./execute.mjs";
 import { startRepl } from "./repl.mjs";
@@ -55,6 +55,8 @@ ${ui.bold("사용법")}
   axnavi gate <req|design|dev|test>  단계 게이트 GO/HOLD/STOP (LLM 불필요, 종료 코드 0/3/4)
       [--diff A..B] [--staged] [--skip-review] [--record] [--format md|json] [--out <파일>]
 
+  axnavi mcp [list|trust|untrust]  저장소 .axnavi/mcp.json 확인·허용 (허용 전에는 쓰지 않음)
+
   axnavi agent list               에이전트 목록
   axnavi agent run <이름> <요청>   에이전트 직접 실행
   axnavi skill list               스킬 목록
@@ -81,7 +83,7 @@ ${ui.bold("환경변수")}
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, continueLatest?: boolean, resumeId?: string, help?: boolean, version?: boolean, diff?: string, staged?: boolean, format?: string, out?: string, verify?: string, testsPassed?: boolean, failOn?: string, force?: boolean, record?: boolean, skipReview?: boolean, status?: string, rest: string[] }} */
+  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, continueLatest?: boolean, resumeId?: string, help?: boolean, version?: boolean, diff?: string, staged?: boolean, format?: string, out?: string, verify?: string, testsPassed?: boolean, failOn?: string, force?: boolean, record?: boolean, yes?: boolean, skipReview?: boolean, status?: string, rest: string[] }} */
   const out = { root: process.cwd(), rest: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -114,6 +116,7 @@ function parseArgs(argv) {
     // doc · adr · gate 전용
     else if (arg === "--force") out.force = true;
     else if (arg === "--record") out.record = true;
+    else if (arg === "--yes" || arg === "-y") out.yes = true;
     else if (arg === "--skip-review") out.skipReview = true;
     else if (arg === "--status") out.status = argv[++i];
     else if (arg === "-h" || arg === "--help") out.help = true;
@@ -199,6 +202,8 @@ async function main() {
         ...(args.out ? { out: args.out } : {}),
         ...(args.indexDir ? { indexDir: args.indexDir } : {}),
       });
+    case "mcp":
+      return cmdMcp(args.root, rest[0] ?? "list", { ...(args.yes ? { yes: true } : {}) });
     case "agent":
       return cmdAgent(args.root, rest, args.provider);
     case "skill":

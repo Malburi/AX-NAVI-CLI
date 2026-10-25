@@ -46,7 +46,18 @@ export function listSourceFiles(/** @type {string} */ root) {
  * @param {{ root: string, paths?: string[] }} opts
  */
 export function runSecurityScan(opts) {
-  const files = opts.paths?.length ? opts.paths : listSourceFiles(opts.root);
+  // 폴더를 주면 그 아래 소스 파일로 펼친다 — 예전에는 EISDIR 로 '건너뜀' 처리되어 0건으로 보고됐다(10/25 리뷰)
+  const files = opts.paths?.length
+    ? opts.paths.flatMap((p) => {
+        const abs = join(opts.root, p);
+        try {
+          if (statSync(abs).isDirectory()) return listSourceFiles(abs).map((r) => `${p.replace(/[\\/]+$/, "")}/${r}`);
+        } catch {
+          /* 없는 경로는 아래에서 건너뜀으로 센다 */
+        }
+        return [p];
+      })
+    : listSourceFiles(opts.root);
   /** @type {Finding[]} */
   const findings = [];
   let scanned = 0;

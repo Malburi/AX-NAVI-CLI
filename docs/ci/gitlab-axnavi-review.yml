@@ -20,11 +20,16 @@ variables:
   # 사내 npm 미러 또는 오프라인 tgz 경로. 미러가 없으면 AXNAVI_TGZ 에 배포본 경로를 둔다.
   AXNAVI_PACKAGE: "axnavi"
   GIT_DEPTH: "0" # 대상 브랜치와 비교하려면 이력이 필요하다
+  # 실행 검증 근거. 기본은 비워 둔다 — 근거가 없으면 '검증 없음' HOLD 가 걸리는 것이 맞다.
+  #   테스트 job 을 needs 로 앞에 둔 경우에만: AXNAVI_VERIFY: "--tests-passed"
+  #   검증 명령을 여기서 직접 돌리려면:      AXNAVI_VERIFY: '--verify "mvn -q -B test"'
+  # (예전 판은 --tests-passed 를 고정해 테스트 없이도 '검증 통과'로 봤다 — 10/25 리뷰 높음)
+  AXNAVI_VERIFY: ""
 
 axnavi-review:
   stage: review
   image: node:22-bookworm-slim
-  needs: [] # 테스트 job 이 있으면 needs: ["test"] 로 바꾸고 아래 --tests-passed 를 남긴다
+  needs: [] # 테스트 job 이 있으면 needs: ["test"] 로 바꾸고 AXNAVI_VERIFY: "--tests-passed" 를 준다
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   before_script:
@@ -35,9 +40,9 @@ axnavi-review:
     - axnavi index refresh || axnavi index build || true
   script:
     - BASE="origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
-    # 테스트 job 을 앞에 두지 않았다면 --tests-passed 대신 --verify "mvn -q -B test" 처럼 검증 명령을 넘긴다
-    - axnavi review --diff "$BASE...HEAD" --tests-passed --format json --out axnavi-review.json > /dev/null || CODE=$?
-    - axnavi review --diff "$BASE...HEAD" --tests-passed --format md --out axnavi-review.md || CODE=$?
+    # 같은 머지 요청에서 추가한 axnavi:allow 억제 주석은 판정을 낮추지 못하고 HOLD(리뷰어 확인)가 된다
+    - eval axnavi review --diff "\"$BASE...HEAD\"" $AXNAVI_VERIFY --format json --out axnavi-review.json > /dev/null || CODE=$?
+    - eval axnavi review --diff "\"$BASE...HEAD\"" $AXNAVI_VERIFY --format md --out axnavi-review.md || CODE=$?
     - echo "AX-NAVI 판정 종료 코드 ${CODE:-0}"
     # 선택: 머지 요청에 리포트를 댓글로 단다(프로젝트 액세스 토큰 AXNAVI_MR_TOKEN, api 권한 필요)
     - |

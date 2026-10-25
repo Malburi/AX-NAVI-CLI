@@ -272,6 +272,12 @@ export function score({ files, findings, impact, verification }) {
       reasons.push("실행 검증 증거 없음(UNVERIFIED) — 테스트·빌드 결과를 --verify 또는 --tests-passed 로 넘긴다");
     }
     if (sensitive.length && verification.status !== "passed") reasons.push(`민감 변경(${sensitive.join("·")})인데 검증 통과 근거 없음`);
+    // 같은 변경에서 억제 주석을 넣으면 STOP 이 GO 로 바뀌었다(10/25 리뷰 높음). 억제는 리뷰어가 사유를 확인할 일이다.
+    const newAllows = findings.filter((f) => f.suppressed && f.suppressedInChange);
+    if (newAllows.length) {
+      const stopped = newAllows.filter((f) => f.stop).length;
+      reasons.push(`이번 변경에서 추가한 억제 주석 ${newAllows.length}건(${[...new Set(newAllows.map((f) => f.rule))].join(", ")})${stopped ? ` — 그중 STOP 항목 ${stopped}건` : ""} — 억제 사유를 리뷰어가 확인해야 한다`);
+    }
     if (reasons.length) verdict = "HOLD";
   }
   if (verdict === "GO") reasons.push(`종합 위험도 ${composite} < 3, 보안 점수 ${security} < 5${verification.status === "passed" ? ", 검증 통과" : ""}`);

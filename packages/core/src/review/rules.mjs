@@ -25,7 +25,7 @@
  * @typedef {{
  *   rule: string, title: string, dimension: Dimension, severity: Severity, stop: boolean,
  *   owasp: string | null, cwe: string | null, file: string, line: number, side: "added" | "removed" | "current",
- *   snippet: string, impact: string, fix: string, suppressed?: string,
+ *   snippet: string, impact: string, fix: string, suppressed?: string, suppressedInChange?: boolean,
  * }} Finding
  */
 
@@ -337,6 +337,8 @@ export function applyRules(file, lines, opts) {
   const rules = (opts.rules ?? RULES).filter((r) => (opts.side === "removed" ? r.removed : !r.removed) && (!r.files || r.files.test(file)));
   if (!rules.length) return out;
   const byLine = opts.context ?? new Map(lines.map((l) => [l.line, l.text]));
+  // 리뷰 대상 변경에서 추가된 줄 — 같은 변경에서 넣은 억제 주석은 판정을 낮추지 못하게 따로 표시한다
+  const addedLines = opts.side === "added" ? new Set(lines.map((l) => l.line)) : null;
   for (const { line, text } of lines) {
     if (text.length > 2000) continue; // 압축된 번들·한 줄짜리 데이터는 규칙 대상이 아니다
     const commented = COMMENT_LINE.test(text);
@@ -345,7 +347,9 @@ export function applyRules(file, lines, opts) {
       if (!(r.match ? r.match(text) : r.pattern?.test(text))) continue;
       if (r.unless?.test(text)) continue;
       if (r.lookahead && hasAhead(line, r.lookahead, opts.fileLines ?? null, byLine)) continue;
-      const allow = parseAllow(text) ?? parseAllow(byLine.get(line - 1) ?? "");
+      const sameLine = parseAllow(text);
+      const allow = sameLine ?? parseAllow(byLine.get(line - 1) ?? "");
+      const allowAddedNow = Boolean(addedLines && allow && (sameLine || addedLines.has(line - 1)));
       const stop = Boolean(r.stop) || Boolean(r.stopWhen?.test(text));
       out.push({
         rule: r.id,
@@ -361,7 +365,7 @@ export function applyRules(file, lines, opts) {
         snippet: clip(r.redact ? redact(text) : text),
         impact: r.impact,
         fix: r.fix,
-        ...(allow && allow.ids.includes(r.id) ? { suppressed: allow.reason } : {}),
+        ...(allow && allow.ids.includes(r.id) ? { suppressed: allow.reason, ...(allowAddedNow ? { suppressedInChange: true } : {}) } : {}),
       });
     }
   }

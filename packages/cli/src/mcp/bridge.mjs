@@ -8,7 +8,7 @@
  *
  * 그 둘을 MCP 서버로 채운다. 질문은 소켓을 타고 CLI로 올라와 터미널에서 처리된다.
  */
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,6 +76,10 @@ export async function startMcpBridge({ paths, elicitor, onAsk, onSkill, onApprov
     askedCount: () => host.asked,
     userServers: Object.keys(user.servers),
     warnings: user.warnings,
-    dispose: () => host.close(),
+    // 임시 mcp.json 에는 풀린 키(Bearer 등)가 들어 있다 — 끝나면 지운다(10/25 리뷰 중간)
+    dispose: async () => {
+      await host.close();
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    },
   };
 }

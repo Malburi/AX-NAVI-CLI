@@ -25,6 +25,10 @@ import {
   resolveSkill,
   resolveProjectPaths,
   loadUserMcpServers,
+  isMcpTrusted,
+  trustMcpFile,
+  untrustMcpFile,
+  describeMcpFile,
   runReview,
   renderReviewMarkdown,
   runSecurityScan,
@@ -99,6 +103,62 @@ export async function cmdInit(root) {
   if (!state.hasIndex) {
     process.stdout.write(ui.dim("  다음: axnavi index build\n"));
   }
+  return 0;
+}
+
+/* ---------- mcp ---------- */
+
+/**
+ * 저장소의 .axnavi/mcp.json 확인·허용. 허용하기 전에는 그 파일의 서버를 쓰지 않는다 —
+ * 받은 저장소의 설정이 명령을 실행하거나 환경변수(키)를 외부로 보낼 수 있기 때문이다.
+ * @param {string} root @param {string} action @param {{ yes?: boolean }} [opts]
+ */
+export async function cmdMcp(root, action, opts = {}) {
+  const paths = resolveProjectPaths(root);
+  const user = loadUserMcpServers(paths);
+  if (!user.exists) {
+    process.stdout.write(`${ui.dim(`${user.file || join(root, ".axnavi", "mcp.json")} 가 없습니다 — 사용자 MCP 서버가 없습니다.`)}\n`);
+    return 0;
+  }
+  const show = () => {
+    const rows = describeMcpFile(user.file);
+    process.stdout.write(`${ui.bold(user.file)}\n`);
+    for (const r of rows) {
+      process.stdout.write(`  ${r.kind === "명령" ? ui.yellow("명령") : "주소"}  ${r.name.padEnd(14)} ${r.target}${r.envVars.length ? ui.dim(`  (환경변수: ${r.envVars.join(", ")})`) : ""}\n`);
+    }
+    return rows;
+  };
+  if (action === "list") {
+    show();
+    process.stdout.write(`  상태: ${isMcpTrusted(user.file) ? ui.green("허용됨") : ui.yellow("허용 안 됨 — axnavi mcp trust")}\n`);
+    return 0;
+  }
+  if (action === "untrust") {
+    process.stdout.write(untrustMcpFile(user.file) ? "허용을 거뒀습니다.\n" : "허용된 적이 없습니다.\n");
+    return 0;
+  }
+  if (action !== "trust") {
+    process.stderr.write("사용법: axnavi mcp [list|trust|untrust] [--yes]\n");
+    return 2;
+  }
+  const rows = show();
+  process.stdout.write(ui.dim("  '명령'은 이 PC에서 실행되고, 환경변수 값은 그 서버로 전달됩니다. 믿을 수 있는 내용인지 확인하세요.\n"));
+  if (!opts.yes) {
+    if (!process.stdin.isTTY) {
+      process.stderr.write("대화형 터미널이 아닙니다 — 내용을 확인했다면 --yes 를 붙이세요.\n");
+      return 2;
+    }
+    const { createInterface } = await import("node:readline/promises");
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const answer = (await rl.question(`서버 ${rows.length}개를 허용할까요? [y/N] `)).trim().toLowerCase();
+    rl.close();
+    if (answer !== "y" && answer !== "yes") {
+      process.stdout.write("허용하지 않았습니다.\n");
+      return 1;
+    }
+  }
+  trustMcpFile(user.file);
+  process.stdout.write(`${ui.green("허용했습니다.")} 파일 내용이 바뀌면 다시 허용해야 합니다.\n`);
   return 0;
 }
 

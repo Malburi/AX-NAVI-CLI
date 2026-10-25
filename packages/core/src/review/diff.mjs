@@ -44,7 +44,41 @@ export function collectDiff(root, target) {
     const stderr = String(/** @type {any} */ (error).stderr ?? "").trim();
     throw new Error(`git diff 실패: ${stderr || /** @type {Error} */ (error).message}`);
   }
-  return parseUnifiedDiff(raw);
+  const files = parseUnifiedDiff(raw);
+  // 작업 트리 리뷰는 아직 git add 하지 않은 새 파일도 본다 — 하드코딩한 비밀번호가 든 새 파일이 GO 를 받던 문제(10/25 리뷰)
+  if (!target.range && !target.staged) files.push(...untrackedFiles(root));
+  return files;
+}
+
+/**
+ * 추적 안 된 새 파일(.gitignore 존중)을 '모든 줄 추가'로
+ * @param {string} root
+ * @returns {DiffFile[]}
+ */
+function untrackedFiles(root) {
+  let out = "";
+  try {
+    out = execFileSync("git", ["-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+  } catch {
+    return [];
+  }
+  /** @type {DiffFile[]} */
+  const files = [];
+  for (const path of out.split("\0").filter(Boolean)) {
+    let text;
+    try {
+      const buf = readFileSync(join(root, path));
+      if (buf.length > 2 * 1024 * 1024 || buf.includes(0)) {
+        files.push({ path, oldPath: null, status: "added", binary: true, added: [], removed: [] });
+        continue;
+      }
+      text = buf.toString("utf8");
+    } catch {
+      continue;
+    }
+    files.push({ path, oldPath: null, status: "added", binary: false, added: text.split(/\r?\n/).map((t, i) => ({ line: i + 1, text: t })), removed: [] });
+  }
+  return files;
 }
 
 /**

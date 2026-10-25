@@ -153,6 +153,38 @@ test("review — 같은 변경이라도 검증 명령이 통과하고 테스트�
   assert.equal(r.verdict, "GO", r.reasons.join(" / "));
 });
 
+test("review — 같은 변경에서 넣은 axnavi:allow 는 STOP 을 GO 로 바꾸지 못하고 HOLD(리뷰어 확인)가 된다", () => {
+  const fx = fixture();
+  const sql = '    String q = "SELECT * FROM TB_ORDER WHERE ID = \'" + id + "\'"; // axnavi:allow SEC-SQLI-CONCAT 내부 값만 들어옴';
+  writeFileSync(fx.file, SERVICE.replace("return dao.select(id);", `${sql}${NL}    return dao.select(id);`));
+  mkdirSync(join(fx.root, "src/test"), { recursive: true });
+  writeFileSync(join(fx.root, "src/test/OrderServiceTest.java"), "class OrderServiceTest {}" + NL);
+  git(fx.root, "add", "-A");
+  const r = runReview({ root: fx.root, indexDir: fx.indexDir, staged: true, verify: "node -e \"process.exit(0)\"" });
+  assert.notEqual(r.verdict, "GO", r.reasons.join(" / "));
+  assert.ok(r.reasons.some((x) => /이번 변경에서 추가한 억제 주석 1건/.test(x)), r.reasons.join(" / "));
+  // 이미 커밋돼 있던 억제는 그대로 억제로 본다
+  git(fx.root, "commit", "-qm", "allow");
+  writeFileSync(join(fx.root, "README.md"), "# 주문 변경" + NL);
+  const later = runReview({ root: fx.root, indexDir: fx.indexDir, verify: "node -e \"process.exit(0)\"" });
+  assert.equal(later.verdict, "GO", later.reasons.join(" / "));
+});
+
+test("review — 작업 트리 리뷰는 git add 하지 않은 새 파일도 본다", () => {
+  const fx = fixture();
+  writeFileSync(join(fx.root, "src/com/hd/order/Secret.java"), 'class Secret { String password = "Hnix!20261234"; }' + NL);
+  const r = runReview({ root: fx.root, indexDir: fx.indexDir });
+  assert.equal(r.verdict, "STOP", r.reasons.join(" / "));
+});
+
+test("scan security — 폴더를 주면 그 아래 파일을 점검한다(예전에는 0건)", () => {
+  const fx = fixture();
+  writeFileSync(join(fx.root, "src/com/hd/order/Dao.java"), 'class Dao { String q(String id){ return "SELECT * FROM T WHERE A=\'" + id + "\'"; } }' + NL);
+  git(fx.root, "add", "-A");
+  const r = runSecurityScan({ root: fx.root, paths: ["src/"] });
+  assert.ok(r.findings.length >= 1, `점검 ${r.scanned}개 · 건너뜀 ${r.skipped}개`);
+});
+
 test("review — 검증 명령이 실패하면 STOP", () => {
   const fx = fixture();
   writeFileSync(fx.file, SERVICE.replace("dao.update(id);", "dao.update(id, true);"));
