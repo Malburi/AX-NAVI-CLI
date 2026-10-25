@@ -18,6 +18,8 @@ import { AgentSdkProvider } from "../../provider-agent-sdk/src/index.mjs";
 import { OpenAiCompatProvider, openAiConfig } from "../../provider-openai/src/index.mjs";
 import { hostPlugins, pluginSkillNames } from "../../provider-agent-sdk/src/host-settings.mjs";
 import { ui, REPO_ROOT } from "./runtime.mjs";
+import { AUTH_ROUTES, ROUTE_LABEL, billingLabel, claudeLoginAvailable, gatewayEnv, loadAuthPolicy, preferredFromEnv } from "./auth-policy.mjs";
+/** @typedef {import("./auth-policy.mjs").AuthRoute} AuthRoute */
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -55,66 +57,107 @@ export function hasApiKey() {
 }
 
 /**
+ * @typedef {{ provider: import("@ax-navi/core").LLMProvider, note: string, short: string, route: AuthRoute, billing: string }} Selected
  * @param {{ provider?: ProviderName, cwd?: string, mcp?: { configPath: string, env: Record<string, string> }, host?: import("../../provider-agent-sdk/src/index.mjs").Host }} opts
- * @returns {{ provider: import("@ax-navi/core").LLMProvider, note: string, short: string } | { error: string }}
+ * @returns {Selected | { error: string }}
  */
 export function selectProvider(opts = {}) {
+  const loaded = loadAuthPolicy({ ...(opts.cwd ? { root: opts.cwd } : {}) });
+  if ("error" in loaded) return { error: ui.red(loaded.error) };
+  const policy = loaded.policy;
+  const env = gatewayEnv(process.env, policy);
+  const pref = preferredFromEnv();
+  if ("error" in pref) return { error: ui.red(pref.error) };
+  if (pref.preferred && !policy.allowedRoutes.includes(pref.preferred)) return { error: policyBlocked(`AXNAVI_AUTH=${pref.preferred}`, policy) };
+  const preferred = pref.preferred ?? policy.preferred;
+  const key = hasApiKey();
+
   // 대화형 모드는 --provider 를 받지 않으므로 환경변수로도 고를 수 있게 한다(조직 배포 스크립트에서 고정)
   const fromEnv = process.env["AXNAVI_PROVIDER"]?.trim();
   const wanted = opts.provider && opts.provider !== "auto" ? opts.provider
     : fromEnv && PROVIDER_NAMES.includes(fromEnv) ? /** @type {ProviderName} */ (fromEnv) : "auto";
 
-  if (wanted === "openai") {
-    const config = openAiConfig();
-    if (!config) return { error: "openai Provider를 지정했지만 AXNAVI_OPENAI_BASE_URL 이 없습니다 — 예: http://ax-platform:8700/v1 (키는 AXNAVI_OPENAI_API_KEY)." };
-    const models = config.models.standard === config.models.deep ? config.models.standard : `${config.models.standard}·${config.models.deep}`;
-    return {
-      provider: new OpenAiCompatProvider({ config }),
-      short: `openai · ${models}`,
-      note: `openai 호환 · ${config.baseUrl} · ${models} · Gateway가 도구를 통제합니다`,
-    };
-  }
+  if (wanted !== "auto") {
+    /** @type {AuthRoute} */
+    const route = wanted === "openai" ? "gateway" : wanted === "anthropic" ? "key" : key && preferred !== "subscription" ? "key" : "subscription";
+    if (!policy.allowedRoutes.includes(route)) return { error: policyBlocked(`--provider ${wanted}`, policy) };
 
-  if (wanted === "anthropic") {
-    if (!hasApiKey()) return { error: authHelp("anthropic Provider를 지정했지만 ANTHROPIC_API_KEY가 없습니다.") };
-    if (!anthropicSdkInstalled()) return { error: "anthropic 연결에 필요한 @anthropic-ai/sdk 가 설치되어 있지 않습니다(선택 의존성을 빼고 설치한 경우). 인터넷이 되는 곳에서 선택 의존성을 포함해 axnavi 를 다시 설치하거나 --provider claude-cli 로 실행하세요." };
-    return ANTHROPIC();
-  }
-
-  if (wanted === "agent-sdk") {
-    if (!sdkInstalled()) return { error: "Claude Agent SDK 가 설치되어 있지 않습니다 — 인터넷이 되는 곳에서 axnavi 를 다시 설치하거나 --provider claude-cli 로 실행하세요." };
-    return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
-  }
-
-  if (wanted === "claude-cli") {
+    if (wanted === "openai") {
+      const r = OPENAI(env);
+      return r ?? { error: "openai Provider를 지정했지만 AXNAVI_OPENAI_BASE_URL 이 없습니다 — 예: http://ax-platform:8700/v1 (키는 AXNAVI_OPENAI_API_KEY)." };
+    }
+    if (wanted === "anthropic") {
+      if (!key) return { error: authHelp("anthropic Provider를 지정했지만 ANTHROPIC_API_KEY가 없습니다.", policy) };
+      if (!anthropicSdkInstalled()) return { error: "anthropic 연결에 필요한 @anthropic-ai/sdk 가 설치되어 있지 않습니다(선택 의존성을 빼고 설치한 경우). 인터넷이 되는 곳에서 선택 의존성을 포함해 axnavi 를 다시 설치하거나 --provider claude-cli 로 실행하세요." };
+      return ANTHROPIC();
+    }
+    if (wanted === "agent-sdk") {
+      if (!sdkInstalled()) return { error: "Claude Agent SDK 가 설치되어 있지 않습니다 — 인터넷이 되는 곳에서 axnavi 를 다시 설치하거나 --provider claude-cli 로 실행하세요." };
+      return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
+    }
     const probe = probeClaudeCli();
     if (!probe.ok) return { error: `claude CLI를 쓸 수 없습니다 — ${probe.reason}` };
-    return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp);
+    return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp, route);
   }
 
   // auto — 시작 화면·doctor 처럼 이름만 보는 호출도 같은 답을 받아야 한다.
-  const key = hasApiKey();
-  const probe = key ? null : probeClaudeCli();
-  const choice = autoChoice({ hasKey: key, anthropicSdk: anthropicSdkInstalled(), agentSdk: sdkInstalled(), cli: Boolean(probe?.ok) });
-  if (choice === "anthropic") return ANTHROPIC();
-  if (choice === "agent-sdk") return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
-  if (choice === "claude-cli" && probe?.ok) return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp);
-  return { error: authHelp(key ? "API 키는 있지만 쓸 수 있는 SDK 가 설치되어 있지 않습니다." : "ANTHROPIC_API_KEY도 없고, 구독 로그인에 쓸 claude CLI 도 찾지 못했습니다.") };
+  const probe = policy.allowedRoutes.some((r) => r !== "gateway") ? probeClaudeCli() : null;
+  const choice = autoChoice({
+    hasKey: key,
+    anthropicSdk: anthropicSdkInstalled(),
+    agentSdk: sdkInstalled(),
+    cli: Boolean(probe?.ok),
+    login: claudeLoginAvailable(),
+    gateway: Boolean(openAiConfig(env)),
+    allowed: policy.allowedRoutes,
+    preferred,
+  });
+  if (choice?.provider === "anthropic") return ANTHROPIC();
+  if (choice?.provider === "agent-sdk") return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
+  if (choice?.provider === "claude-cli" && probe?.ok) return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp, choice.route);
+  if (choice?.provider === "openai") {
+    const r = OPENAI(env);
+    if (r) return r;
+  }
+  return { error: authHelp(preferred ? `선호 경로(${ROUTE_LABEL[preferred]})를 포함해 쓸 수 있는 연결이 없습니다.` : "쓸 수 있는 Claude 연결이 없습니다.", policy) };
 }
 
 /**
- * auto 순서. 구독(claude.ai 로그인)은 **사용자 본인의 claude CLI 를 통해서만** 쓴다.
- * Anthropic 은 승인 없이 제3자 제품(Agent SDK 로 만든 에이전트 포함)이 claude.ai 로그인을 쓰는 것을
- * 허용하지 않는다(code.claude.com/docs/en/agent-sdk/overview, legal-and-compliance). 그래서 키가 없을 때
- * Agent SDK 는 고르지 않는다 — 원하면 --provider agent-sdk 로 명시하고, 그때는 경고를 붙인다.
- * @param {{ hasKey: boolean, anthropicSdk: boolean, agentSdk: boolean, cli: boolean }} env
- * @returns {"anthropic" | "agent-sdk" | "claude-cli" | null}
+ * auto 순서. 선호 경로(AXNAVI_AUTH 또는 조직 정책 preferred)가 있으면 먼저, 그다음 API 키 → 구독 로그인 → 사내 게이트웨이.
+ * 정책이 허용하지 않는 경로는 건너뛴다.
+ *
+ * 구독(claude.ai 로그인)은 **사용자 본인의 claude CLI 를 통해서만** 쓴다. Anthropic 은 승인 없이 제3자 제품
+ * (Agent SDK 로 만든 에이전트 포함)이 claude.ai 로그인을 쓰는 것을 허용하지 않는다
+ * (code.claude.com/docs/en/agent-sdk/overview, legal-and-compliance). 그래서 구독 경로에 Agent SDK 는 없다.
+ * 키 경로는 SDK 가 없으면(폐쇄망 설치) 키를 넘긴 claude CLI 로 간다.
+ * @param {{ hasKey: boolean, anthropicSdk: boolean, agentSdk: boolean, cli: boolean, login?: boolean, gateway?: boolean, allowed?: readonly AuthRoute[], preferred?: AuthRoute | null }} env
+ * @returns {{ provider: "anthropic" | "agent-sdk" | "claude-cli" | "openai", route: AuthRoute } | null}
  */
 export function autoChoice(env) {
-  if (env.hasKey && env.anthropicSdk) return "anthropic";
-  if (env.hasKey && env.agentSdk) return "agent-sdk";
-  if (!env.hasKey && env.cli) return "claude-cli";
+  const allowed = env.allowed ?? AUTH_ROUTES;
+  /** @type {Record<AuthRoute, () => ("anthropic" | "agent-sdk" | "claude-cli" | "openai" | null)>} */
+  const pick = {
+    key: () => (!env.hasKey ? null : env.anthropicSdk ? "anthropic" : env.agentSdk ? "agent-sdk" : env.cli ? "claude-cli" : null),
+    subscription: () => (env.cli && env.login !== false ? "claude-cli" : null),
+    gateway: () => (env.gateway ? "openai" : null),
+  };
+  const order = [...new Set([...(env.preferred ? [env.preferred] : []), "key", "subscription", "gateway"])];
+  for (const route of /** @type {AuthRoute[]} */ (order)) {
+    if (!allowed.includes(route)) continue;
+    const provider = pick[route]();
+    if (provider) return { provider, route };
+  }
   return null;
+}
+
+/** @param {string} what @param {import("./auth-policy.mjs").AuthPolicy} policy */
+function policyBlocked(what, policy) {
+  return [
+    ui.red(`${what} 는 조직 정책에서 허용하지 않습니다.`),
+    ui.dim(`  허용 경로: ${policy.allowedRoutes.map((r) => ROUTE_LABEL[r]).join(", ") || "없음"}`),
+    ...(policy.message ? [ui.dim(`  안내: ${policy.message}`)] : []),
+    ui.dim(`  정책 파일: ${policy.sources.join(", ")}`),
+  ].join("\n");
 }
 
 /*
@@ -131,6 +174,8 @@ const NO_HOST = {
 /* 짧은 라벨(시작 화면용)과 긴 설명(실행 로그용)을 나눠 둔다. */
 function ANTHROPIC() {
   return {
+    route: /** @type {AuthRoute} */ ("key"),
+    billing: billingLabel("key"),
     provider: new AnthropicProvider(),
     short: "anthropic · Messages API",
     note: "anthropic · Messages API · Gateway가 도구를 통제합니다",
@@ -141,13 +186,21 @@ function ANTHROPIC() {
  * @param {string} version
  * @param {string} [cwd]
  * @param {{ configPath: string, env: Record<string, string> }} [mcp]
+ * @param {AuthRoute} [route]  subscription 이면 위임 프로세스에서 API 키를 뺀다
  */
-function CLAUDE_CLI(version, cwd, mcp) {
+function CLAUDE_CLI(version, cwd, mcp, route = "subscription") {
   const v = version.replace(/\s*\(Claude Code\)\s*$/, "");
+  // 구독 경로인데 키가 환경에 있으면 claude -p 는 키를 먼저 쓴다(문서: "the key is always used when present").
+  // 구독으로 돌리기로 했으면 위임 프로세스에서 키를 뺀다.
+  const unsetEnv = route === "subscription" && hasApiKey() ? ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] : [];
+  const label = route === "subscription" ? "구독 인증" : "API 키";
   return {
+    route: /** @type {AuthRoute} */ (route),
+    billing: billingLabel(route),
     provider: new ClaudeCliProvider({
       ...(cwd ? { cwd } : {}),
       ...(mcp ? { mcpConfigPath: mcp.configPath, env: mcp.env } : {}),
+      ...(unsetEnv.length ? { unsetEnv } : {}),
       /*
        * 위임된 claude 에게 **우리 설치본을 세션 한정 플러그인으로** 물린다.
        *
@@ -165,8 +218,8 @@ function CLAUDE_CLI(version, cwd, mcp) {
        */
       pluginDir: REPO_ROOT,
     }),
-    short: `claude-cli ${v} · 구독 인증`,
-    note: `claude-cli ${v} · 구독 인증 · 도구 제약은 claude 권한 체계가 강제합니다`,
+    short: `claude-cli ${v} · ${label}`,
+    note: `claude-cli ${v} · ${label} · 도구 제약은 claude 권한 체계가 강제합니다`,
   };
 }
 
@@ -185,7 +238,11 @@ function AGENT_SDK(host, cwd, mcp) {
     ...(mute.length ? { enabledPlugins: Object.fromEntries(mute.map((n) => [n, false])) } : {}),
     permissions: { deny: pluginSkillNames(REPO_ROOT).map((n) => `Skill(anthropic-skills:${n})`) },
   });
+  /** @type {AuthRoute} */
+  const route = hasApiKey() ? "key" : "subscription";
   return {
+    route,
+    billing: billingLabel(route),
     provider: new AgentSdkProvider({
       host,
       pluginDir: REPO_ROOT,
@@ -203,13 +260,28 @@ function AGENT_SDK(host, cwd, mcp) {
 export const SUBSCRIPTION_SDK_WARNING =
   "⚠ Anthropic 은 승인 없이 제3자 제품(Agent SDK 에이전트 포함)이 claude.ai 구독 로그인을 쓰는 것을 허용하지 않습니다. 구독은 --provider claude-cli, 조직 배포는 API 키나 사내 게이트웨이(--provider openai)를 쓰세요.";
 
-/** @param {string} headline */
-function authHelp(headline) {
-  return [
-    `${ui.red(headline)}`,
-    ui.dim("  둘 중 하나가 있어야 에이전트를 실행할 수 있습니다."),
-    ui.dim("    1) 구독 사용  — claude CLI 설치 후 `claude` 로 한 번 로그인 (키 불필요)"),
-    ui.dim(`    2) API 키     — PowerShell:  $env:ANTHROPIC_API_KEY = "sk-ant-..."`),
-    ui.dim("  키 없이 쓸 수 있는 명령: axnavi index build | status | refresh, axnavi doctor"),
-  ].join("\n");
+/** @param {NodeJS.ProcessEnv} env */
+function OPENAI(env) {
+  const config = openAiConfig(env);
+  if (!config) return null;
+  const models = config.models.standard === config.models.deep ? config.models.standard : `${config.models.standard}·${config.models.deep}`;
+  return {
+    route: /** @type {AuthRoute} */ ("gateway"),
+    billing: billingLabel("gateway", env, config.baseUrl),
+    provider: new OpenAiCompatProvider({ config }),
+    short: `openai · ${models}`,
+    note: `openai 호환 · ${config.baseUrl} · ${models} · Gateway가 도구를 통제합니다`,
+  };
+}
+
+/** @param {string} headline @param {import("./auth-policy.mjs").AuthPolicy} [policy] */
+function authHelp(headline, policy) {
+  const allowed = policy?.allowedRoutes ?? AUTH_ROUTES;
+  const lines = [`${ui.red(headline)}`, ui.dim("  아래 중 하나가 있으면 에이전트를 실행할 수 있습니다(요금제는 상관없습니다).")];
+  if (allowed.includes("subscription")) lines.push(ui.dim("    구독 로그인     — claude CLI 설치 후 `claude` 로 한 번 로그인 (Pro·Max·Team·Enterprise 모두 같음)"));
+  if (allowed.includes("key")) lines.push(ui.dim(`    API 키          — PowerShell:  $env:ANTHROPIC_API_KEY = "sk-ant-..."`));
+  if (allowed.includes("gateway")) lines.push(ui.dim("    사내 게이트웨이 — AXNAVI_OPENAI_BASE_URL(정책에 있으면 생략) + AXNAVI_OPENAI_API_KEY=hx-... (플랫폼 '내 연결 설정'에서 발급)"));
+  if (policy?.sources.length) lines.push(ui.dim(`  조직 정책: 허용 ${allowed.map((r) => ROUTE_LABEL[r]).join(", ")}${policy.message ? ` — ${policy.message}` : ""}`));
+  lines.push(ui.dim("  키 없이 쓸 수 있는 명령: axnavi index build | status | refresh, axnavi doctor"));
+  return lines.join("\n");
 }

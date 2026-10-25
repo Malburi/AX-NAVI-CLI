@@ -41,6 +41,7 @@ import {
 } from "../../core/src/index.mjs";
 import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
 import { selectProvider } from "./provider.mjs";
+import { ROUTE_LABEL, loadAuthPolicy } from "./auth-policy.mjs";
 import { executeAgent } from "./execute.mjs";
 import { firstSentence } from "./completion.mjs";
 import { visibleLength } from "./width.mjs";
@@ -151,6 +152,13 @@ export async function cmdDoctor(root) {
    */
   const picked = selectProvider({ cwd: paths.root });
   rows.push(["error" in picked ? false : true, "실행 경로", "error" in picked ? "없음 — 아래 안내 참조" : picked.note]);
+  // 구독·키·게이트웨이를 함께 가진 사람이 많다 — 지금 누구에게 과금되는지와 바꾸는 법을 보인다
+  const policy = loadAuthPolicy({ root: paths.root });
+  const choices = "policy" in policy ? policy.policy.allowedRoutes : [];
+  if (!("error" in picked)) rows.push([true, "과금", `${picked.billing}${process.env["AXNAVI_AUTH"] || choices.length < 2 ? "" : ` · 바꾸려면 AXNAVI_AUTH=${choices.join("|")}`}`]);
+  if ("policy" in policy && policy.policy.sources.length) {
+    rows.push([true, "조직 정책", `허용 ${policy.policy.allowedRoutes.map((r) => ROUTE_LABEL[r]).join(", ")}${policy.policy.preferred ? ` · 우선 ${ROUTE_LABEL[policy.policy.preferred]}` : ""} — ${policy.policy.sources.join(", ")}`]);
+  }
   const login = "error" in picked ? null : loginState(/** @type {any} */ (picked.provider).id);
   if (login) rows.push([login.ok, "로그인", login.detail]);
 

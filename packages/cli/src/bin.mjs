@@ -65,10 +65,13 @@ ${ui.bold("옵션")}
   --index-dir <경로>  인덱스 위치 (기본: <root>/_workspace/index)
   --tier <등급>       Auto | Standard | Full
   --provider <이름>   auto | agent-sdk | claude-cli | anthropic | openai
-                      auto(기본): API 키가 있으면 anthropic(SDK 없으면 agent-sdk),
-                      없으면 claude-cli(본인 claude 로그인 = 구독)
+                      auto(기본): API 키 → 구독 로그인(본인 claude) → 사내 게이트웨이 순으로
+                      쓸 수 있는 것을 고른다. 요금제(Pro·Max·Team·Enterprise)는 상관없다
                       openai: AXNAVI_OPENAI_BASE_URL 의 OpenAI 호환 게이트웨이(HNIX AX·로컬 모델)
                       대화형 모드에서는 AXNAVI_PROVIDER=openai 로 고른다
+${ui.bold("환경변수")}
+  AXNAVI_AUTH         subscription | key | gateway — 여러 개를 가졌을 때 먼저 쓸 경로(과금 선택)
+  AXNAVI_POLICY_FILE  조직 정책 파일 위치(기본: %ProgramData%\\axnavi\\policy.json, /etc/axnavi/policy.json)
   -c, --continue      마지막 대화를 이어서 시작
   --resume <id>       특정 대화를 이어서 시작 (/sessions 로 id 확인)
   --verbose           내부 진단 출력 (도구 목록·토큰 내역·감사기록 경로)

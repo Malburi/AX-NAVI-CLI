@@ -423,6 +423,7 @@ export class ClaudeCliProvider {
    * @param {string} [options.mcpConfigPath]  AX-NAVI MCP 서버 설정 파일
    * @param {Record<string, string>} [options.env]  MCP 서버에 넘길 환경변수
    * @param {string} [options.pluginDir]  세션 한정으로 물릴 우리 설치본 경로. 서브에이전트 이름이 여기서 나온다.
+   * @param {string[]} [options.unsetEnv]  위임 프로세스에서 뺄 환경변수(구독 경로에서 API 키 제거)
    */
   constructor(options = {}) {
     this.id = "claude-cli";
@@ -633,12 +634,15 @@ export const BACKGROUND_WAIT_CEILING_MS = String(6 * 60 * 60 * 1000);
 /**
  * 위임 실행의 환경 변수.
  * @param {NodeJS.ProcessEnv} base
- * @param {{ pluginDir?: string, env?: Record<string, string> }} options
+ * @param {{ pluginDir?: string, env?: Record<string, string>, unsetEnv?: string[] }} options
  * @returns {NodeJS.ProcessEnv}
  */
 export function delegatedEnv(base, options) {
+  // 구독 경로를 골랐는데 키가 환경에 있으면 claude -p 가 키를 먼저 쓴다 — 고른 경로대로 과금되게 뺀다
+  const drop = new Set(options.unsetEnv ?? []);
+  const kept = drop.size ? Object.fromEntries(Object.entries(base).filter(([k]) => !drop.has(k))) : base;
   return {
-    ...base,
+    ...kept,
     ...(base["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] ? {} : { CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: BACKGROUND_WAIT_CEILING_MS }),
     /*
      * MCP 도구 호출의 무응답 제한(기본 30분)을 끈다. 우리 MCP 도구는 승인 창·질문이라 사람이 답할

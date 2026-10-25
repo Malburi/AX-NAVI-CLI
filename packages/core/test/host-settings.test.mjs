@@ -60,5 +60,5 @@ test("Messages API SDK 가 없으면 키가 있어도 anthropic 경로를 고르
   } finally {
     rmSync(empty, { recursive: true, force: true });
   }
-  assert.notEqual(autoChoice({ hasKey: true, anthropicSdk: false, agentSdk: false, cli: true }), "anthropic", "auto 선택이 SDK 설치를 보지 않는다");
+  assert.notEqual(autoChoice({ hasKey: true, anthropicSdk: false, agentSdk: false, cli: true })?.provider, "anthropic", "auto 선택이 SDK 설치를 보지 않는다");
 });
