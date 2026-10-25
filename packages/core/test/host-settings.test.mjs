@@ -3,7 +3,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,7 +50,7 @@ test("SDK 설치 여부는 이 설치본의 node_modules 와 한 단계 위를 �
 
 /* 리뷰 실측: --omit=optional 설치에 API 키가 있으면 doctor 는 ✓ 인데 실행은 "sdk 가 없다" 로 죽었다. */
 test("Messages API SDK 가 없으면 키가 있어도 anthropic 경로를 고르지 않는다", async () => {
-  const { anthropicSdkInstalled } = await import("../../cli/src/provider.mjs");
+  const { anthropicSdkInstalled, autoChoice } = await import("../../cli/src/provider.mjs");
   const empty = mkdtempSync(join(tmpdir(), "ax-noapisdk-"));
   try {
     assert.equal(anthropicSdkInstalled(join(empty, "axnavi")), false);
@@ -60,6 +60,5 @@ test("Messages API SDK 가 없으면 키가 있어도 anthropic 경로를 고르
   } finally {
     rmSync(empty, { recursive: true, force: true });
   }
-  const src = readFileSync(new URL("../../cli/src/provider.mjs", import.meta.url), "utf8");
-  assert.match(src, /hasApiKey\(\) && anthropicSdkInstalled\(\)/, "auto 선택이 SDK 설치를 보지 않는다");
+  assert.notEqual(autoChoice({ hasKey: true, anthropicSdk: false, agentSdk: false, cli: true }), "anthropic", "auto 선택이 SDK 설치를 보지 않는다");
 });

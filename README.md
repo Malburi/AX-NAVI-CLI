@@ -162,7 +162,7 @@ axnavi doctor
   ✓ Node       v20.20.2
   ✓ Python     python 3.12.9
   ✓ git        git version 2.46.0
-  ✓ 실행 경로  agent-sdk · 구독 인증 · 질문·승인은 axnavi 화면이 직접 받습니다
+  ✓ 실행 경로  claude-cli 2.x · 구독 인증 · 도구 제약은 claude 권한 체계가 강제합니다
   ✓ 로그인     Claude 구독 로그인 기록 있음
   ! CLI 설정   없음 — axnavi init
   ✓ 인덱스     최신 — 소스 지문 일치 — 재인덱싱 불필요
@@ -583,12 +583,14 @@ axnavi
 여러 에이전트의 병렬 실행, 하네스 초기화 같은 오케스트레이터 스킬, 파일 수정 전 승인 창이
 모두 이 경로에서 동작합니다.
 
-연결은 두 가지이고 axnavi 가 알아서 고릅니다.
+연결은 axnavi 가 알아서 고릅니다.
 
 | 연결 | 언제 | 특징 |
 |---|---|---|
-| `agent-sdk` (기본) | Claude Agent SDK 가 설치돼 있을 때 | 질문·승인을 axnavi 화면이 직접 받습니다. 자동 모드(안전한 명령은 묻지 않음)를 씁니다. Claude Code 판이 axnavi 판에 고정됩니다 |
-| `claude-cli` | SDK 가 없을 때(폐쇄망 설치 등) | 설치된 `claude` 를 `-p` 로 부릅니다. `--provider claude-cli` 로 직접 고를 수도 있습니다 |
+| `claude-cli` (키 없을 때 기본) | 본인 PC 의 `claude` 에 로그인돼 있을 때 | 설치된 `claude` 를 `-p` 로 부릅니다. 질문·승인 창은 axnavi 브리지가 받습니다. **구독은 이 경로로만 씁니다** |
+| `agent-sdk` | API 키가 있고 Messages API SDK 가 없을 때, 또는 직접 고를 때 | 질문·승인을 axnavi 화면이 직접 받습니다. 키 없이 고르면 구독 로그인으로 돌지만 경고를 냅니다 |
+
+> **구독 사용 원칙.** Anthropic 은 승인 없이 제3자 제품(Agent SDK 로 만든 에이전트 포함)이 claude.ai 로그인을 쓰는 것을 허용하지 않고, 서버가 여러 사람의 요청을 구독 자격 증명으로 중계하는 것도 금지합니다([Agent SDK 개요](https://code.claude.com/docs/en/agent-sdk/overview), [법률·준수](https://code.claude.com/docs/en/legal-and-compliance)). 그래서 axnavi 는 각자 PC 에서 각자 로그인한 Claude Code 에 위임할 때만 구독을 씁니다. 조직 배포는 개인별 Claude Team·Enterprise 좌석(각자 로그인), 또는 API 키·사내 게이트웨이(`--provider openai`)로 합니다. 로그인 창을 띄울 수 없는 CI 에서는 `claude setup-token` 으로 만든 본인 토큰을 `CLAUDE_CODE_OAUTH_TOKEN` 에 넣습니다.
 
 ### Anthropic API 키
 

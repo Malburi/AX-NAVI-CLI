@@ -65,8 +65,8 @@ ${ui.bold("옵션")}
   --index-dir <경로>  인덱스 위치 (기본: <root>/_workspace/index)
   --tier <등급>       Auto | Standard | Full
   --provider <이름>   auto | agent-sdk | claude-cli | anthropic | openai
-                      auto(기본): API 키와 SDK 가 있으면 anthropic, 없으면 agent-sdk(구독),
-                      SDK 가 없으면(폐쇄망 설치) claude-cli
+                      auto(기본): API 키가 있으면 anthropic(SDK 없으면 agent-sdk),
+                      없으면 claude-cli(본인 claude 로그인 = 구독)
                       openai: AXNAVI_OPENAI_BASE_URL 의 OpenAI 호환 게이트웨이(HNIX AX·로컬 모델)
                       대화형 모드에서는 AXNAVI_PROVIDER=openai 로 고른다
   -c, --continue      마지막 대화를 이어서 시작

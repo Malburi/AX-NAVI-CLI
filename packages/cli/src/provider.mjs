@@ -3,13 +3,14 @@
  *
  * 세 경로가 공존한다.
  *   anthropic   Messages API. Core의 ToolGateway가 도구를 실행한다. ANTHROPIC_API_KEY 필요.
- *   agent-sdk   Claude Agent SDK. 질문·승인을 콜백으로 직접 받는다. 구독 인증. 키 불필요. (기본)
- *   claude-cli  설치된 claude CLI 에 -p 로 위임. SDK 가 없을 때(폐쇄망 설치 등) 쓴다.
+ *   agent-sdk   Claude Agent SDK. 질문·승인을 콜백으로 직접 받는다. API 키와 함께 쓴다.
+ *               (키 없이 명시하면 구독 로그인으로 돌지만 Anthropic 정책상 제3자 제품의 구독 사용은 승인 대상이라 경고한다)
+ *   claude-cli  사용자 본인이 로그인한 claude CLI 에 -p 로 위임. 키가 없을 때의 기본 — 구독은 이 경로로만 쓴다.
  *   openai      OpenAI 호환 게이트웨이(HNIX AX·사내 로컬 모델·watsonx). Core 의 ToolGateway 가 도구를 실행한다.
  *               auto 로는 고르지 않는다 — --provider openai 또는 AXNAVI_PROVIDER=openai 로 명시한다.
  *
- * 기본값은 "쓸 수 있는 쪽"이다. 키가 있으면 Gateway가 통제하는 경로, 없으면 SDK, SDK 가 설치돼
- * 있지 않으면 claude CLI 로 간다. 다 없으면 무엇이 없는지 구체적으로 말하고 멈춘다.
+ * 기본값은 "쓸 수 있는 쪽"이다. 키가 있으면 Gateway가 통제하는 경로(SDK 가 없으면 agent-sdk),
+ * 없으면 구독 로그인된 claude CLI 로 간다. 다 없으면 무엇이 없는지 구체적으로 말하고 멈춘다.
  */
 import { AnthropicProvider } from "../../provider-anthropic/src/index.mjs";
 import { ClaudeCliProvider, probeClaudeCli } from "../../provider-claude-cli/src/index.mjs";
@@ -91,14 +92,29 @@ export function selectProvider(opts = {}) {
     return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp);
   }
 
-  // auto — 키가 있으면 통제력이 더 큰 쪽을 먼저 택한다.
-  if (hasApiKey() && anthropicSdkInstalled()) return ANTHROPIC();
-  // 키가 없으면 SDK 연결이 기본이다. 시작 화면·doctor 처럼 이름만 보는 호출도 같은 답을 받아야 한다.
-  if (sdkInstalled()) return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
-  // SDK 가 없으면(폐쇄망 설치 등) 설치된 claude CLI 로 간다.
-  const probe = probeClaudeCli();
-  if (probe.ok) return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp);
-  return { error: authHelp("ANTHROPIC_API_KEY도 없고, Claude Agent SDK 도 claude CLI 도 찾지 못했습니다.") };
+  // auto — 시작 화면·doctor 처럼 이름만 보는 호출도 같은 답을 받아야 한다.
+  const key = hasApiKey();
+  const probe = key ? null : probeClaudeCli();
+  const choice = autoChoice({ hasKey: key, anthropicSdk: anthropicSdkInstalled(), agentSdk: sdkInstalled(), cli: Boolean(probe?.ok) });
+  if (choice === "anthropic") return ANTHROPIC();
+  if (choice === "agent-sdk") return AGENT_SDK(opts.host ?? NO_HOST, opts.cwd, opts.mcp);
+  if (choice === "claude-cli" && probe?.ok) return CLAUDE_CLI(probe.version, opts.cwd, opts.mcp);
+  return { error: authHelp(key ? "API 키는 있지만 쓸 수 있는 SDK 가 설치되어 있지 않습니다." : "ANTHROPIC_API_KEY도 없고, 구독 로그인에 쓸 claude CLI 도 찾지 못했습니다.") };
+}
+
+/**
+ * auto 순서. 구독(claude.ai 로그인)은 **사용자 본인의 claude CLI 를 통해서만** 쓴다.
+ * Anthropic 은 승인 없이 제3자 제품(Agent SDK 로 만든 에이전트 포함)이 claude.ai 로그인을 쓰는 것을
+ * 허용하지 않는다(code.claude.com/docs/en/agent-sdk/overview, legal-and-compliance). 그래서 키가 없을 때
+ * Agent SDK 는 고르지 않는다 — 원하면 --provider agent-sdk 로 명시하고, 그때는 경고를 붙인다.
+ * @param {{ hasKey: boolean, anthropicSdk: boolean, agentSdk: boolean, cli: boolean }} env
+ * @returns {"anthropic" | "agent-sdk" | "claude-cli" | null}
+ */
+export function autoChoice(env) {
+  if (env.hasKey && env.anthropicSdk) return "anthropic";
+  if (env.hasKey && env.agentSdk) return "agent-sdk";
+  if (!env.hasKey && env.cli) return "claude-cli";
+  return null;
 }
 
 /*
@@ -177,10 +193,15 @@ function AGENT_SDK(host, cwd, mcp) {
       ...(cwd ? { cwd } : {}),
       ...(mcp ? { mcpConfigPath: mcp.configPath, mcpEnv: mcp.env } : {}),
     }),
-    short: "agent-sdk · 구독 인증",
-    note: "agent-sdk · 구독 인증 · 질문·승인은 axnavi 화면이 직접 받습니다",
+    ...(hasApiKey()
+      ? { short: "agent-sdk · API 키", note: "agent-sdk · API 키 · 질문·승인은 axnavi 화면이 직접 받습니다" }
+      : { short: "agent-sdk · 구독 로그인(주의)", note: `agent-sdk · 구독 로그인 · 질문·승인은 axnavi 화면이 직접 받습니다\n${SUBSCRIPTION_SDK_WARNING}` }),
   };
 }
+
+/** 키 없이 agent-sdk 를 명시했을 때 — 막지는 않되 정책 위험을 숨기지 않는다 */
+export const SUBSCRIPTION_SDK_WARNING =
+  "⚠ Anthropic 은 승인 없이 제3자 제품(Agent SDK 에이전트 포함)이 claude.ai 구독 로그인을 쓰는 것을 허용하지 않습니다. 구독은 --provider claude-cli, 조직 배포는 API 키나 사내 게이트웨이(--provider openai)를 쓰세요.";
 
 /** @param {string} headline */
 function authHelp(headline) {
