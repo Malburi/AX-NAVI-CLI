@@ -3,7 +3,7 @@
 > **ITO/SI 레거시 코드베이스를 위한 AI 개발 내비게이터**
 >
 > 처음 투입된 프로젝트에서 _"이 코드 뭐야?"_ 부터 _"이 변경 안전해?"_ 까지.
-> 터미널에서 `axnavi` 를 띄우고, 에이전트 19종과 워크플로우 스킬 24종을 자연어로 부릅니다.
+> 터미널에서 `axnavi` 를 띄우고, 에이전트 19종과 워크플로우 스킬 26종을 자연어로 부릅니다.
 
 <!-- ax = AI Transformation, navi = navigator. 낯선 코드베이스의 지도를 만들고 길을 안내한다는 뜻입니다. -->
 
@@ -474,6 +474,14 @@ axnavi index status             인덱스 신선도
 axnavi index refresh            증분 갱신
 axnavi index coverage [경로]    커버리지 진단서 (AI 불필요 · 기본 _workspace/reports/coverage.md)
 
+axnavi review [--diff A..B]     변경 리뷰 GO/HOLD/STOP (AI 불필요 · 종료 코드 0/3/4)
+axnavi scan security [경로...]  저장소 보안 점검 (AI 불필요 · 기본 _workspace/reports/security_scan.md)
+
+axnavi doc new <종류|all>       SDLC 산출물 양식 (docs/sdlc/, 규모·스택·API·테이블·패턴은 인덱스로 자동)
+axnavi doc list                 산출물 현황 (필수 절 작성 · 승인 상태)
+axnavi adr new "<제목>"          아키텍처 결정 기록 (docs/adr/NNNN-제목.md)
+axnavi gate <req|design|dev|test>  단계 게이트 GO/HOLD/STOP (AI 불필요 · 종료 코드 0/3/4)
+
 axnavi agent list               에이전트 목록
 axnavi agent run <이름> <요청>   에이전트 직접 실행
 axnavi skill list               스킬 목록
@@ -488,7 +496,36 @@ axnavi skill run <이름> <요청>   스킬 실행
 | `--provider <이름>` | `auto` | `auto` · `anthropic` · `agent-sdk` · `claude-cli` |
 | `--verbose` | 꺼짐 | 도구 목록 · 토큰 내역 · 감사 기록 경로 |
 
-**대화형 모드의 슬래시 명령** — `/` 를 치면 아래 목록과 스킬 24종이 함께 뜹니다.
+**변경 리뷰 · 보안 점검 (CI 게이트)** — `review` 와 `scan security` 는 AI 를 부르지 않습니다. 같은 변경에는 늘 같은 판정이 나와 머지 요청 게이트로 쓸 수 있습니다.
+
+| 옵션 | 설명 |
+|---|---|
+| `--diff <A..B>` | 비교 범위. 생략하면 HEAD 대비 작업 트리, `--staged` 면 스테이징된 변경 |
+| `--verify "<명령>"` | 테스트·빌드 명령을 직접 실행해 결과를 판정에 넣음 (실패하면 STOP) |
+| `--tests-passed` | CI 앞 단계에서 테스트가 통과했음을 알림 |
+| `--format md\|json` · `--out <파일>` | 리포트 형식과 저장 위치 |
+| `--fail-on <심각도>` | `scan security` 에서 그 심각도 이상이 있으면 종료 코드 1 |
+
+- 판정은 change-safety 에이전트와 같은 6개 차원·공식입니다(회귀·컨벤션·사이드 이펙트·롤백·보안×2·테스트). 패턴 일치는 AI 판정이라 헤드리스에서는 평가하지 않고 리포트에 그렇게 적습니다.
+- 즉시 STOP: 평문 비밀번호·키, SQL 문자열 결합·MyBatis `${}`, 인가 검사 제거, DROP·TRUNCATE·WHERE 없는 DELETE, 검증 명령 실패.
+- 인덱스가 있으면 바뀐 메서드의 호출자 수·관련 테이블·엔드포인트·거슬러 올라간 화면 이벤트까지 리포트에 나옵니다.
+- 의도된 사용이면 그 줄이나 바로 윗줄에 `axnavi:allow <규칙ID> <사유>` 를 적어 억제합니다. 억제한 항목도 사유와 함께 리포트에 남습니다.
+- GitLab 머지 요청 템플릿: [`docs/ci/gitlab-axnavi-review.yml`](docs/ci/gitlab-axnavi-review.yml) — HOLD 는 경고, STOP 은 차단.
+
+**SDLC 산출물 · 단계 게이트** — 요구 → 설계 → 개발 → 테스트. 산출물 양식과 게이트 판정은 AI 를 부르지 않습니다. 서술은 사람이 쓰거나 `sdlc-docs` 스킬("설계서 써줘")이 근거를 붙여 채웁니다.
+
+| 단계 | 산출물 (`docs/sdlc/`) | 게이트가 보는 것 |
+|---|---|---|
+| `req` 요구 | 프로젝트 정의서 · 요구사항 명세서 | 필수 절 작성(STOP) · 문서 승인(HOLD) |
+| `design` 설계 | 설계서 · 개발 표준 · ADR(`docs/adr/`) | + ADR 유무 · 제안 상태 ADR · ADR 본문(HOLD) |
+| `dev` 개발 | 진행 기록서 | + `axnavi review` (STOP 이면 STOP, HOLD 면 HOLD) |
+| `test` 테스트 | 품질 검증서 | + 보안 점검 치명(STOP) · 높음(HOLD) |
+
+- 조직 양식: `.axnavi/templates/<종류>.md`(프로젝트) → `AXNAVI_TEMPLATES_DIR`(조직 공용 폴더) → 내장 양식 순으로 찾습니다. 양식 머리말의 `required:` 에 적은 절이 작성 필수입니다.
+- 양식 그대로 · 자동 항목만 · `확인 필요` 줄만 있는 절은 작성된 것으로 보지 않습니다. 문서 머리말의 `상태:` 를 `승인` 으로 바꾸는 것은 검토자 몫입니다.
+- `gate ... --record` 는 진행 기록서의 "단계 게이트 이력" 표에 한 줄을 남깁니다. doc-syncer 는 변경에 아키텍처 결정이 있으면 ADR(상태 `제안`)을 새로 씁니다.
+
+**대화형 모드의 슬래시 명령** — `/` 를 치면 아래 목록과 스킬 26종이 함께 뜹니다.
 
 | 명령 | 하는 일 |
 |---|---|
@@ -497,12 +534,38 @@ axnavi skill run <이름> <요청>   스킬 실행
 | `/agents` · `/skills` | 에이전트 · 스킬 목록 |
 | `/agent <이름> <요청>` | 에이전트 직접 실행 |
 | `/index [build\|status\|refresh]` | 인덱스 빌드 · 상태 |
+| `/review [A..B]` | 지금 변경을 GO/HOLD/STOP 으로 리뷰 (`--staged` · `--verify <명령>`) |
 | `/context` | 진행 중인 대화 상태 |
 | `/new` · `/sessions` · `/resume` | 새 대화 · 저장된 대화 목록 · 이전 대화로 |
 | `/model` · `/mode` | 모델 · 실행 모드 바꾸기 |
 | `/bg <요청>` · `/tasks` | 백그라운드 실행 · 작업 목록 |
 | `/log` | 지나간 작업 되짚어 보기 |
 | `/exit` | 종료 |
+
+---
+
+## 외부 MCP 서버 · 조직 사용 현황
+
+**외부 MCP 서버 붙이기** — `.axnavi/mcp.json` 에 Claude Code 의 `.mcp.json` 과 같은 형식으로 적습니다. 키는 파일에 적지 말고 `${환경변수}` 로 받습니다.
+
+```json
+{
+  "mcpServers": {
+    "hnix": { "type": "http", "url": "${HNIX_AX_SERVER}/mcp", "headers": { "Authorization": "Bearer ${HNIX_AX_KEY}" } }
+  }
+}
+```
+
+- HNIX AX 플랫폼 허브(`/mcp`)를 붙이면 PMS-X(화면·버튼 흐름·영향도·SR 구현 명세)·문서 RAG·사내 도구를 에이전트가 함께 씁니다.
+- 이 서버들의 도구는 AX-NAVI 기본 도구가 아니라서 **실행할 때마다 승인 창**을 거칩니다("이번 세션 동안 묻지 않음" 가능).
+- 환경변수가 없거나 설정이 틀린 서버는 그 서버만 빼고 이유를 알립니다. `axnavi doctor` 에서도 보입니다.
+- 위임 경로(구독·claude CLI·Agent SDK)에 적용됩니다. API 키 직접 경로(anthropic)는 아직 외부 MCP 를 쓰지 않습니다.
+
+**조직 사용 현황(Insight)으로 보내기** — `HNIX_AX_SERVER`(예: `http://ax.hd.local:8700`)와 `HNIX_AX_KEY`(**ingest** 권한 키)를 설정하면 실행마다 요약(에이전트·소요 시간·결과·작업번호·세션 ID)을 보냅니다. 설정하지 않으면 아무것도 보내지 않습니다.
+
+- 토큰·비용은 API 키 직접 경로일 때만 싣습니다. 구독·위임 경로는 Claude Code 세션 로그에 같은 호출이 남고 플랫폼 수집기(`hnix-ax collect`)가 집계하므로, 여기서 또 보내면 두 번 셉니다.
+- 서버에 닿지 않으면 `.axnavi/logs/insight-queue.jsonl` 에 쌓았다가 다음 실행 때 함께 보냅니다(최근 1,000건).
+- 브랜치 이름의 작업번호(`feature/SR-2026-0142`)를 뽑아 SR 별 AI 사용량으로 묶입니다.
 
 ---
 
@@ -536,6 +599,20 @@ axnavi --provider anthropic
 
 Messages API 를 직접 부르며, 역할별 도구 제한과 감사 기록이 적용됩니다.
 단일 에이전트 스킬과 질문 · 대화에 씁니다.
+
+### OpenAI 호환 게이트웨이 (HNIX AX · 사내 로컬 모델 · watsonx)
+
+```bash
+export AXNAVI_OPENAI_BASE_URL=http://ax-platform:8700/v1   # 게이트웨이 /v1
+export AXNAVI_OPENAI_API_KEY=hx-...                         # 게이트웨이 가상 키(llm 범위)
+axnavi --provider openai ask "TB_EMP 를 쓰는 화면이 어디야?"
+# 대화형 모드: AXNAVI_PROVIDER=openai axnavi
+```
+
+- 모델은 게이트웨이 별칭으로 고릅니다. 기본은 등급별 `hnix-local`(fast) · `hnix-smart`(standard·deep)이고, `AXNAVI_OPENAI_MODEL` 또는 `AXNAVI_OPENAI_MODEL_FAST|STANDARD|DEEP` 로 바꿉니다.
+- Anthropic API 경로와 같이 **도구는 axnavi 의 Gateway 가 실행**합니다(역할별 도구 제한 · 승인 · 감사 기록 유지). 그래서 단일 에이전트 스킬(질문 · `/find` · `/flow` · `/sql` · `/impact` 등)에 씁니다. 서브에이전트를 지휘하는 스킬(harness-init 등)은 구독 경로에서 돌립니다.
+- 요청에는 `x-hnix-client: axnavi` 가 붙어 게이트웨이 사용 현황에 집계됩니다. 비용·토큰은 게이트웨이가 계량하므로 Insight 실행 요약에는 싣지 않습니다(이중 집계 방지).
+- SDK 없이 fetch 만 씁니다 — 폐쇄망 설치본에 의존성이 늘지 않습니다. `axnavi doctor` 의 "OpenAI 호환" 줄로 설정을 확인합니다.
 
 ### 인증 없이
 
@@ -592,7 +669,7 @@ axnavi 는 모델을 `haiku` · `sonnet` · `opus` 세 등급으로 부르고, �
 </details>
 
 <details>
-<summary><b>워크플로우 스킬 17종 + 단축 별칭 7종</b></summary>
+<summary><b>워크플로우 스킬 19종 + 단축 별칭 7종</b></summary>
 
 **여러 에이전트를 지휘하는 스킬**
 
@@ -615,6 +692,8 @@ axnavi 는 모델을 `haiku` · `sonnet` · `opus` 세 등급으로 부르고, �
 | `trace-logic` | `/flow` | 처리 흐름 추적 |
 | `analyze-impact` | `/impact` | 변경 영향도 분석 |
 | `review-sql` | `/sql` | SQL 리뷰 |
+| `security-scan` | | 보안 점검 — 규칙 엔진 전수 점검 후 치명·높음만 원문 확인해 Findings 리포트 |
+| `sdlc-docs` | | SDLC 산출물·ADR 을 조직 양식으로 만들고 근거 있는 내용만 채운 뒤 단계 게이트로 확인 |
 | `generate-wiki` | `/wiki` | harness 산출물 → wiki |
 | `publish-wiki` | | wiki 를 중앙 허브 DB 에 발행 |
 | `harness-clean` | | 하네스 전체 제거 |

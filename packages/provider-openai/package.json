@@ -1,0 +1,14 @@
+{
+  "name": "@ax-navi/provider-openai",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "LLMProvider 구현 (OpenAI 호환 Chat Completions — HNIX AX 게이트웨이·사내 로컬 모델·watsonx 등). SDK 없이 fetch 만 쓴다. 방향은 언제나 provider → core.",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "main": "./src/index.mjs",
+  "dependencies": {
+    "@ax-navi/core": "*"
+  }
+}

@@ -28,7 +28,7 @@ import { clipToWidth, visibleLength } from "./width.mjs";
 import { attachAutocomplete } from "./autocomplete.mjs";
 import { selectProvider } from "./provider.mjs";
 import { executeAgent } from "./execute.mjs";
-import { cmdIndex, runSkill } from "./commands.mjs";
+import { cmdIndex, cmdReview, runSkill } from "./commands.mjs";
 import { discoverRoots } from "../../core/src/index.mjs";
 import { allTasks, runningCount, startTask, stopAllTasks, stopTask } from "./tasks.mjs";
 import { openViewer } from "./viewer.mjs";
@@ -1096,6 +1096,21 @@ async function handleSlash({ paths, line, commands, skillByName, onReset, onResu
 
     case "index":
       return cmdIndex(paths.root, rest[0] ?? "status", {});
+
+    case "review": {
+      /*
+       * 커밋 전에 지금 변경을 같은 게이트로 본다 — CI 에서 STOP 을 맞기 전에 여기서 먼저 알게.
+       * 인자는 axnavi review 와 같다: 범위(A..B), --staged, --verify "<명령>".
+       */
+      const verifyAt = rest.indexOf("--verify");
+      const verify = verifyAt >= 0 ? argText.slice(argText.indexOf("--verify") + "--verify".length).trim().replace(/^["']|["']$/g, "") : "";
+      const range = rest.find((r, i) => !r.startsWith("--") && (verifyAt < 0 || i < verifyAt));
+      return cmdReview(paths.root, {
+        ...(range ? { range } : {}),
+        ...(rest.includes("--staged") ? { staged: true } : {}),
+        ...(verify ? { verify } : {}),
+      });
+    }
 
     case "status": {
       process.stdout.write(`\n  ${ui.dim("프로젝트")}  ${paths.root}\n`);

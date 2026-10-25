@@ -104,7 +104,8 @@ export function sdkMcpServers(configPath, env = {}) {
     const servers = JSON.parse(readFileSync(configPath, "utf8"))?.mcpServers ?? {};
     return Object.fromEntries(Object.entries(servers).map(([name, s]) => [
       name,
-      { ...s, env: { ...(s.env ?? {}), ...env, AXNAVI_MCP_TOOLS: "QueryIndex,Skill" } },
+      // 우리 브리지(stdio)에만 연결 정보를 싣는다. 사용자 HTTP 서버에는 env 가 의미 없고, 남의 stdio 서버에 넘길 이유도 없다.
+      name === "axnavi" ? { ...s, env: { ...(s.env ?? {}), ...env, AXNAVI_MCP_TOOLS: "QueryIndex,Skill" } } : s,
     ]));
   } catch {
     return {};

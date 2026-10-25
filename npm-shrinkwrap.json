@@ -193,6 +193,10 @@
       "resolved": "packages/provider-claude-cli",
       "link": true
     },
+    "node_modules/@ax-navi/provider-openai": {
+      "resolved": "packages/provider-openai",
+      "link": true
+    },
     "node_modules/@babel/runtime": {
       "version": "7.29.7",
       "resolved": "https://registry.npmjs.org/@babel/runtime/-/runtime-7.29.7.tgz",
@@ -1660,7 +1664,8 @@
         "@ax-navi/core": "*",
         "@ax-navi/indexer": "*",
         "@ax-navi/provider-anthropic": "*",
-        "@ax-navi/provider-claude-cli": "*"
+        "@ax-navi/provider-claude-cli": "*",
+        "@ax-navi/provider-openai": "*"
       },
       "bin": {
         "axnavi": "src/bin.mjs"
@@ -1687,6 +1692,13 @@
     },
     "packages/provider-claude-cli": {
       "name": "@ax-navi/provider-claude-cli",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ax-navi/core": "*"
+      }
+    },
+    "packages/provider-openai": {
+      "name": "@ax-navi/provider-openai",
       "version": "0.0.0",
       "dependencies": {
         "@ax-navi/core": "*"

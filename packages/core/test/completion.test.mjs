@@ -23,9 +23,9 @@ const plainUi = {
   bold: (/** @type {string} */ s) => s,
 };
 
-test("스킬 24종이 전부 슬래시 명령으로 산다", async () => {
+test("스킬 26종이 전부 슬래시 명령으로 산다", async () => {
   const commands = buildCommands(await loadAllSkills(SKILLS));
-  assert.equal(commands.filter((c) => c.kind === "skill").length, 24);
+  assert.equal(commands.filter((c) => c.kind === "skill").length, 26);
 });
 
 test("대화를 다루는 내장 명령이 빠지지 않는다", async () => {

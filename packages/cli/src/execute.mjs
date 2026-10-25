@@ -14,6 +14,8 @@ import {
 } from "../../core/src/index.mjs";
 import { selectProvider } from "./provider.mjs";
 import { startMcpBridge } from "./mcp/bridge.mjs";
+import { buildRunEvent, currentBranch, sendRunEvent } from "./insight.mjs";
+import { readVersion } from "./upgrade.mjs";
 import { createActivity, elapsed } from "./activity.mjs";
 import { headline, renderCall } from "./transcript.mjs";
 import { createMarkdown } from "./markdown.mjs";
@@ -172,6 +174,8 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
     }
     // 실행 경로를 판에 밝힌다 — 구독인지 API 키인지가 비용과 기능을 가른다.
     activity.set({ runtime: picked.short.split(" · ")[0] ?? picked.provider.id });
+    // 사용자 MCP 설정(.axnavi/mcp.json)에서 뺀 서버는 조용히 사라지지 않게 이유를 한 번 알린다
+    if (!background) for (const w of bridge.warnings) process.stderr.write(`  ${ui.yellow("MCP")} ${ui.dim(w)}\n`);
 
   /*
    * 실행자는 두 가지로 온다.
@@ -793,6 +797,22 @@ export async function executeAgent({ root, agentName, agent: preset, prompt, con
         ` · 감사기록 ${audit.file}\n`,
     ),
   );
+  // 조직 사용 현황(HNIX AX Insight)으로 실행 요약을 보낸다 — 환경변수가 없으면 아무것도 하지 않는다
+  await sendRunEvent(paths, buildRunEvent({
+    root: paths.root,
+    agent: agent.name,
+    tier: agent.tier,
+    provider: picked.provider.id,
+    version: readVersion(),
+    startedAt,
+    endedAt: Date.now(),
+    outcome: controller.signal.aborted ? "aborted" : failed ? "error" : "ok",
+    usage: totals,
+    toolErrors,
+    questions: bridge.askedCount(),
+    sessionId: conversation?.providerSessionId ?? null,
+    branch: currentBranch(paths.root),
+  }));
   if (controller.signal.aborted) return 130; // 관례: 128 + SIGINT(2)
   return failed ? 1 : 0;
   }

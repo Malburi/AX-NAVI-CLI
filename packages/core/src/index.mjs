@@ -1,6 +1,7 @@
 /* AX-NAVI Core 공개 표면. LLM Provider 구현은 여기서 import하지 않는다 — 방향은 언제나 provider → core. */
 export { resolveProjectPaths, inspectProject, isWithin } from "./config/paths.mjs";
 export { discoverRoots } from "./config/roots.mjs";
+export { loadUserMcpServers } from "./config/user-mcp.mjs";
 export { toTier, DEFAULT_TIER } from "./llm/tier.mjs";
 export { ToolRegistry, ToolGateway } from "./tools/gateway.mjs";
 export { createDefaultRegistry } from "./tools/builtin/index.mjs";
@@ -10,3 +11,5 @@ export { loadSkill, resolveSkill, loadAllSkills } from "./skills/loader.mjs";
 export { estimateTokens, compactTurns } from "./context/compaction.mjs";
 export { buildProjectContext, indexAgeNote } from "./context/project.mjs";
 export { newSessionId, toTitle, saveSession, loadSession, listSessions, latestSession, appendMessage, sessionIsCorrupt, ensureAxnaviIgnore } from "./context/sessions.mjs";
+export { runReview, renderMarkdown as renderReviewMarkdown, runSecurityScan, renderScanMarkdown, EXIT as REVIEW_EXIT } from "./review/index.mjs";
+export { PHASES, SDLC_KINDS, createArtifact, listArtifacts, collectFacts, createAdr, listAdrs, ADR_STATUSES, runGate, renderGateMarkdown } from "./sdlc/index.mjs";

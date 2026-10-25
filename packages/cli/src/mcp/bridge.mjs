@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startElicitHost } from "./host.mjs";
+import { loadUserMcpServers } from "../../../core/src/index.mjs";
 
 const SERVER_PATH = fileURLToPath(new URL("./server.mjs", import.meta.url));
 
@@ -21,6 +22,8 @@ const SERVER_PATH = fileURLToPath(new URL("./server.mjs", import.meta.url));
  * @property {string} configPath                 `--mcp-config` 에 넘길 경로
  * @property {Record<string, string>} env        위임 프로세스에 실을 환경변수
  * @property {() => number} askedCount           실제로 사용자에게 물어본 횟수
+ * @property {string[]} userServers              함께 올린 사용자 MCP 서버(.axnavi/mcp.json)
+ * @property {string[]} warnings                 사용자 MCP 설정에서 뺀 서버와 이유
  * @property {() => Promise<void>} dispose
  */
 
@@ -34,6 +37,10 @@ const SERVER_PATH = fileURLToPath(new URL("./server.mjs", import.meta.url));
  * @returns {Promise<McpBridge>}
  */
 export async function startMcpBridge({ paths, elicitor, onAsk, onSkill, onApprove }) {
+  // 사용자가 등록한 서버(.axnavi/mcp.json — PMS-X·Jira·HNIX AX 허브 등)를 같은 설정에 함께 올린다.
+  // --strict-mcp-config 라 여기 없는 서버는 위임 실행에서 보이지 않는다.
+  // 질문 통로(host)를 열기 전에 읽는다 — 여기서 실패해도 열린 통로가 프로세스를 붙잡지 않게.
+  const user = loadUserMcpServers(paths);
   const host = await startElicitHost({
     elicitor,
     ...(onAsk ? { onNotice: onAsk } : {}),
@@ -48,7 +55,8 @@ export async function startMcpBridge({ paths, elicitor, onAsk, onSkill, onApprov
     JSON.stringify(
       {
         mcpServers: {
-          // 서버 이름이 곧 도구 접두사가 된다 — mcp__axnavi__AskUserQuestion.
+          ...user.servers,
+          // 서버 이름이 곧 도구 접두사가 된다 — mcp__axnavi__AskUserQuestion. 사용자 설정보다 뒤에 둬 덮어쓰지 못하게.
           axnavi: { command: process.execPath, args: [SERVER_PATH] },
         },
       },
@@ -66,6 +74,8 @@ export async function startMcpBridge({ paths, elicitor, onAsk, onSkill, onApprov
       AXNAVI_INDEX_DIR: paths.indexDir,
     },
     askedCount: () => host.asked,
+    userServers: Object.keys(user.servers),
+    warnings: user.warnings,
     dispose: () => host.close(),
   };
 }

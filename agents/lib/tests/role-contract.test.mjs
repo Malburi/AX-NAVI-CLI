@@ -40,7 +40,7 @@ export async function test(register, assert) {
     const skillNames = skills.map(({ text }) => field(text, "name"));
 
     assert.equal(agents.length, 19);
-    assert.equal(skills.length, 24); // 워크플로우 17 + 별칭 7 (modify/impact/scaffold/find/flow/sql/wiki)
+    assert.equal(skills.length, 26); // 워크플로우 19(security-scan·sdlc-docs 포함) + 별칭 7 (modify/impact/scaffold/find/flow/sql/wiki)
     assert.equal(new Set(agentNames).size, agents.length);
     assert.equal(new Set(skillNames).size, skills.length);
     assert.ok(agentNames.every(Boolean), "에이전트 name 누락");
@@ -87,8 +87,8 @@ export async function test(register, assert) {
   register("매니페스트의 에이전트·스킬 수가 실제 파일 수와 일치한다", () => {
     const plugin = JSON.parse(read(join(root, ".claude-plugin", "plugin.json")));
     const marketplace = JSON.parse(read(join(root, ".claude-plugin", "marketplace.json")));
-    assert.ok(plugin.description.includes("19 agents + 17 workflow skills"));
-    assert.ok(marketplace.plugins[0].description.includes("19개 에이전트 + 17개 워크플로우 스킬"));
+    assert.ok(plugin.description.includes("19 agents + 19 workflow skills"));
+    assert.ok(marketplace.plugins[0].description.includes("19개 에이전트 + 19개 워크플로우 스킬"));
   });
 
   register("역할 맵이 전체 스킬·에이전트를 포함하고 리포트 경로가 reports로 통일된다", () => {

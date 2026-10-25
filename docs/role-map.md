@@ -29,6 +29,8 @@
 | 신규 기능 골격 생성 | `scaffold-feature` | 유사 기능·실제 기준 파일을 따라 레이어별 코드·테스트 골격 생성 | feature-finder, test-generator, pattern-conformance, change-safety |
 | 명시적 빠른 수정 | `vibe` | 영향·독립 리뷰 에이전트는 생략하지만 패턴 선택·최소 실행 검증·wiki 최신성 유지 | pattern_profile.py, 프로젝트 검증 명령 |
 | SQL 검토 | `review-sql` | SQL 사용처·성능·보안·락·DDL 영향 검토. SQL 실행은 하지 않음 | sql-reviewer |
+| SDLC 산출물·단계 게이트 | `sdlc-docs` | 프로젝트 정의서·SRS·설계서·개발 표준·품질 검증서·진행 기록서·ADR 을 조직 양식으로 작성, 요구→설계→개발→테스트 게이트 판정. 문서 승인은 하지 않음 | `axnavi doc`·`axnavi adr`·`axnavi gate`, query-index.mjs |
+| 보안 점검 | `security-scan` | 규칙 엔진(OWASP·CWE) 전수 점검 후 치명·높음 원문 확인, Findings 리포트. 코드 수정은 하지 않음 | `axnavi scan security`·`axnavi review`, query-index.mjs |
 | 마이그레이션 계획 | `plan-migration` | 인벤토리·매핑·단계·위험·테스트·롤백 계획 수립. 코드 변환은 하지 않음 | migration-planner |
 | 분리 저장소 연결 | `pair-init` | 백엔드와 1~N 클라이언트의 경로·API 계약 연결 | api-bridge, 필요 시 harness-init |
 | 풀스택 신규 기능 | `cross-repo-scaffold` | 백엔드와 선택 클라이언트 생성, 저장소별 패턴·검증, API 드리프트 게이트 | scaffold-feature, api-bridge, pattern-conformance, change-safety |

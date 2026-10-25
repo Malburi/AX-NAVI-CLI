@@ -7,7 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import { inspectProject, resolveProjectPaths } from "../../core/src/index.mjs";
-import { cmdAgent, cmdDoctor, cmdIndex, cmdInit, cmdSkill } from "./commands.mjs";
+import { cmdAdr, cmdAgent, cmdDoc, cmdDoctor, cmdGate, cmdIndex, cmdInit, cmdReview, cmdScan, cmdSkill } from "./commands.mjs";
 import { cmdKeys } from "./keys.mjs";
 import { executeAgent } from "./execute.mjs";
 import { startRepl } from "./repl.mjs";
@@ -42,6 +42,19 @@ ${ui.bold("사용법")}
   axnavi index refresh            증분 갱신
   axnavi index coverage [경로]    커버리지 진단서 (LLM 불필요, 기본 _workspace/reports/coverage.md)
 
+  axnavi review [--diff A..B]     변경 리뷰 GO/HOLD/STOP (LLM 불필요, 종료 코드 0/3/4)
+      [--staged] [--verify "<명령>"] [--tests-passed] [--format md|json] [--out <파일>]
+  axnavi scan security [경로...]  저장소 보안 점검 (OWASP·CWE, LLM 불필요)
+      [--format md|json] [--out <파일>] [--fail-on critical|high|medium|low]
+
+  axnavi doc new <종류|all>       SDLC 산출물 양식 만들기 (docs/sdlc/, 인덱스로 자동 항목 채움)
+      종류: project · srs · sdd · standards · quality · progress   [--force]
+  axnavi doc list                 산출물 현황 (필수 절 작성·승인 상태)
+  axnavi adr new "<제목>"          아키텍처 결정 기록 (docs/adr/NNNN-제목.md) [--status 제안|채택|폐기|대체됨]
+  axnavi adr list                 ADR 목록
+  axnavi gate <req|design|dev|test>  단계 게이트 GO/HOLD/STOP (LLM 불필요, 종료 코드 0/3/4)
+      [--diff A..B] [--staged] [--skip-review] [--record] [--format md|json] [--out <파일>]
+
   axnavi agent list               에이전트 목록
   axnavi agent run <이름> <요청>   에이전트 직접 실행
   axnavi skill list               스킬 목록
@@ -51,9 +64,11 @@ ${ui.bold("옵션")}
   --root <경로>       프로젝트 루트 (기본: 현재 폴더)
   --index-dir <경로>  인덱스 위치 (기본: <root>/_workspace/index)
   --tier <등급>       Auto | Standard | Full
-  --provider <이름>   auto | agent-sdk | claude-cli | anthropic
+  --provider <이름>   auto | agent-sdk | claude-cli | anthropic | openai
                       auto(기본): API 키와 SDK 가 있으면 anthropic, 없으면 agent-sdk(구독),
                       SDK 가 없으면(폐쇄망 설치) claude-cli
+                      openai: AXNAVI_OPENAI_BASE_URL 의 OpenAI 호환 게이트웨이(HNIX AX·로컬 모델)
+                      대화형 모드에서는 AXNAVI_PROVIDER=openai 로 고른다
   -c, --continue      마지막 대화를 이어서 시작
   --resume <id>       특정 대화를 이어서 시작 (/sessions 로 id 확인)
   --verbose           내부 진단 출력 (도구 목록·토큰 내역·감사기록 경로)
@@ -63,7 +78,7 @@ ${ui.bold("옵션")}
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, continueLatest?: boolean, resumeId?: string, help?: boolean, version?: boolean, rest: string[] }} */
+  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, continueLatest?: boolean, resumeId?: string, help?: boolean, version?: boolean, diff?: string, staged?: boolean, format?: string, out?: string, verify?: string, testsPassed?: boolean, failOn?: string, force?: boolean, record?: boolean, skipReview?: boolean, status?: string, rest: string[] }} */
   const out = { root: process.cwd(), rest: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -72,8 +87,8 @@ function parseArgs(argv) {
     else if (arg === "--tier") out.tier = argv[++i];
     else if (arg === "--provider") {
       const value = argv[++i];
-      if (value !== "auto" && value !== "anthropic" && value !== "claude-cli" && value !== "agent-sdk") {
-        throw new Error(`--provider 값이 올바르지 않습니다: ${value} (auto | anthropic | claude-cli | agent-sdk)`);
+      if (value !== "auto" && value !== "anthropic" && value !== "claude-cli" && value !== "agent-sdk" && value !== "openai") {
+        throw new Error(`--provider 값이 올바르지 않습니다: ${value} (auto | anthropic | claude-cli | agent-sdk | openai)`);
       }
       out.provider = value;
     }
@@ -81,6 +96,23 @@ function parseArgs(argv) {
     else if (arg === "-c" || arg === "--continue") out.continueLatest = true;
     else if (arg === "--resume") out.resumeId = argv[++i];
     else if (arg === "--verbose") { /* no-op */ }
+    // review · scan 전용
+    else if (arg === "--diff") out.diff = argv[++i];
+    else if (arg === "--staged") out.staged = true;
+    else if (arg === "--format") {
+      const value = argv[++i];
+      if (value !== "md" && value !== "json") throw new Error(`--format 값이 올바르지 않습니다: ${value} (md | json)`);
+      out.format = value;
+    }
+    else if (arg === "--out") out.out = argv[++i];
+    else if (arg === "--verify") out.verify = argv[++i];
+    else if (arg === "--tests-passed") out.testsPassed = true;
+    else if (arg === "--fail-on") out.failOn = argv[++i];
+    // doc · adr · gate 전용
+    else if (arg === "--force") out.force = true;
+    else if (arg === "--record") out.record = true;
+    else if (arg === "--skip-review") out.skipReview = true;
+    else if (arg === "--status") out.status = argv[++i];
     else if (arg === "-h" || arg === "--help") out.help = true;
     else if (arg === "-v" || arg === "--version") out.version = true;
     else if (arg !== undefined && arg.startsWith("--")) throw new Error(`알 수 없는 옵션: ${arg}`);
@@ -131,6 +163,38 @@ async function main() {
         ...(args.tier ? { tier: args.tier } : {}),
         ...(args.indexDir ? { indexDir: args.indexDir } : {}),
         ...(rest[1] ? { out: rest[1] } : {}),
+      });
+    case "review":
+      return cmdReview(args.root, {
+        ...(args.diff ? { range: args.diff } : {}),
+        ...(args.staged ? { staged: true } : {}),
+        ...(args.format ? { format: args.format } : {}),
+        ...(args.out ? { out: args.out } : {}),
+        ...(args.verify ? { verify: args.verify } : {}),
+        ...(args.testsPassed ? { testsPassed: true } : {}),
+        ...(args.indexDir ? { indexDir: args.indexDir } : {}),
+      });
+    case "scan":
+      return cmdScan(args.root, {
+        kind: rest[0] ?? "security",
+        paths: rest.slice(1),
+        ...(args.format ? { format: args.format } : {}),
+        ...(args.out ? { out: args.out } : {}),
+        ...(args.failOn ? { failOn: args.failOn } : {}),
+      });
+    case "doc":
+      return cmdDoc(args.root, rest, { ...(args.force ? { force: true } : {}), ...(args.indexDir ? { indexDir: args.indexDir } : {}) });
+    case "adr":
+      return cmdAdr(args.root, rest, { ...(args.status ? { status: args.status } : {}) });
+    case "gate":
+      return cmdGate(args.root, rest[0], {
+        ...(args.diff ? { range: args.diff } : {}),
+        ...(args.staged ? { staged: true } : {}),
+        ...(args.skipReview ? { skipReview: true } : {}),
+        ...(args.record ? { record: true } : {}),
+        ...(args.format ? { format: args.format } : {}),
+        ...(args.out ? { out: args.out } : {}),
+        ...(args.indexDir ? { indexDir: args.indexDir } : {}),
       });
     case "agent":
       return cmdAgent(args.root, rest, args.provider);

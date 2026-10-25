@@ -65,7 +65,7 @@
 /reload-plugins
 ```
 
-설치된 24개 스킬(워크플로우 17 + 단축 별칭 7)과 19개 에이전트 확인:
+설치된 26개 스킬(워크플로우 19 + 단축 별칭 7)과 19개 에이전트 확인:
 
 ```
 /plugin details ax-navi@ax-navi
@@ -520,6 +520,33 @@ SQL:
 ```
 /plugin uninstall ax-navi@ax-navi
 ```
+
+### 4-11. `sdlc-docs` — 산출물 작성과 단계 게이트
+
+> 프로젝트 정의서·요구사항 명세서·설계서·개발 표준·품질 검증서·진행 기록서와 ADR 을 조직 양식으로 만들고, 근거가 있는 내용만 채운 뒤 단계 게이트로 빠진 곳을 알려 줍니다.
+
+**사용 예시:**
+
+```
+"설계서 써줘"
+"요구사항 명세서 만들어줘"
+"ADR 작성해줘 — 대기열은 DB 순번으로 관리하기로 했어"
+"설계 단계 게이트 확인해줘"
+```
+
+**터미널에서 바로 (AI 불필요):**
+
+```
+axnavi doc new all                 # docs/sdlc/ 에 양식 6종 (규모·스택·API·테이블은 인덱스로 자동)
+axnavi doc list                    # 필수 절 작성·승인 현황
+axnavi adr new "대기열은 DB 순번으로 관리" --status 채택
+axnavi gate design --record        # GO 0 · HOLD 3 · STOP 4, 진행 기록서에 이력 한 줄
+```
+
+**판정 기준:** 산출물이 없거나 필수 절이 비면 STOP, 문서가 승인 전이거나 ADR 이 없으면 HOLD. 개발 단계는 `axnavi review`, 테스트 단계는 보안 점검(치명 STOP · 높음 HOLD)을 함께 봅니다.  
+`확인 필요` 줄만 남긴 절은 작성된 것으로 보지 않습니다. 문서 머리말의 `상태:` 를 `승인` 으로 바꾸는 것은 검토자가 합니다.
+
+**조직 양식 쓰기:** HNIX 표준 양식을 공유 폴더에 `<종류>.md`(project·srs·sdd·standards·quality·progress·adr)로 두고 `AXNAVI_TEMPLATES_DIR` 를 그 폴더로 지정합니다. 프로젝트마다 다르면 `.axnavi/templates/` 에 둡니다. 양식 머리말의 `required:` 에 작성 필수 절 제목을 적습니다.
 
 ---
 

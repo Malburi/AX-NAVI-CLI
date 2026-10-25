@@ -1,0 +1,76 @@
+# AX-NAVI 변경 리뷰 — GitLab 머지 요청 게이트
+#
+# 사용법: 프로젝트 .gitlab-ci.yml 에서 include 하거나 아래 job 을 그대로 붙여 넣는다.
+#   include:
+#     - local: docs/ci/gitlab-axnavi-review.yml      # 또는 project/file 로 공용 저장소에서
+#
+# 판정 = 종료 코드
+#   0 GO    → 통과
+#   3 HOLD  → 경고(노란 느낌표)로 통과 — 리뷰어가 리포트를 보고 판단
+#   4 STOP  → 실패 — 머지 요청 차단(프로젝트 설정 "파이프라인이 성공해야 머지" 켜 둘 것)
+#   1       → 리뷰 자체가 돌지 못함(범위 오류 등) — 실패
+#
+# LLM·API 키·외부 네트워크를 쓰지 않는다. 폐쇄망 러너에서 그대로 돈다.
+
+stages:
+  - test
+  - review
+
+variables:
+  # 사내 npm 미러 또는 오프라인 tgz 경로. 미러가 없으면 AXNAVI_TGZ 에 배포본 경로를 둔다.
+  AXNAVI_PACKAGE: "axnavi"
+  GIT_DEPTH: "0" # 대상 브랜치와 비교하려면 이력이 필요하다
+
+axnavi-review:
+  stage: review
+  image: node:22-bookworm-slim
+  needs: [] # 테스트 job 이 있으면 needs: ["test"] 로 바꾸고 아래 --tests-passed 를 남긴다
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git python3 > /dev/null
+    - npm install -g ${AXNAVI_TGZ:-$AXNAVI_PACKAGE} --no-audit --no-fund
+    - git fetch -q origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    # 인덱스가 있으면 영향 범위(호출자·테이블·진입 화면)까지 리포트에 나온다. 캐시로 재사용한다.
+    - axnavi index refresh || axnavi index build || true
+  script:
+    - BASE="origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    # 테스트 job 을 앞에 두지 않았다면 --tests-passed 대신 --verify "mvn -q -B test" 처럼 검증 명령을 넘긴다
+    - axnavi review --diff "$BASE...HEAD" --tests-passed --format json --out axnavi-review.json > /dev/null || CODE=$?
+    - axnavi review --diff "$BASE...HEAD" --tests-passed --format md --out axnavi-review.md || CODE=$?
+    - echo "AX-NAVI 판정 종료 코드 ${CODE:-0}"
+    # 선택: 머지 요청에 리포트를 댓글로 단다(프로젝트 액세스 토큰 AXNAVI_MR_TOKEN, api 권한 필요)
+    - |
+      if [ -n "$AXNAVI_MR_TOKEN" ]; then
+        node -e 'const fs=require("fs");process.stdout.write(JSON.stringify({body:fs.readFileSync("axnavi-review.md","utf8")}))' > note.json
+        curl -sS --fail -X POST -H "PRIVATE-TOKEN: $AXNAVI_MR_TOKEN" -H "Content-Type: application/json" \
+          --data @note.json "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes" > /dev/null || true
+      fi
+    - exit ${CODE:-0}
+  allow_failure:
+    exit_codes: [3] # HOLD 는 경고로만
+  cache:
+    key: axnavi-index-$CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+    paths: [_workspace/index/]
+  artifacts:
+    when: always
+    expose_as: "AX-NAVI review"
+    paths: [axnavi-review.md, axnavi-review.json]
+    expire_in: 30 days
+
+# 정기 보안 점검(선택) — 기본 브랜치 야간 스케줄. 기존 부채로 막지 않고 리포트만 남긴다.
+axnavi-security-scan:
+  stage: review
+  image: node:22-bookworm-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git > /dev/null
+    - npm install -g ${AXNAVI_TGZ:-$AXNAVI_PACKAGE} --no-audit --no-fund
+  script:
+    - axnavi scan security --out security_scan.md
+    - axnavi scan security --format json --out security_scan.json > /dev/null
+  artifacts:
+    when: always
+    paths: [security_scan.md, security_scan.json]
+    expire_in: 90 days

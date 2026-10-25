@@ -16,6 +16,7 @@
     "@ax-navi/core": "*",
     "@ax-navi/indexer": "*",
     "@ax-navi/provider-anthropic": "*",
-    "@ax-navi/provider-claude-cli": "*"
+    "@ax-navi/provider-claude-cli": "*",
+    "@ax-navi/provider-openai": "*"
   }
 }

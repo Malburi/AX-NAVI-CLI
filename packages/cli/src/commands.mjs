@@ -24,6 +24,20 @@ import {
   loadAllSkills,
   resolveSkill,
   resolveProjectPaths,
+  loadUserMcpServers,
+  runReview,
+  renderReviewMarkdown,
+  runSecurityScan,
+  renderScanMarkdown,
+  PHASES,
+  SDLC_KINDS,
+  createArtifact,
+  listArtifacts,
+  createAdr,
+  listAdrs,
+  ADR_STATUSES,
+  runGate,
+  renderGateMarkdown,
 } from "../../core/src/index.mjs";
 import { AGENTS_DIR, REPO_ROOT, SKILLS_DIR, ui } from "./runtime.mjs";
 import { selectProvider } from "./provider.mjs";
@@ -32,6 +46,8 @@ import { firstSentence } from "./completion.mjs";
 import { visibleLength } from "./width.mjs";
 import { renderSkillHeader } from "./transcript.mjs";
 import { compareVersions, readVersion, resolveLatestTag, runUpgrade } from "./upgrade.mjs";
+import { insightTarget } from "./insight.mjs";
+import { openAiConfig } from "../../provider-openai/src/index.mjs";
 
 const NEWLINE = String.fromCharCode(10);
 
@@ -155,6 +171,17 @@ export async function cmdDoctor(root) {
   }
 
   rows.push([true, "인덱서", `v${INDEXER_VERSION}`]);
+  const userMcp = loadUserMcpServers(paths);
+  if (userMcp.exists) {
+    const names = Object.keys(userMcp.servers);
+    rows.push([userMcp.warnings.length ? "warn" : true, "MCP 서버", `${names.length ? names.join(", ") : "없음"}${userMcp.warnings.length ? ` — ${userMcp.warnings.join(" / ")}` : ""}`]);
+  }
+  const insight = insightTarget();
+  rows.push([true, "Insight 송신", insight ? `${insight.server} (실행 요약을 보냄)` : "꺼짐 — HNIX_AX_SERVER·HNIX_AX_KEY 를 설정하면 켜짐"]);
+  const oai = openAiConfig();
+  rows.push([process.env["AXNAVI_OPENAI_BASE_URL"] && !oai ? "warn" : true, "OpenAI 호환",
+    oai ? `${oai.baseUrl} · ${oai.models.fast}/${oai.models.standard}/${oai.models.deep}${oai.apiKey ? "" : " · 키 없음"} (--provider openai)`
+      : process.env["AXNAVI_OPENAI_BASE_URL"] ? "AXNAVI_OPENAI_BASE_URL 이 http(s) 주소가 아닙니다" : "꺼짐 — AXNAVI_OPENAI_BASE_URL 을 설정하면 --provider openai 로 쓸 수 있음"]);
   rows.push([true, "에이전트", `${(await loadAllAgents(AGENTS_DIR, AGENT_ENV)).length}개`]);
   const skills = await loadAllSkills(SKILLS_DIR);
   const aliases = skills.filter((s) => s.delegatesTo).length;
@@ -313,6 +340,203 @@ export async function cmdIndex(root, sub, opts) {
       `\n${ui.dim(`  ${indexDir}\n`)}`,
   );
   return 0;
+}
+
+/* ---------- review · scan ---------- */
+
+/**
+ * 변경 리뷰 — LLM 없이 GO/HOLD/STOP 을 낸다. 종료 코드가 곧 판정이다(GO 0 · HOLD 3 · STOP 4).
+ * CI 머지 요청 게이트에서 쓰는 것을 전제로, 출력 형식과 파일 저장을 옵션으로 둔다.
+ * @param {string} root
+ * @param {{ range?: string, staged?: boolean, format?: string, out?: string, verify?: string, testsPassed?: boolean, indexDir?: string }} opts
+ */
+export async function cmdReview(root, opts) {
+  const paths = resolveProjectPaths(root, opts.indexDir);
+  let result;
+  try {
+    result = runReview({
+      root: paths.root,
+      indexDir: resolveIndexDir(paths.root, opts.indexDir),
+      ...(opts.range ? { range: opts.range } : {}),
+      ...(opts.staged ? { staged: true } : {}),
+      ...(opts.verify ? { verify: opts.verify } : {}),
+      ...(opts.testsPassed ? { testsPassed: true } : {}),
+    });
+  } catch (error) {
+    // 판정(0/3/4)과 구분되게 1로 끝낸다 — CI 에서 "리뷰가 돌지 못함"과 "STOP"은 다른 사건이다
+    process.stderr.write(`${ui.red("리뷰 실패")}  ${/** @type {Error} */ (error).message.split(NEWLINE)[0]}\n`);
+    return 1;
+  }
+  const markdown = renderReviewMarkdown(result);
+  const json = `${JSON.stringify(result, null, 2)}
+`;
+  if (opts.out) {
+    const out = resolve(opts.out);
+    await mkdir(dirname(out), { recursive: true });
+    await writeFile(out, opts.format === "json" ? json : markdown, "utf8");
+  }
+  if (opts.format === "json") process.stdout.write(json);
+  else process.stdout.write(markdown);
+  const color = result.verdict === "GO" ? ui.green : result.verdict === "HOLD" ? ui.yellow : ui.red;
+  process.stderr.write(`${color(result.verdict)}  ${ui.dim(`종합 ${result.composite} · 보안 ${result.scores.security} · 종료 코드 ${result.exitCode}`)}
+`);
+  return result.exitCode;
+}
+
+/**
+ * 저장소 전수 보안 점검. 기본은 점검만 하고 0을 돌려준다 — 기존 부채로 파이프라인을 막지 않게.
+ * --fail-on <심각도> 를 주면 그 이상이 하나라도 있을 때 1.
+ * @param {string} root
+ * @param {{ kind?: string, format?: string, out?: string, failOn?: string, paths?: string[] }} opts
+ */
+export async function cmdScan(root, opts) {
+  if ((opts.kind ?? "security") !== "security") {
+    process.stderr.write(`알 수 없는 점검 종류: ${opts.kind} (security)
+`);
+    return 2;
+  }
+  const paths = resolveProjectPaths(root);
+  const result = runSecurityScan({ root: paths.root, ...(opts.paths?.length ? { paths: opts.paths } : {}) });
+  const body = opts.format === "json" ? `${JSON.stringify(result, null, 2)}
+` : renderScanMarkdown(result);
+  const out = opts.out ? resolve(opts.out) : join(paths.reportsDir, opts.format === "json" ? "security_scan.json" : "security_scan.md");
+  await mkdir(dirname(out), { recursive: true });
+  await writeFile(out, body, "utf8");
+  if (opts.format === "json") process.stdout.write(body);
+  else {
+    const b = result.bySeverity;
+    process.stdout.write(
+      `${ui.bold("보안 점검")}  ${paths.root}
+` +
+        `  파일 ${result.scanned}개 · 치명 ${b.critical} · 높음 ${b.high} · 중간 ${b.medium} · 낮음 ${b.low}${result.suppressed.length ? ` · 억제 ${result.suppressed.length}` : ""}
+` +
+        ui.dim(`  ${out}
+`),
+    );
+  }
+  const order = ["low", "medium", "high", "critical"];
+  if (opts.failOn) {
+    const at = order.indexOf(opts.failOn);
+    if (at < 0) {
+      process.stderr.write(`--fail-on 값이 올바르지 않습니다: ${opts.failOn} (critical | high | medium | low)
+`);
+      return 2;
+    }
+    if (result.findings.some((f) => order.indexOf(f.severity) >= at)) return 1;
+  }
+  return 0;
+}
+
+/* ---------- SDLC 산출물 · ADR · 단계 게이트 ---------- */
+
+const KIND_HELP = `project(프로젝트 정의서) | srs(요구사항 명세서) | sdd(설계서) | standards(개발 표준) | quality(품질 검증서) | progress(진행 기록서)`;
+
+/**
+ * 산출물 양식 만들기·현황. 자동 항목(규모·스택·API·테이블·패턴·보안 점검)은 인덱스에서 채우고 서술은 비워 둔다.
+ * @param {string} root
+ * @param {string[]} rest  [new <종류...> | list]
+ * @param {{ force?: boolean, indexDir?: string }} opts
+ */
+export async function cmdDoc(root, rest, opts) {
+  const paths = resolveProjectPaths(root, opts.indexDir);
+  const [sub = "list", ...kinds] = rest;
+  if (sub === "new") {
+    const targets = kinds.length === 1 && kinds[0] === "all" ? [...SDLC_KINDS] : kinds;
+    if (!targets.length) {
+      process.stderr.write(`만들 산출물을 적어 주세요: axnavi doc new <종류|all>\n  ${KIND_HELP}\n`);
+      return 2;
+    }
+    for (const kind of targets) {
+      try {
+        const r = createArtifact(paths, kind, { ...(opts.force ? { force: true } : {}) });
+        process.stdout.write(`${r.created ? ui.green("작성") : ui.yellow("있음")}  ${r.file}${r.created ? ui.dim(`  (양식 ${r.source})`) : ui.dim("  — 덮어쓰려면 --force")}\n`);
+      } catch (error) {
+        process.stderr.write(`${ui.red("실패")}  ${/** @type {Error} */ (error).message}\n`);
+        return 2;
+      }
+    }
+    return 0;
+  }
+  if (sub !== "list") {
+    process.stderr.write(`알 수 없는 하위 명령: doc ${sub} (new | list)\n`);
+    return 2;
+  }
+  process.stdout.write(`${ui.bold("SDLC 산출물")}  ${join(paths.root, "docs", "sdlc")}\n`);
+  const order = (/** @type {string} */ p) => PHASES.indexOf(/** @type {any} */ (p));
+  for (const a of listArtifacts(paths).sort((x, y) => order(x.phase) - order(y.phase))) {
+    const state = !a.exists ? ui.dim("없음")
+      : a.incomplete.length || a.missingSections.length ? ui.yellow(`미작성 ${a.incomplete.length + a.missingSections.length}절`)
+        : ui.green(a.status ?? "작성됨");
+    process.stdout.write(`  ${a.phase.padEnd(7)}${a.kind.padEnd(10)}${a.title}  ${state}\n`);
+  }
+  const adrs = listAdrs(paths);
+  process.stdout.write(ui.dim(`  ADR ${adrs.length}건${adrs.length ? ` (제안 ${adrs.filter((a) => a.status === "제안").length})` : ""}\n`));
+  return 0;
+}
+
+/**
+ * @param {string} root
+ * @param {string[]} rest  [new <제목...> | list]
+ * @param {{ status?: string }} opts
+ */
+export async function cmdAdr(root, rest, opts) {
+  const paths = resolveProjectPaths(root);
+  const [sub = "list", ...words] = rest;
+  if (sub === "new") {
+    try {
+      const r = createAdr(paths, words.join(" "), { ...(opts.status ? { status: opts.status } : {}) });
+      process.stdout.write(`${ui.green(`ADR-${r.no}`)}  ${r.file}\n`);
+      return 0;
+    } catch (error) {
+      process.stderr.write(`${ui.red("실패")}  ${/** @type {Error} */ (error).message}\n  axnavi adr new "<제목>" [--status ${ADR_STATUSES.join("|")}]\n`);
+      return 2;
+    }
+  }
+  if (sub !== "list") {
+    process.stderr.write(`알 수 없는 하위 명령: adr ${sub} (new | list)\n`);
+    return 2;
+  }
+  const adrs = listAdrs(paths);
+  if (!adrs.length) process.stdout.write(ui.dim("ADR 없음 — axnavi adr new \"<제목>\"\n"));
+  for (const a of adrs) process.stdout.write(`  ADR-${a.no}  ${a.status.padEnd(4)}  ${a.title}\n`);
+  return 0;
+}
+
+/**
+ * 단계 게이트. 종료 코드가 판정이다(GO 0 · HOLD 3 · STOP 4) — review 와 같은 규칙.
+ * @param {string} root
+ * @param {string | undefined} phase
+ * @param {{ range?: string, staged?: boolean, skipReview?: boolean, record?: boolean, format?: string, out?: string, indexDir?: string }} opts
+ */
+export async function cmdGate(root, phase, opts) {
+  if (!phase) {
+    process.stderr.write("단계를 적어 주세요: axnavi gate <req|design|dev|test>\n");
+    return 2;
+  }
+  const paths = resolveProjectPaths(root, opts.indexDir);
+  let result;
+  try {
+    result = runGate(paths, phase, {
+      ...(opts.range ? { range: opts.range } : {}),
+      ...(opts.staged ? { staged: true } : {}),
+      ...(opts.skipReview ? { skipReview: true } : {}),
+      ...(opts.record ? { record: true } : {}),
+    });
+  } catch (error) {
+    process.stderr.write(`${ui.red("게이트 실패")}  ${/** @type {Error} */ (error).message.split(NEWLINE)[0]}\n`);
+    return phase && /알 수 없는 단계/.test(/** @type {Error} */ (error).message) ? 2 : 1;
+  }
+  const body = opts.format === "json" ? `${JSON.stringify(result, null, 2)}\n` : renderGateMarkdown(result);
+  if (opts.out) {
+    const out = resolve(opts.out);
+    await mkdir(dirname(out), { recursive: true });
+    await writeFile(out, body, "utf8");
+  }
+  process.stdout.write(body);
+  const color = result.verdict === "GO" ? ui.green : result.verdict === "HOLD" ? ui.yellow : ui.red;
+  const failed = result.checks.filter((c) => !c.ok).length;
+  process.stderr.write(`${color(result.verdict)}  ${ui.dim(`검사 ${result.checks.length}개 · 미충족 ${failed}개 · 종료 코드 ${result.exitCode}`)}\n`);
+  return result.exitCode;
 }
 
 /* ---------- agent ---------- */
@@ -571,7 +795,7 @@ async function runOrchestratorSkill(root, skill, prompt, providerName, ctx = {})
     process.stderr.write(
       `${ui.red(`'${skill.name}'은 아직 이 실행 경로에서 돌릴 수 없습니다`)}\n` +
         ui.dim(`  이 스킬은 에이전트 ${skill.agents.length}종(${skill.agents.join(", ")})을 순서대로 지휘합니다.\n`) +
-        ui.dim("  서브에이전트 호출이 필요한데 anthropic Provider 경로에는 아직 그 기능이 없습니다.\n") +
+        ui.dim(`  서브에이전트 호출이 필요한데 ${picked.provider.id} Provider 경로에는 아직 그 기능이 없습니다.\n`) +
         ui.dim("  대안: --provider claude-cli (구독 인증, claude CLI의 서브에이전트를 빌려 씁니다)\n"),
     );
     return 2;

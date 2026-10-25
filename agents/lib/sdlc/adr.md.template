@@ -1,0 +1,32 @@
+---
+kind: adr
+title: 아키텍처 결정 기록
+phase: design
+file:
+required: 맥락, 결정, 결과
+---
+# ADR-{{no}}: {{title}}
+
+- 상태: {{status}}
+- 일자: {{date}}
+- 결정자:
+
+## 맥락
+
+{{context}}
+
+## 결정
+
+{{decision}}
+
+## 대안
+
+{{alternatives}}
+
+## 결과
+
+{{consequences}}
+
+## 관련
+
+<!-- 관련 요구사항 ID, 설계서 절, 커밋·PR, 대체한 ADR 번호를 적는다. -->

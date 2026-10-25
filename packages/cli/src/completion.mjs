@@ -29,6 +29,7 @@ const BUILTINS = [
   { name: "skills", kind: "builtin", summary: "스킬 목록" },
   { name: "index", kind: "builtin", summary: "인덱스 빌드·상태·진단서", usage: "/index [build|status|refresh|coverage]" },
   { name: "status", kind: "builtin", summary: "현재 프로젝트 상태" },
+  { name: "review", kind: "builtin", summary: "지금 변경을 GO/HOLD/STOP 으로 리뷰 (LLM 불필요)", usage: "/review [A..B] [--staged] [--verify <명령>]" },
   { name: "context", kind: "builtin", summary: "진행 중인 대화 상태" },
   { name: "new", kind: "builtin", summary: "대화를 끊고 새로 시작" },
   { name: "sessions", kind: "builtin", summary: "저장된 대화 목록" },

@@ -89,9 +89,9 @@ test("analyzer.md는 690줄 규모인데 결합 지점만 바뀐다", async () =
   assert.ok(!agent.systemPrompt.includes("$env:CLAUDE_PLUGIN_ROOT"), "경로가 치환돼야 한다");
 });
 
-test("스킬 24종 = 워크플로 17 + 별칭 7, 별칭은 전부 실제 스킬로 풀린다", async () => {
+test("스킬 26종 = 워크플로 19 + 별칭 7, 별칭은 전부 실제 스킬로 풀린다", async () => {
   const skills = await loadAllSkills(SKILLS);
-  assert.equal(skills.length, 24, "전체 스킬 수");
+  assert.equal(skills.length, 26, "전체 스킬 수");
 
   const aliases = skills.filter((s) => s.delegatesTo);
   assert.equal(aliases.length, 7, `별칭 수: ${aliases.map((a) => a.name).join(",")}`);

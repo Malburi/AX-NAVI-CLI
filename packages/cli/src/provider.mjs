@@ -5,6 +5,8 @@
  *   anthropic   Messages API. Core의 ToolGateway가 도구를 실행한다. ANTHROPIC_API_KEY 필요.
  *   agent-sdk   Claude Agent SDK. 질문·승인을 콜백으로 직접 받는다. 구독 인증. 키 불필요. (기본)
  *   claude-cli  설치된 claude CLI 에 -p 로 위임. SDK 가 없을 때(폐쇄망 설치 등) 쓴다.
+ *   openai      OpenAI 호환 게이트웨이(HNIX AX·사내 로컬 모델·watsonx). Core 의 ToolGateway 가 도구를 실행한다.
+ *               auto 로는 고르지 않는다 — --provider openai 또는 AXNAVI_PROVIDER=openai 로 명시한다.
  *
  * 기본값은 "쓸 수 있는 쪽"이다. 키가 있으면 Gateway가 통제하는 경로, 없으면 SDK, SDK 가 설치돼
  * 있지 않으면 claude CLI 로 간다. 다 없으면 무엇이 없는지 구체적으로 말하고 멈춘다.
@@ -12,6 +14,7 @@
 import { AnthropicProvider } from "../../provider-anthropic/src/index.mjs";
 import { ClaudeCliProvider, probeClaudeCli } from "../../provider-claude-cli/src/index.mjs";
 import { AgentSdkProvider } from "../../provider-agent-sdk/src/index.mjs";
+import { OpenAiCompatProvider, openAiConfig } from "../../provider-openai/src/index.mjs";
 import { hostPlugins, pluginSkillNames } from "../../provider-agent-sdk/src/host-settings.mjs";
 import { ui, REPO_ROOT } from "./runtime.mjs";
 import { existsSync } from "node:fs";
@@ -43,7 +46,8 @@ function packageInstalled(name, root) {
   return [join(root, "node_modules", rel), join(dirname(root), rel)].some((p) => existsSync(p));
 }
 
-/** @typedef {"anthropic" | "claude-cli" | "agent-sdk" | "auto"} ProviderName */
+/** @typedef {"anthropic" | "claude-cli" | "agent-sdk" | "openai" | "auto"} ProviderName */
+export const PROVIDER_NAMES = ["auto", "anthropic", "agent-sdk", "claude-cli", "openai"];
 
 export function hasApiKey() {
   return Boolean(process.env["ANTHROPIC_API_KEY"] || process.env["ANTHROPIC_AUTH_TOKEN"]);
@@ -54,7 +58,21 @@ export function hasApiKey() {
  * @returns {{ provider: import("@ax-navi/core").LLMProvider, note: string, short: string } | { error: string }}
  */
 export function selectProvider(opts = {}) {
-  const wanted = opts.provider ?? "auto";
+  // 대화형 모드는 --provider 를 받지 않으므로 환경변수로도 고를 수 있게 한다(조직 배포 스크립트에서 고정)
+  const fromEnv = process.env["AXNAVI_PROVIDER"]?.trim();
+  const wanted = opts.provider && opts.provider !== "auto" ? opts.provider
+    : fromEnv && PROVIDER_NAMES.includes(fromEnv) ? /** @type {ProviderName} */ (fromEnv) : "auto";
+
+  if (wanted === "openai") {
+    const config = openAiConfig();
+    if (!config) return { error: "openai Provider를 지정했지만 AXNAVI_OPENAI_BASE_URL 이 없습니다 — 예: http://ax-platform:8700/v1 (키는 AXNAVI_OPENAI_API_KEY)." };
+    const models = config.models.standard === config.models.deep ? config.models.standard : `${config.models.standard}·${config.models.deep}`;
+    return {
+      provider: new OpenAiCompatProvider({ config }),
+      short: `openai · ${models}`,
+      note: `openai 호환 · ${config.baseUrl} · ${models} · Gateway가 도구를 통제합니다`,
+    };
+  }
 
   if (wanted === "anthropic") {
     if (!hasApiKey()) return { error: authHelp("anthropic Provider를 지정했지만 ANTHROPIC_API_KEY가 없습니다.") };
