@@ -86,7 +86,7 @@ export function collectFacts(paths, opts = {}) {
   const scan = readJson(join(paths.reportsDir, "security_scan.json"));
   const sev = scan?.bySeverity;
   const security = sev
-    ? `\`axnavi scan security\` 결과: 치명 ${sev.critical} · 높음 ${sev.high} · 중간 ${sev.medium} · 낮음 ${sev.low} (파일 ${scan.scanned}개${scan.generatedAt ? `, ${kstDate(new Date(scan.generatedAt))}` : ""}).`
+    ? `\`axnavi scan security\` 결과: 치명 ${sev.critical} · 높음 ${sev.high} · 중간 ${sev.medium} · 낮음 ${sev.low} (파일 ${scan.scanned}개${scan.generatedAt ? `, ${kstDate(new Date(scan.generatedAt))}` : ""}${Array.isArray(scan.scope) && scan.scope.length ? ` — 일부 경로만: ${scan.scope.slice(0, 5).join(", ")}${scan.scope.length > 5 ? " 외" : ""}` : ""}).`
     : "보안 점검 결과 없음 — `axnavi scan security` 를 실행한 뒤 다시 만들면 채워진다.";
 
   const specFile = join(paths.workspaceDir, "00_spec_report.md");

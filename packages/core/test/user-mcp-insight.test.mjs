@@ -113,6 +113,25 @@ test("실행 요약 — 직접 API 경로만 토큰·비용을 싣는다(위임 
   assert.equal(viaGateway.attributes["hnix.usage_source"], "gateway");
 });
 
+test("대기열 — 깨진 줄은 그 줄만 버리고 나머지는 다시 보낸다, 상한도 지킨다(10/25 리뷰)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "axnavi-q-"));
+  const p = { logsDir: dir };
+  const qf = join(dir, "insight-queue.jsonl");
+  writeFileSync(qf, '{"dedupe_key":"old1"}\n{"dedupe_key":"bro\n{"dedupe_key":"old2"}\n', "utf8");
+  const target = { server: "http://127.0.0.1:9", key: "k" };
+  /** @type {any} */
+  const down = async () => { throw new Error("down"); };
+  assert.equal(await sendRunEvent(p, { dedupe_key: "n1" }, { target, fetchImpl: down }), "queued");
+  const lines = readFileSync(qf, "utf8").trim().split("\n");
+  assert.deepEqual(lines.map((l) => JSON.parse(l).dedupe_key), ["old1", "old2", "n1"], "깨진 줄을 정리해 다시 쓴다");
+  /** @type {any[]} */
+  let sent = [];
+  /** @type {any} */
+  const ok = async (/** @type {string} */ _u, /** @type {any} */ init) => { sent = JSON.parse(init.body).events; return { ok: true, status: 200 }; };
+  assert.equal(await sendRunEvent(p, { dedupe_key: "n2" }, { target, fetchImpl: ok }), "sent");
+  assert.deepEqual(sent.map((e) => e.dedupe_key), ["old1", "old2", "n1", "n2"]);
+});
+
 test("송신 — 설정이 없으면 끔, 실패하면 대기열, 다음 성공 때 대기열까지 함께 보낸다", async () => {
   assert.equal(insightTarget({}), null);
   assert.equal(insightTarget({ HNIX_AX_SERVER: "ax.local", HNIX_AX_KEY: "hx-1" }), null, "http 주소가 아니면 끔");

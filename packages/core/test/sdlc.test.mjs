@@ -169,13 +169,30 @@ test("게이트 dev·test — 리뷰 STOP 은 STOP, 치명 보안 결함은 STOP
   assert.ok(t.recorded);
   const log = readFileSync(/** @type {string} */ (t.recorded), "utf8");
   assert.match(log, /\| 2026-10-25 10:00 \| 테스트 \| STOP \| 필수 0\/\d+ · 권고 0\/\d+ · /);
-  // 저장된 점검 리포트가 있으면 그것을 쓴다
+  // 저장된 점검 리포트(일부 경로만 점검했거나 오래된 것)는 믿지 않고 매번 새로 돈다(10/25 리뷰)
   mkdirSync(p.reportsDir, { recursive: true });
-  writeFileSync(join(p.reportsDir, "security_scan.json"), JSON.stringify({ bySeverity: { critical: 0, high: 0 } }));
-  const again = runGate(p, "test", { now: NOW, skipReview: true, scan: () => { throw new Error("부르면 안 됨"); } });
-  assert.match(again.checks.find((c) => c.id === "security:critical")?.detail ?? "", /0건 \(기존 리포트\)/);
+  writeFileSync(join(p.reportsDir, "security_scan.json"), JSON.stringify({ bySeverity: { critical: 0, high: 0 }, scope: ["src/ok"] }));
+  let calls = 0;
+  /** @type {any} */
+  const fresh = () => { calls += 1; return { bySeverity: { critical: 1, high: 0, medium: 0, low: 0 } }; };
+  const again = runGate(p, "test", { now: NOW, skipReview: true, scan: fresh });
+  assert.equal(calls, 1);
+  assert.match(again.checks.find((c) => c.id === "security:critical")?.detail ?? "", /1건 \(이번 실행\)/);
+  assert.equal(again.verdict, "STOP");
   assert.equal(listArtifacts(p).find((a) => a.kind === "progress")?.exists, true);
   assert.throws(() => runGate(p, "deploy"), /알 수 없는 단계/);
+});
+
+test("양식의 file: 은 docs/sdlc 안의 .md 파일 이름만 — 밖으로 쓰지 못한다(10/25 리뷰)", () => {
+  const p = project();
+  const dir = join(p.axnaviDir, "templates");
+  mkdirSync(dir, { recursive: true });
+  for (const bad of ["../../evil.md", "C:/x/evil.md", ".hidden.md", "evil.txt"]) {
+    writeFileSync(join(dir, "project.md"), `---\ntitle: 정의서\nphase: req\nfile: ${bad}\n---\n# 1. 개요\n`, "utf8");
+    assert.throws(() => loadTemplate("project", p, {}), /file 값이 올바르지 않습니다/, bad);
+  }
+  writeFileSync(join(dir, "project.md"), "---\ntitle: 정의서\nphase: req\nfile: 01-프로젝트정의서.md\n---\n# 1. 개요\n", "utf8");
+  assert.equal(loadTemplate("project", p, {}).meta.file, "01-프로젝트정의서.md");
 });
 
 test("CLI — doc new·adr new·gate 종료 코드(STOP 4)", () => {

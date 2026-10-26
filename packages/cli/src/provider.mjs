@@ -74,7 +74,7 @@ export function selectProvider(opts = {}) {
 
   // 대화형 모드는 --provider 를 받지 않으므로 환경변수로도 고를 수 있게 한다(조직 배포 스크립트에서 고정)
   const fromEnv = process.env["AXNAVI_PROVIDER"]?.trim();
-  const wanted = opts.provider && opts.provider !== "auto" ? opts.provider
+  const wanted = opts.provider ? opts.provider
     : fromEnv && PROVIDER_NAMES.includes(fromEnv) ? /** @type {ProviderName} */ (fromEnv) : "auto";
 
   if (wanted !== "auto") {

@@ -297,13 +297,20 @@ export function parseAllow(/** @type {string} */ text) {
   return { ids: (m[1] ?? "").split(/\s*,\s*/), reason: (m[2] ?? "").trim() || "사유 없음" };
 }
 
-/** 시크릿이 들어 있을 수 있는 줄은 따옴표 안을 가린다 */
-function redact(/** @type {string} */ text) {
+/** 시크릿 이름 뒤 따옴표 없는 값 — `db.password=abc`, `apiKey: abc` (.properties·YAML) */
+const SECRET_ASSIGN = /(\b[\w.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential)[\w.-]*\s*[:=]\s*)(?!["'])([^\s,;)]{2,})/gi;
+
+/** 시크릿이 들어 있을 수 있는 줄은 값을 가린다 — 앞 글자도 보이지 않게(리포트·CI 산출물·MR 노트로 퍼지므로) */
+export function redact(/** @type {string} */ text) {
   return text
-    .replace(/(["'])([^"']{3})[^"']*\1/g, "$1$2***$1")
+    .replace(/(["'])[^"'\n]+\1/g, "$1***$1")
     .replace(/-----BEGIN[^-]+-----.*/, "-----BEGIN … PRIVATE KEY----- (생략)")
     .replace(/\b(AKIA|ASIA)[0-9A-Z]{16}\b/g, "$1****************")
-    .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, "sk-***");
+    .replace(/\bAIza[0-9A-Za-z_-]{30,}/g, "AIza***")
+    .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}/g, "gh*_***")
+    .replace(/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "xox*-***")
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, "sk-***")
+    .replace(SECRET_ASSIGN, "$1***");
 }
 
 const COMMENT_LINE = /^\s*(\/\/|\/\*|\*|<!--|--\s|#(?!\{))/;

@@ -22,7 +22,11 @@ import { join } from "node:path";
  * @param {{ range?: string, staged?: boolean }} target
  */
 export function diffArgs(target) {
-  if (target.range) return [target.range];
+  if (target.range) {
+    // 범위는 git 에 위치 인자로 넘어간다 — '-' 로 시작하면 옵션(--output=… 등)으로 읽히므로 거절
+    if (/^-/.test(target.range) || /\s/.test(target.range)) throw new Error(`diff 범위가 올바르지 않습니다: ${target.range} (예: origin/main..HEAD)`);
+    return [target.range];
+  }
   if (target.staged) return ["--cached"];
   return ["HEAD"];
 }
@@ -93,14 +97,27 @@ export function parseUnifiedDiff(raw) {
   let cur = null;
   let oldLine = 0;
   let newLine = 0;
+  // 헝크(@@) 안에서는 '+'·'-' 로 시작하는 줄이 모두 내용이다 — '++ x'·'-- 주석' 줄을 머리글로 읽지 않게
+  let inHunk = false;
   for (const line of raw.split(/\r?\n/)) {
     if (line.startsWith("diff --git ")) {
       const m = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
       cur = { path: m?.[2] ?? "", oldPath: null, status: "modified", binary: false, added: [], removed: [] };
       files.push(cur);
+      inHunk = false;
       continue;
     }
     if (!cur) continue;
+    if (inHunk && line.startsWith("+")) {
+      cur.added.push({ line: newLine, text: line.slice(1) });
+      newLine += 1;
+      continue;
+    }
+    if (inHunk && line.startsWith("-")) {
+      cur.removed.push({ line: oldLine, text: line.slice(1) });
+      oldLine += 1;
+      continue;
+    }
     if (line.startsWith("new file mode")) cur.status = "added";
     else if (line.startsWith("deleted file mode")) cur.status = "deleted";
     else if (line.startsWith("rename from ")) {
@@ -117,6 +134,7 @@ export function parseUnifiedDiff(raw) {
       const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
       oldLine = Number(m?.[1] ?? 0);
       newLine = Number(m?.[2] ?? 0);
+      inHunk = true;
     } else if (line.startsWith("+")) {
       cur.added.push({ line: newLine, text: line.slice(1) });
       newLine += 1;

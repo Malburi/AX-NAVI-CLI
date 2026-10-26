@@ -106,8 +106,20 @@ export async function sendRunEvent(paths, event, opts = {}) {
   const queueFile = join(paths.logsDir, "insight-queue.jsonl");
   /** @type {object[]} */
   let queued = [];
+  // 깨진 줄(쓰다 끊긴 줄 등)은 그 줄만 버린다. 예전에는 하나만 깨져도 대기열 전체를 빈 것으로 읽어
+  // 상한이 풀리고 파일이 끝없이 커졌다(10/25 리뷰)
+  let corrupt = false;
   try {
-    if (existsSync(queueFile)) queued = readFileSync(queueFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    if (existsSync(queueFile)) {
+      for (const l of readFileSync(queueFile, "utf8").split("\n")) {
+        if (!l.trim()) continue;
+        try {
+          queued.push(JSON.parse(l));
+        } catch {
+          corrupt = true;
+        }
+      }
+    }
   } catch {
     queued = [];
   }
@@ -126,7 +138,7 @@ export async function sendRunEvent(paths, event, opts = {}) {
     try {
       mkdirSync(paths.logsDir, { recursive: true });
       // 대기열은 마지막 QUEUE_LIMIT 건만 — 서버가 오래 꺼져 있어도 디스크를 채우지 않게
-      if (queued.length >= QUEUE_LIMIT) writeFileSync(queueFile, batch.slice(-QUEUE_LIMIT).map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+      if (corrupt || queued.length >= QUEUE_LIMIT) writeFileSync(queueFile, batch.slice(-QUEUE_LIMIT).map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
       else appendFileSync(queueFile, `${JSON.stringify(event)}\n`, "utf8");
     } catch {
       /* 로그 폴더를 못 쓰면 버린다 — 실행 결과에는 영향 없음 */

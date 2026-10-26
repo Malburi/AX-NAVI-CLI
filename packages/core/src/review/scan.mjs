@@ -95,6 +95,8 @@ export function runSecurityScan(opts) {
   return {
     generatedAt: new Date().toISOString(),
     root: opts.root,
+    /** null = 저장소 전체, 배열 = 지정한 경로만 */
+    scope: opts.paths?.length ? opts.paths : null,
     scanned,
     skipped,
     bySeverity,

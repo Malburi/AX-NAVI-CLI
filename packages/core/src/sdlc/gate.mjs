@@ -7,7 +7,7 @@
  *
  * 종료 코드는 review 와 같다(GO 0 · HOLD 3 · STOP 4) — CI 에서 같은 방식으로 다룬다.
  */
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { EXIT, runReview, runSecurityScan } from "../review/index.mjs";
 import { listAdrs } from "./adr.mjs";
@@ -91,19 +91,10 @@ export function runGate(paths, phase, opts = {}) {
     }
 
     if (p === "test") {
-      const reportFile = join(paths.reportsDir, "security_scan.json");
-      let scan = null;
-      let from = "";
-      if (existsSync(reportFile)) {
-        try {
-          scan = JSON.parse(readFileSync(reportFile, "utf8"));
-          from = "기존 리포트";
-        } catch { /* 깨진 리포트면 새로 돈다 */ }
-      }
-      if (!scan) {
-        scan = (opts.scan ?? runSecurityScan)({ root: paths.root });
-        from = "이번 실행";
-      }
+      // 저장된 security_scan.json 은 믿지 않는다 — 일부 경로만 점검한 결과이거나 그 뒤에 코드가 바뀌었을 수 있다(10/25 리뷰).
+      // 전수 점검은 규칙 엔진만 돌아 수천 파일도 수 초면 끝난다.
+      const scan = (opts.scan ?? runSecurityScan)({ root: paths.root });
+      const from = "이번 실행";
       const b = scan.bySeverity ?? { critical: 0, high: 0 };
       add({ id: "security:critical", phase: p, title: "치명 보안 결함", level: "required", ok: b.critical === 0, detail: `${b.critical}건 (${from})` });
       add({ id: "security:high", phase: p, title: "높음 보안 결함", level: "recommended", ok: b.high === 0, detail: `${b.high}건 (${from})` });

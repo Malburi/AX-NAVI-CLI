@@ -13,6 +13,7 @@
  *   AXNAVI_OPENAI_API_KEY    게이트웨이 가상 키(llm 범위)        (선택 — 키 없는 로컬 서버)
  *   AXNAVI_OPENAI_MODEL      모든 등급에 같은 모델(별칭)
  *   AXNAVI_OPENAI_MODEL_FAST · _STANDARD · _DEEP   등급별 지정(위보다 우선)
+ *   AXNAVI_OPENAI_CONTEXT_TOKENS  모델 문맥 크기(기본 128000 — 작은 로컬 모델은 32768 등으로 낮춘다)
  */
 
 /** @typedef {import("@ax-navi/core").ProviderEvent} ProviderEvent */
@@ -29,7 +30,7 @@ const DEFAULT_MODEL_BY_TIER = { fast: "hnix-local", standard: "hnix-smart", deep
 const DEFAULT_MAX_TOKENS = 8_192;
 
 /**
- * @typedef {{ baseUrl: string, apiKey: string | null, models: Record<ModelTier, string> }} OpenAiConfig
+ * @typedef {{ baseUrl: string, apiKey: string | null, models: Record<ModelTier, string>, contextTokens?: number }} OpenAiConfig
  */
 
 /**
@@ -43,10 +44,12 @@ export function openAiConfig(env = process.env) {
   const all = env.AXNAVI_OPENAI_MODEL?.trim();
   const pick = (/** @type {ModelTier} */ tier) =>
     env[`AXNAVI_OPENAI_MODEL_${tier.toUpperCase()}`]?.trim() || all || DEFAULT_MODEL_BY_TIER[tier];
+  const ctx = Number(env.AXNAVI_OPENAI_CONTEXT_TOKENS?.trim());
   return {
     baseUrl,
     apiKey: env.AXNAVI_OPENAI_API_KEY?.trim() || null,
     models: { fast: pick("fast"), standard: pick("standard"), deep: pick("deep") },
+    ...(Number.isInteger(ctx) && ctx >= 2048 ? { contextTokens: ctx } : {}),
   };
 }
 
@@ -294,7 +297,7 @@ export class OpenAiCompatProvider {
       // 비용은 게이트웨이가 계량·집계한다. 여기서 추정치를 지어내지 않는다.
       reportsCost: false,
       resumable: false,
-      maxContextTokens: 128_000,
+      maxContextTokens: config.contextTokens ?? 128_000,
     };
     this.counter = 0;
   }

@@ -68,6 +68,11 @@ export function loadTemplate(kind, paths, env = process.env) {
     const file = [join(dir, `${kind}.md`), join(dir, `${kind}.md.template`)].find((f) => existsSync(f));
     if (!file) continue;
     const { meta, body } = parseFrontMatter(readFileSync(file, "utf8"));
+    // 조직 양식의 file: 로 docs/sdlc 밖(../, 절대 경로)에 쓰거나 덧붙이지 못하게 파일 이름만 받는다
+    if (meta.file && !/^[^\\/:*?"<>|]+\.md$/.test(meta.file)) {
+      throw new Error(`산출물 양식의 file 값이 올바르지 않습니다: ${meta.file} — docs/sdlc 안의 .md 파일 이름만 쓸 수 있습니다 (${file})`);
+    }
+    if (meta.file?.startsWith(".")) throw new Error(`산출물 양식의 file 값이 올바르지 않습니다: ${meta.file} (${file})`);
     return {
       meta: {
         kind,

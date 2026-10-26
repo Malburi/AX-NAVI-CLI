@@ -11,6 +11,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applyRules, parseUnifiedDiff, runReview, runSecurityScan, EXIT, renderMarkdown } from "../src/review/index.mjs";
+import { diffArgs } from "../src/review/diff.mjs";
+import { redact } from "../src/review/rules.mjs";
 
 const NL = String.fromCharCode(10);
 const git = (/** @type {string} */ cwd, /** @type {string[]} */ ...args) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -109,6 +111,42 @@ test("규칙 — SQL 결합·MyBatis ${}·시크릿은 즉시 STOP, 시크릿 �
   const xml = applyRules("order-sql.xml", [{ line: 7, text: "ORDER BY ${sortColumn}" }], { side: "added" });
   assert.equal(xml[0]?.rule, "SEC-SQLI-MYBATIS");
   assert.equal(xml[0]?.stop, true);
+});
+
+test("시크릿 가림 — 따옴표 안은 앞 글자도 없이, 따옴표 없는 설정값·Google·GitHub·Slack 키도(10/25 리뷰)", () => {
+  assert.equal(redact('String password = "Hd@2026secret!";'), 'String password = "***";');
+  assert.equal(redact("db.password=Hd2026secret"), "db.password=***");
+  assert.equal(redact("  apiKey: abcdef123456"), "  apiKey: ***");
+  const g = redact("google.maps.key AIzaSyA1234567890abcdefghijklmnopqrstuv");
+  assert.ok(!g.includes("SyA123"), g);
+  assert.ok(!redact("token ghp_abcdefghijklmnopqrstuvwxyz0123").includes("abcdefgh"));
+  assert.ok(!redact("SLACK=xoxb-1234567890-abcdefghij").includes("1234567890"));
+  // 시크릿 이름이 아닌 값은 그대로
+  assert.equal(redact("timeout=30"), "timeout=30");
+});
+
+test("diff 파싱 — 헝크 안의 '++ '·'-- ' 줄은 머리글이 아니라 내용이다(10/25 리뷰)", () => {
+  const raw = [
+    "diff --git a/a.sql b/a.sql",
+    "--- a/a.sql",
+    "+++ b/a.sql",
+    "@@ -1,2 +1,2 @@",
+    "--- 옛 주석",
+    "-SELECT 1;",
+    "+++ counter",
+    "+SELECT 2;",
+  ].join("\n");
+  const [f] = parseUnifiedDiff(raw);
+  assert.equal(f?.path, "a.sql", "파일 이름이 바뀌면 안 된다");
+  assert.deepEqual(f?.removed.map((l) => l.text), ["-- 옛 주석", "SELECT 1;"]);
+  assert.deepEqual(f?.added.map((l) => l.text), ["++ counter", "SELECT 2;"]);
+  assert.deepEqual(f?.added.map((l) => l.line), [1, 2]);
+});
+
+test("diff 범위 — '-' 로 시작하는 값은 git 옵션으로 넘기지 않는다(10/25 리뷰)", () => {
+  assert.deepEqual(diffArgs({ range: "origin/main..HEAD" }), ["origin/main..HEAD"]);
+  assert.throws(() => diffArgs({ range: "--output=/tmp/x" }), /diff 범위가 올바르지 않습니다/);
+  assert.throws(() => diffArgs({ range: "a b" }), /diff 범위가 올바르지 않습니다/);
 });
 
 test("규칙 — 자리표시자 값은 시크릿으로 보지 않고, axnavi:allow 는 사유와 함께 억제", () => {

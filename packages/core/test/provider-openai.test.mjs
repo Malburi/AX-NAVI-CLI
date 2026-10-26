@@ -63,6 +63,9 @@ test("설정 — 주소가 없으면 꺼짐, 등급별 모델은 개별 지정 >
   const c = openAiConfig({ AXNAVI_OPENAI_BASE_URL: "http://ax:8700/v1/", AXNAVI_OPENAI_MODEL: "qwen3", AXNAVI_OPENAI_MODEL_DEEP: "hnix-smart" });
   assert.deepEqual(c, { baseUrl: "http://ax:8700/v1", apiKey: null, models: { fast: "qwen3", standard: "qwen3", deep: "hnix-smart" } });
   assert.equal(openAiConfig({ AXNAVI_OPENAI_BASE_URL: "http://x/v1" })?.models.fast, "hnix-local");
+  // 작은 로컬 모델은 문맥 크기를 낮춘다(10/25 리뷰)
+  assert.equal(openAiConfig({ AXNAVI_OPENAI_BASE_URL: "http://x/v1", AXNAVI_OPENAI_CONTEXT_TOKENS: "32768" })?.contextTokens, 32768);
+  assert.equal(openAiConfig({ AXNAVI_OPENAI_BASE_URL: "http://x/v1", AXNAVI_OPENAI_CONTEXT_TOKENS: "abc" })?.contextTokens, undefined);
 });
 
 test("메시지 변환 — 도구 결과는 role tool 로 바로 뒤에, 오류는 표시를 붙인다", () => {
