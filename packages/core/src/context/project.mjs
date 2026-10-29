@@ -9,6 +9,7 @@
  * 대화의 첫머리에 붙는다. 그래서 **인덱스가 이미 계산해 둔 사실**만 담는다 —
  * 파일을 훑어 요약하는 일은 하지 않는다. 그건 에이전트가 도구로 할 일이다.
  */
+import { orgRulesText } from "../config/org.mjs";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -88,7 +89,7 @@ export function buildProjectContext({ paths, includeClaudeMd = true, roots = [] 
     }
     lines.push("한 저장소만 보고 답하지 마라. 질문이 어느 쪽인지 모르면 양쪽 다 질의한다.");
     lines.push("</프로젝트>");
-    return lines.join(NEWLINE);
+    return withOrgRules(lines.join(NEWLINE));
   }
 
   const facts = indexFacts(paths.indexDir);
@@ -120,7 +121,13 @@ export function buildProjectContext({ paths, includeClaudeMd = true, roots = [] 
   }
 
   lines.push("</프로젝트>");
-  return lines.join("\n");
+  return withOrgRules(lines.join("\n"));
+}
+
+/** 조직(플랫폼 배포본) 규칙을 프로젝트 블록 뒤에 붙인다 @param {string} text */
+function withOrgRules(text) {
+  const rules = orgRulesText();
+  return rules ? `${text}\n\n${rules}` : text;
 }
 
 /**

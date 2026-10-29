@@ -13,6 +13,7 @@
  *   저장소 정책   .axnavi/policy.json — 허용 경로를 더 좁히기만 한다(넓히지 못한다).
  * 정책 파일이 있는데 읽지 못하면 실행하지 않는다 — 정책을 조용히 건너뛰면 기밀 저장소가 외부로 나갈 수 있다.
  */
+import { orgPolicyPath } from "../../core/src/config/org.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -47,7 +48,11 @@ export function loadAuthPolicy(opts = {}) {
   const env = opts.env ?? process.env;
   /** @type {AuthPolicy} */
   const policy = { allowedRoutes: [...AUTH_ROUTES], preferred: null, gateway: null, message: null, sources: [] };
+  /** @type {{ path: string, machine: boolean, org?: boolean }[]} */
   const files = [{ path: machinePolicyPath(env, opts.platform), machine: true }];
+  // 조직 배포본(플랫폼) — PC 공용 정책 다음, 저장소 정책 앞
+  const org = orgPolicyPath(env);
+  if (org) files.push({ path: org, machine: false, org: true });
   if (opts.root) files.push({ path: join(opts.root, ".axnavi", "policy.json"), machine: false });
   for (const f of files) {
     if (!existsSync(f.path)) continue;
@@ -62,8 +67,8 @@ export function loadAuthPolicy(opts = {}) {
     if (bad) return { error: `정책 파일이 올바르지 않아 실행하지 않습니다 — ${f.path}: ${bad}` };
     if (raw.allowedRoutes) policy.allowedRoutes = policy.allowedRoutes.filter((r) => raw.allowedRoutes.includes(r));
     // 선호·게이트웨이 주소는 PC 공용 정책만 정한다. 저장소 파일은 좁히기만 한다.
-    if (f.machine && raw.preferred) policy.preferred = raw.preferred;
-    if (f.machine && raw.gateway) policy.gateway = { ...(raw.gateway.baseUrl ? { baseUrl: raw.gateway.baseUrl } : {}), ...(raw.gateway.model ? { model: raw.gateway.model } : {}) };
+    if ((f.machine || (f.org && !policy.preferred)) && raw.preferred) policy.preferred = raw.preferred;
+    if ((f.machine || (f.org && !policy.gateway)) && raw.gateway) policy.gateway = { ...(raw.gateway.baseUrl ? { baseUrl: raw.gateway.baseUrl } : {}), ...(raw.gateway.model ? { model: raw.gateway.model } : {}) };
     if (raw.message) policy.message = policy.message ? `${policy.message} / ${raw.message}` : raw.message;
     policy.sources.push(f.path);
   }

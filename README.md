@@ -561,6 +561,12 @@ axnavi skill run <이름> <요청>   스킬 실행
 - 환경변수가 없거나 설정이 틀린 서버는 그 서버만 빼고 이유를 알립니다. `axnavi doctor` 에서도 보입니다.
 - 위임 경로(구독·claude CLI·Agent SDK)에 적용됩니다. API 키 직접 경로(anthropic)는 아직 외부 MCP 를 쓰지 않습니다.
 
+**조직 설정 받기** — 플랫폼 관리자가 "AX-NAVI 조직 설정"에서 배포한 묶음(규칙·SDLC 양식·MCP 서버·인증 정책, IDE 스킬)을 받습니다. `HNIX_AX_SERVER`·`HNIX_AX_KEY` 가 있으면 대화·에이전트를 시작할 때 10분 간격으로 자동으로 받고, 직접은 `axnavi org pull`, 상태는 `axnavi org status`.
+
+- `~/.axnavi/org/`(`AXNAVI_ORG_DIR`)에 깔립니다. 규칙은 에이전트 지침의 `<조직 규칙>`, 양식은 `AXNAVI_TEMPLATES_DIR` 다음 자리, `mcp.json` 서버는 허용 없이 쓰고(같은 이름의 저장소 설정보다 우선), `policy.json` 은 허용 경로를 좁히기만 합니다(선호·게이트웨이는 PC 공용 정책이 비워 둔 경우에만).
+- AX-NAVI IDE 용으로 규칙은 `~/.roo/rules/axnavi-org-*.md`, 스킬은 `~/.roo/skills/<이름>/` 에도 놓습니다(`AXNAVI_ORG_IDE=0` 이면 안 함). 다음 배포본에서 빠진 것은 지우고, 직접 만든 규칙·스킬은 건드리지 않습니다.
+- 서버에 닿지 않으면 지난 배포본을 그대로 쓰고 실행을 막지 않습니다. 자동 받기를 끄려면 `AXNAVI_ORG_AUTO=0`.
+
 **조직 사용 현황(Insight)으로 보내기** — `HNIX_AX_SERVER`(예: `http://ax.hd.local:8700`)와 `HNIX_AX_KEY`(**ingest** 권한 키)를 설정하면 실행마다 요약(에이전트·소요 시간·결과·작업번호·세션 ID)을 보냅니다. 설정하지 않으면 아무것도 보내지 않습니다.
 
 - 토큰·비용은 API 키 직접 경로일 때만 싣습니다. 구독·위임 경로는 Claude Code 세션 로그에 같은 호출이 남고 플랫폼 수집기(`hnix-ax collect`)가 집계하므로, 여기서 또 보내면 두 번 셉니다.

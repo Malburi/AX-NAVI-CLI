@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { inspectProject, resolveProjectPaths } from "../../core/src/index.mjs";
 import { cmdAdr, cmdAgent, cmdDoc, cmdDoctor, cmdGate, cmdIndex, cmdInit, cmdMcp, cmdReview, cmdScan, cmdSkill } from "./commands.mjs";
 import { cmdKeys } from "./keys.mjs";
+import { autoPullOrg, cmdOrg } from "./org.mjs";
 import { executeAgent } from "./execute.mjs";
 import { startRepl } from "./repl.mjs";
 import { cmdUpgrade } from "./commands.mjs";
@@ -56,6 +57,8 @@ ${ui.bold("사용법")}
       [--diff A..B] [--staged] [--skip-review] [--record] [--format md|json] [--out <파일>]
 
   axnavi mcp [list|trust|untrust]  저장소 .axnavi/mcp.json 확인·허용 (허용 전에는 쓰지 않음)
+  axnavi org [pull|status]        조직 설정(플랫폼 배포본) 받기·상태 — 규칙·양식·MCP·정책, IDE 규칙·스킬
+                                  (HNIX_AX_SERVER·HNIX_AX_KEY 가 있으면 시작할 때 10분 간격으로 자동)
 
   axnavi agent list               에이전트 목록
   axnavi agent run <이름> <요청>   에이전트 직접 실행
@@ -147,6 +150,9 @@ async function main() {
 
   const [command, ...rest] = args.rest;
 
+  // 조직 설정은 대화·에이전트 실행 전에만 자동으로 받는다(리뷰·게이트·인덱스는 결정론적이어야 해서 건드리지 않는다)
+  if (!command || command === "ask" || command === "agent" || command === "skill") await autoPullOrg();
+
   if (!command) {
     const paths = resolveProjectPaths(args.root);
     return startRepl(paths, inspectProject(paths), VERSION, {
@@ -202,6 +208,8 @@ async function main() {
         ...(args.out ? { out: args.out } : {}),
         ...(args.indexDir ? { indexDir: args.indexDir } : {}),
       });
+    case "org":
+      return cmdOrg(rest[0] ?? "status", { version: VERSION });
     case "mcp":
       return cmdMcp(args.root, rest[0] ?? "list", { ...(args.yes ? { yes: true } : {}) });
     case "agent":

@@ -16,6 +16,7 @@
  * 신뢰 확인도 건너뛴다(10/25 리뷰 높음). 그래서 사용자가 내용을 보고 `axnavi mcp trust` 로 허용한
  * 파일만 쓴다. 허용은 파일 경로 + 내용 해시로 기억하고(~/.axnavi/trusted-mcp.json), 내용이 바뀌면 다시 묻는다.
  */
+import { orgMcpPath } from "./org.mjs";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -27,7 +28,7 @@ const NAME = /^[A-Za-z0-9_-]{1,40}$/;
 
 /**
  * @typedef {{ type?: "stdio" | "http" | "sse", command?: string, args?: string[], env?: Record<string, string>, url?: string, headers?: Record<string, string> }} McpServerSpec
- * @typedef {{ servers: Record<string, McpServerSpec>, warnings: string[], file: string, exists: boolean, trusted: boolean }} UserMcp
+ * @typedef {{ servers: Record<string, McpServerSpec>, warnings: string[], file: string, exists: boolean, trusted: boolean, orgServers?: string[] }} UserMcp
  */
 
 /** 신뢰 기록 위치 — 저장소 밖(사용자 홈)이라 받은 저장소가 스스로 신뢰를 심을 수 없다 */
@@ -120,11 +121,25 @@ function expand(value, env, missing) {
  * @returns {UserMcp}
  */
 export function loadUserMcpServers(paths, env = process.env) {
-  // .axnavi 위치를 모르는 호출(일부 시험·임시 경로)은 사용자 서버 없이 돈다
-  if (!paths?.axnaviDir) return { servers: {}, warnings: [], file: "", exists: false, trusted: false };
+  // 조직 배포본(플랫폼 관리자가 배포 — axnavi org pull)의 서버는 따로 허용하지 않아도 쓴다
+  /** @type {Record<string, McpServerSpec>} */
+  const orgServers = {};
+  /** @type {string[]} */
+  const orgWarnings = [];
+  const orgFile = orgMcpPath(env);
+  if (orgFile) {
+    try {
+      addServers(JSON.parse(readFileSync(orgFile, "utf8")), env, orgServers, orgWarnings, "조직 ");
+    } catch (error) {
+      orgWarnings.push(`${orgFile} 를 읽지 못했습니다: ${/** @type {Error} */ (error).message}`);
+    }
+  }
+  const base = { servers: { ...orgServers }, warnings: [...orgWarnings], orgServers: Object.keys(orgServers) };
+  // .axnavi 위치를 모르는 호출(일부 시험·임시 경로)은 저장소 서버 없이 돈다
+  if (!paths?.axnaviDir) return { ...base, file: "", exists: false, trusted: false };
   const file = join(paths.axnaviDir, "mcp.json");
   /** @type {UserMcp} */
-  const out = { servers: {}, warnings: [], file, exists: existsSync(file), trusted: false };
+  const out = { ...base, file, exists: existsSync(file), trusted: false };
   if (!out.exists) return out;
   // 신뢰 기록은 실제 프로세스 환경에서 찾는다 — env 인자는 ${변수} 치환용이다
   if (!isMcpTrusted(file)) {
@@ -140,13 +155,31 @@ export function loadUserMcpServers(paths, env = process.env) {
     out.warnings.push(`${file} 를 읽지 못했습니다(JSON 형식 오류): ${/** @type {Error} */ (error).message}`);
     return out;
   }
+  /** @type {Record<string, McpServerSpec>} */
+  const mine = {};
+  addServers(raw, env, mine, out.warnings, "");
+  for (const [name, spec] of Object.entries(mine)) {
+    if (name in orgServers) {
+      out.warnings.push(`'${name}' 은 조직 배포본에 같은 이름이 있어 저장소 설정을 쓰지 않습니다.`);
+      continue;
+    }
+    out.servers[name] = spec;
+  }
+  return out;
+}
+
+/**
+ * mcpServers 를 검사·치환해 out 에 넣는다.
+ * @param {any} raw @param {NodeJS.ProcessEnv} env @param {Record<string, McpServerSpec>} out @param {string[]} warnings @param {string} label
+ */
+function addServers(raw, env, out, warnings, label) {
   for (const [name, spec] of Object.entries(raw?.mcpServers ?? {})) {
     if (!NAME.test(name)) {
-      out.warnings.push(`MCP 서버 이름이 올바르지 않아 뺐습니다: ${name} (영문·숫자·_- 40자 이내)`);
+      warnings.push(`${label}MCP 서버 이름이 올바르지 않아 뺐습니다: ${name} (영문·숫자·_- 40자 이내)`);
       continue;
     }
     if (RESERVED.has(name)) {
-      out.warnings.push(`'${name}' 은 AX-NAVI 내장 서버 이름이라 쓸 수 없습니다 — 다른 이름으로 바꾸세요.`);
+      warnings.push(`'${name}' 은 AX-NAVI 내장 서버 이름이라 쓸 수 없습니다 — 다른 이름으로 바꾸세요.`);
       continue;
     }
     const s = /** @type {McpServerSpec} */ (spec);
@@ -154,15 +187,14 @@ export function loadUserMcpServers(paths, env = process.env) {
     // 주소에 ${HNIX_AX_SERVER} 를 쓰는 경우가 있어 치환한 뒤에 검사한다
     const expanded = /** @type {McpServerSpec} */ (expand(s, env, missing));
     if (missing.size) {
-      out.warnings.push(`MCP 서버 '${name}' 는 환경변수 ${[...missing].join(", ")} 가 없어 이번 실행에서 뺐습니다.`);
+      warnings.push(`${label}MCP 서버 '${name}' 는 환경변수 ${[...missing].join(", ")} 가 없어 이번 실행에서 뺐습니다.`);
       continue;
     }
     const isHttp = expanded.type === "http" || expanded.type === "sse" || (!expanded.command && typeof expanded.url === "string");
     if (isHttp ? !/^https?:\/\//.test(String(expanded.url ?? "")) : !expanded.command) {
-      out.warnings.push(`MCP 서버 '${name}' 설정이 불완전합니다 — http 는 url, stdio 는 command 가 필요합니다.`);
+      warnings.push(`${label}MCP 서버 '${name}' 설정이 불완전합니다 — http 는 url, stdio 는 command 가 필요합니다.`);
       continue;
     }
-    out.servers[name] = isHttp ? { ...expanded, type: expanded.type ?? "http" } : expanded;
+    out[name] = isHttp ? { ...expanded, type: expanded.type ?? "http" } : expanded;
   }
-  return out;
 }

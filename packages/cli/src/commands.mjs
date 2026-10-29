@@ -25,6 +25,7 @@ import {
   resolveSkill,
   resolveProjectPaths,
   loadUserMcpServers,
+  readOrgState,
   isMcpTrusted,
   trustMcpFile,
   untrustMcpFile,
@@ -219,6 +220,8 @@ export async function cmdDoctor(root) {
   if ("policy" in policy && policy.policy.sources.length) {
     rows.push([true, "조직 정책", `허용 ${policy.policy.allowedRoutes.map((r) => ROUTE_LABEL[r]).join(", ")}${policy.policy.preferred ? ` · 우선 ${ROUTE_LABEL[policy.policy.preferred]}` : ""} — ${policy.policy.sources.join(", ")}`]);
   }
+  const org = readOrgState();
+  rows.push(org.hash ? [true, "조직 설정", `${org.profiles.map((x) => `${x.name} v${x.version}`).join(", ") || "해당 묶음 없음"} · 받은 시각 ${org.fetchedAt ?? "-"}`] : ["warn", "조직 설정", "받은 배포본 없음 — HNIX_AX_SERVER·HNIX_AX_KEY 설정 후 axnavi org pull"]);
   const login = "error" in picked ? null : loginState(/** @type {any} */ (picked.provider).id);
   if (login) rows.push([login.ok, "로그인", login.detail]);
 

@@ -4,11 +4,13 @@
  * 양식은 앞에서부터 먼저 찾은 것을 쓴다(조직 양식 주입 경로).
  *   1. <프로젝트>/.axnavi/templates/<kind>.md   — 프로젝트 전용
  *   2. $AXNAVI_TEMPLATES_DIR/<kind>.md         — 조직 공용(공유 폴더에 HNIX 표준 양식을 둔다)
+ *   2'. ~/.axnavi/org/templates/<kind>.md     — 플랫폼이 배포한 조직 양식(axnavi org pull)
  *   3. agents/lib/sdlc/<kind>.md.template      — 내장 기본
  *
  * 양식 머리말(--- ... ---)의 required 에 적힌 절이 "작성 필수"다. 완성도는 LLM 없이 판정한다:
  * 그 절에서 주석·빈 줄·양식에 원래 있던 줄을 빼고도 남는 내용이 있으면 작성된 것으로 본다.
  */
+import { orgTemplatesDir } from "../config/org.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,6 +37,8 @@ export function templateDirs(paths, env = process.env) {
   /** @type {{ dir: string, label: string }[]} */
   const dirs = [{ dir: join(paths.axnaviDir, "templates"), label: "프로젝트" }];
   if (env.AXNAVI_TEMPLATES_DIR) dirs.push({ dir: env.AXNAVI_TEMPLATES_DIR, label: "조직" });
+  const org = orgTemplatesDir(env);
+  if (org) dirs.push({ dir: org, label: "조직 배포본" });
   dirs.push({ dir: BUILTIN_DIR, label: "내장" });
   return dirs;
 }
