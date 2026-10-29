@@ -1,6 +1,7 @@
 /* AX-NAVI Core 공개 표면. LLM Provider 구현은 여기서 import하지 않는다 — 방향은 언제나 provider → core. */
 export { resolveProjectPaths, inspectProject, isWithin } from "./config/paths.mjs";
 export { discoverRoots } from "./config/roots.mjs";
+export { runModernize, renderModernizeMarkdown, RECIPES as MODERNIZE_RECIPES } from "./modernize/index.mjs";
 export { orgDir, readOrgState, installOrgBundle, orgRulesText, orgPolicyPath, orgMcpPath, orgTemplatesDir, isOrgPath } from "./config/org.mjs";
 export { loadUserMcpServers, isMcpTrusted, trustMcpFile, untrustMcpFile, describeMcpFile, trustStorePath } from "./config/user-mcp.mjs";
 export { toTier, DEFAULT_TIER } from "./llm/tier.mjs";

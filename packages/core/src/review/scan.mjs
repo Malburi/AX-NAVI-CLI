@@ -15,7 +15,7 @@ import { applyRules, severityRank } from "./rules.mjs";
 
 const SKIP_DIRS = new Set([".git", "node_modules", "_workspace", ".axnavi", ".claude", "target", "build", "dist", "out", "bin", "obj", ".gradle", ".idea", ".vscode", "vendor", "__pycache__", ".venv", "venv", "coverage"]);
 const MAX_FILE = 1024 * 1024;
-const TEXT_EXT = /\.(java|kt|kts|scala|groovy|cs|vb|py|go|rb|php|[cm]?[jt]sx?|vue|jsp|jspf|xml|sql|ddl|properties|ya?ml|json|env|conf|config|ini|xfdl|xjs|pc|pkb|pks|prc|fnc|trg|html?)$/i;
+const TEXT_EXT = /\.(java|kt|kts|gradle|scala|groovy|cs|vb|py|go|rb|php|[cm]?[jt]sx?|vue|jsp|jspf|xml|sql|ddl|properties|ya?ml|json|env|conf|config|ini|xfdl|xjs|pc|pkb|pks|prc|fnc|trg|html?)$/i;
 /** 압축된 번들·외부 라이브러리 — 우리 코드가 아니라 점검 대상이 아니다 */
 const VENDOR_FILE = /\.min\.(js|css)$|(^|\/)(jquery|bootstrap|lodash|vis-network|moment)[^/]*\.js$/i;
 

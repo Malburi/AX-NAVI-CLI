@@ -26,6 +26,9 @@ import {
   resolveProjectPaths,
   loadUserMcpServers,
   readOrgState,
+  runModernize,
+  renderModernizeMarkdown,
+  MODERNIZE_RECIPES,
   isMcpTrusted,
   trustMcpFile,
   untrustMcpFile,
@@ -496,6 +499,37 @@ export async function cmdScan(root, opts) {
     if (result.findings.some((f) => order.indexOf(f.severity) >= at)) return 1;
   }
   return 0;
+}
+
+/* ---------- 현대화 레시피 ---------- */
+
+/**
+ * @param {string} root
+ * @param {{ recipe: string, paths?: string[], apply?: boolean, force?: boolean, verify?: string, format?: string, out?: string }} opts
+ */
+export async function cmdModernize(root, opts) {
+  if (!opts.recipe || !(opts.recipe in MODERNIZE_RECIPES)) {
+    process.stderr.write(`사용법: axnavi modernize <${Object.keys(MODERNIZE_RECIPES).join("|")}> [경로...] [--apply] [--verify "<명령>"]\n`);
+    return 2;
+  }
+  const paths = resolveProjectPaths(root);
+  const r = runModernize({ root: paths.root, recipe: opts.recipe, ...(opts.paths?.length ? { paths: opts.paths } : {}), apply: Boolean(opts.apply), force: Boolean(opts.force), verify: opts.verify ?? null });
+  const body = opts.format === "json" ? `${JSON.stringify(r, null, 2)}\n` : renderModernizeMarkdown(r);
+  const out = opts.out ? resolve(opts.out) : join(paths.reportsDir, `modernize_${opts.recipe}.${opts.format === "json" ? "json" : "md"}`);
+  await mkdir(dirname(out), { recursive: true });
+  await writeFile(out, body, "utf8");
+  if (opts.format === "json") process.stdout.write(body);
+  else {
+    const color = r.verdict === "GO" ? ui.green : r.verdict === "HOLD" ? ui.yellow : ui.red;
+    process.stdout.write(
+      `${ui.bold(`현대화 — ${r.title}`)}  ${color(r.verdict)}\n` +
+        `  파일 ${r.scanned}개 · 자동 ${r.auto}건(파일 ${r.filesToChange}개)${r.applied ? ` → ${r.applied}개 고침` : opts.apply ? "" : " — --apply 로 고침"} · 수동 ${r.manual}건\n` +
+        (r.blocked.length ? `  ${ui.red("커밋하지 않은 변경이 있어 고치지 않음")}: ${r.blocked.slice(0, 5).join(", ")} (먼저 커밋하거나 --force)\n` : "") +
+        (r.verification ? `  검증 ${r.verification.ok ? ui.green("통과") : ui.red("실패")}: ${r.verification.command}\n` : "") +
+        ui.dim(`  ${out}\n`),
+    );
+  }
+  return r.exitCode;
 }
 
 /* ---------- SDLC 산출물 · ADR · 단계 게이트 ---------- */

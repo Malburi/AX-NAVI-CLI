@@ -512,6 +512,13 @@ axnavi skill run <이름> <요청>   스킬 실행
 - 의도된 사용이면 그 줄이나 바로 윗줄에 `axnavi:allow <규칙ID> <사유>` 를 적어 억제합니다. 억제한 항목도 사유와 함께 리포트에 남습니다.
 - GitLab 머지 요청 템플릿: [`docs/ci/gitlab-axnavi-review.yml`](docs/ci/gitlab-axnavi-review.yml) — HOLD 는 경고, STOP 은 차단.
 
+**현대화 레시피** — `axnavi modernize <java17|java21|jakarta|oracle-pg> [경로...] [--apply] [--force] [--verify "<명령>"]`. AI 없이 규칙으로 자동(기계적 치환)·수동(안내)을 나눕니다(`packages/core/src/modernize/`).
+
+- java17/21: 빌드 대상 1.8 → 17/21, 박싱 생성자 → valueOf(자동) · BASE64·javax.xml.bind·Nashorn·finalize·Thread.stop·SecurityManager·내부 API(수동)
+- jakarta: EE 패키지 javax → jakarta, 배치 서술자 네임스페이스(자동) · 의존성 좌표(수동). JDK 에 남은 javax(crypto·sql·transaction.xa·annotation.processing …)는 그대로
+- oracle-pg: NVL·SYSDATE·FROM DUAL·NEXTVAL·MINUS·DDL 타입(자동) · ROWNUM·DECODE·(+)·CONNECT BY·MERGE·전용 함수·힌트·TO_DATE(수동). 매퍼 XML·SQL 파일·자바 문자열 SQL 만
+- UTF-8 이 아닌 파일(EUC-KR)은 바이트를 보존하고 한글 없는 줄만 고칩니다. `--apply` 는 고칠 파일이 git 에서 깨끗할 때만. 종료 코드 0/3/4 — 검증 실패 STOP, 수동 남음 HOLD
+
 **SDLC 산출물 · 단계 게이트** — 요구 → 설계 → 개발 → 테스트. 산출물 양식과 게이트 판정은 AI 를 부르지 않습니다. 서술은 사람이 쓰거나 `sdlc-docs` 스킬("설계서 써줘")이 근거를 붙여 채웁니다.
 
 | 단계 | 산출물 (`docs/sdlc/`) | 게이트가 보는 것 |

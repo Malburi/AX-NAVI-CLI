@@ -7,7 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import { inspectProject, resolveProjectPaths } from "../../core/src/index.mjs";
-import { cmdAdr, cmdAgent, cmdDoc, cmdDoctor, cmdGate, cmdIndex, cmdInit, cmdMcp, cmdReview, cmdScan, cmdSkill } from "./commands.mjs";
+import { cmdAdr, cmdAgent, cmdDoc, cmdDoctor, cmdGate, cmdIndex, cmdInit, cmdMcp, cmdModernize, cmdReview, cmdScan, cmdSkill } from "./commands.mjs";
 import { cmdKeys } from "./keys.mjs";
 import { autoPullOrg, cmdOrg } from "./org.mjs";
 import { executeAgent } from "./execute.mjs";
@@ -53,6 +53,8 @@ ${ui.bold("사용법")}
   axnavi doc list                 산출물 현황 (필수 절 작성·승인 상태)
   axnavi adr new "<제목>"          아키텍처 결정 기록 (docs/adr/NNNN-제목.md) [--status 제안|채택|폐기|대체됨]
   axnavi adr list                 ADR 목록
+  axnavi modernize <레시피> [경로...]  현대화 레시피 — java17 · java21 · jakarta · oracle-pg (LLM 불필요, 종료 코드 0/3/4)
+      [--apply] [--force] [--verify "<빌드·테스트 명령>"] [--format md|json] [--out <파일>]
   axnavi gate <req|design|dev|test>  단계 게이트 GO/HOLD/STOP (LLM 불필요, 종료 코드 0/3/4)
       [--diff A..B] [--staged] [--skip-review] [--record] [--format md|json] [--out <파일>]
 
@@ -86,7 +88,7 @@ ${ui.bold("환경변수")}
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, continueLatest?: boolean, resumeId?: string, help?: boolean, version?: boolean, diff?: string, staged?: boolean, format?: string, out?: string, verify?: string, testsPassed?: boolean, failOn?: string, force?: boolean, record?: boolean, yes?: boolean, skipReview?: boolean, status?: string, rest: string[] }} */
+  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, continueLatest?: boolean, resumeId?: string, help?: boolean, version?: boolean, diff?: string, staged?: boolean, format?: string, out?: string, verify?: string, testsPassed?: boolean, failOn?: string, force?: boolean, record?: boolean, yes?: boolean, skipReview?: boolean, status?: string, apply?: boolean, rest: string[] }} */
   const out = { root: process.cwd(), rest: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -121,6 +123,7 @@ function parseArgs(argv) {
     else if (arg === "--record") out.record = true;
     else if (arg === "--yes" || arg === "-y") out.yes = true;
     else if (arg === "--skip-review") out.skipReview = true;
+    else if (arg === "--apply") out.apply = true;
     else if (arg === "--status") out.status = argv[++i];
     else if (arg === "-h" || arg === "--help") out.help = true;
     else if (arg === "-v" || arg === "--version") out.version = true;
@@ -207,6 +210,16 @@ async function main() {
         ...(args.format ? { format: args.format } : {}),
         ...(args.out ? { out: args.out } : {}),
         ...(args.indexDir ? { indexDir: args.indexDir } : {}),
+      });
+    case "modernize":
+      return cmdModernize(args.root, {
+        recipe: rest[0] ?? "",
+        paths: rest.slice(1),
+        ...(args.apply ? { apply: true } : {}),
+        ...(args.force ? { force: true } : {}),
+        ...(args.verify ? { verify: args.verify } : {}),
+        ...(args.format ? { format: args.format } : {}),
+        ...(args.out ? { out: args.out } : {}),
       });
     case "org":
       return cmdOrg(rest[0] ?? "status", { version: VERSION });
