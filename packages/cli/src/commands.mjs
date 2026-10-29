@@ -5,7 +5,7 @@
  * 의존성을 하나 줄이는 값이 프레임워크의 편의보다 크다 — 배포 대상이 폐쇄망이다.
  */
 import { mkdir, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -27,6 +27,14 @@ import {
   loadUserMcpServers,
   readOrgState,
   runModernize,
+  runCoverage,
+  renderCoverageMarkdown,
+  planFromSpec,
+  savePlan,
+  planPath,
+  scaffold,
+  updateStatus,
+  renderPlanMarkdown,
   renderModernizeMarkdown,
   MODERNIZE_RECIPES,
   isMcpTrusted,
@@ -499,6 +507,103 @@ export async function cmdScan(root, opts) {
     if (result.findings.some((f) => order.indexOf(f.severity) >= at)) return 1;
   }
   return 0;
+}
+
+/* ---------- 테스트 계획 · 커버리지 ---------- */
+
+/**
+ * @param {string} root @param {string} sub
+ * @param {{ sr?: string, spec?: string, framework?: string, junit?: string, out?: string, format?: string }} opts
+ */
+export async function cmdTest(root, sub, opts) {
+  const paths = resolveProjectPaths(root);
+  const load = (/** @type {string} */ sr) => {
+    const f = planPath(paths.workspaceDir, sr);
+    if (!existsSync(f)) throw new Error(`${sr} 테스트 계획이 없습니다 — axnavi test plan --spec <PMS-X 구현 명세.json>`);
+    return { file: f, plan: JSON.parse(readFileSync(f, "utf8")) };
+  };
+  try {
+    if (sub === "plan") {
+      if (!opts.spec) {
+        process.stderr.write("사용법: axnavi test plan --spec <PMS-X 구현 명세.json> [--framework junit5|vitest]\n");
+        return 2;
+      }
+      if (opts.framework && opts.framework !== "junit5" && opts.framework !== "vitest") throw new Error("--framework 는 junit5 또는 vitest 입니다.");
+      const plan = planFromSpec(JSON.parse(readFileSync(resolve(opts.spec), "utf8")), opts.framework ? { framework: /** @type {"junit5" | "vitest"} */ (opts.framework) } : {});
+      const f = planPath(paths.workspaceDir, plan.sr);
+      savePlan(f, plan);
+      process.stdout.write(`${ui.bold(`테스트 계획 — ${plan.sr} ${plan.title}`)}\n  케이스 ${plan.cases.length}개 · ${plan.framework}${plan.packageName ? ` · ${plan.packageName}` : ""}\n${ui.dim(`  ${f}`)}\n  다음: axnavi test scaffold ${plan.sr}\n`);
+      return 0;
+    }
+    if (sub === "scaffold") {
+      if (!opts.sr) {
+        process.stderr.write("사용법: axnavi test scaffold <SR 번호> [--out <파일>]\n");
+        return 2;
+      }
+      const { file, plan } = load(opts.sr);
+      const r = scaffold(paths.root, plan, opts.out ? { out: opts.out } : {});
+      savePlan(file, plan);
+      process.stdout.write(`${r.created ? "만들었습니다" : r.added.length ? "케이스를 덧붙였습니다" : "바뀐 것 없음"} — ${r.file}${r.added.length ? ` (${r.added.join(", ")})` : ""}\n  다음: 본문을 채우고(@Disabled 제거) 테스트를 돌린 뒤 axnavi test status ${plan.sr}\n`);
+      return 0;
+    }
+    if (sub === "status") {
+      const dir = join(paths.workspaceDir, "tests");
+      const srs = opts.sr ? [opts.sr] : existsSync(dir) ? readdirSync(dir).filter((n) => n.endsWith(".plan.json")).map((n) => JSON.parse(readFileSync(join(dir, n), "utf8")).sr) : [];
+      if (!srs.length) {
+        process.stdout.write(`${ui.dim("테스트 계획이 없습니다 — axnavi test plan --spec <명세.json>")}\n`);
+        return 0;
+      }
+      let worst = 0;
+      for (const sr of srs) {
+        const { file, plan } = load(sr);
+        const r = updateStatus(paths.root, plan, opts.junit ? { junitDirs: [opts.junit] } : {});
+        savePlan(file, r.plan);
+        worst = Math.max(worst, r.exitCode);
+        if (opts.format === "json") process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
+        else {
+          const md = renderPlanMarkdown(r);
+          const out = join(paths.reportsDir, `tests_${sr.replace(/[^A-Za-z0-9]/g, "_")}.md`);
+          await mkdir(dirname(out), { recursive: true });
+          await writeFile(out, md, "utf8");
+          const color = r.verdict === "GO" ? ui.green : r.verdict === "HOLD" ? ui.yellow : ui.red;
+          process.stdout.write(`${ui.bold(`${plan.sr}`)} ${color(r.verdict)}  통과 ${r.summary.passing}/${r.summary.total} · 실패 ${r.summary.failing} · 남음 ${r.summary.todo}${r.summary.matched ? "" : ui.dim(" (테스트 결과를 못 찾음 — 테스트를 돌렸는지, --junit 폴더)")}\n${ui.dim(`  ${out}`)}\n`);
+        }
+      }
+      return worst;
+    }
+    process.stderr.write("사용법: axnavi test <plan|scaffold|status>\n");
+    return 2;
+  } catch (error) {
+    process.stderr.write(`${ui.red(/** @type {Error} */ (error).message)}\n`);
+    return 1;
+  }
+}
+
+/**
+ * @param {string} root
+ * @param {{ jacoco?: string, lcov?: string, range?: string, staged?: boolean, min?: number, format?: string, out?: string }} opts
+ */
+export async function cmdCoverage(root, opts) {
+  const paths = resolveProjectPaths(root);
+  /** @type {{ kind: "jacoco" | "lcov", path: string }[]} */
+  const reports = [...(opts.jacoco ? [{ kind: /** @type {const} */ ("jacoco"), path: resolve(opts.jacoco) }] : []), ...(opts.lcov ? [{ kind: /** @type {const} */ ("lcov"), path: resolve(opts.lcov) }] : [])];
+  let r;
+  try {
+    r = runCoverage({ root: paths.root, reports, diff: opts.range || opts.staged ? { ...(opts.range ? { range: opts.range } : {}), ...(opts.staged ? { staged: true } : {}) } : null, ...(opts.min !== undefined ? { min: opts.min } : {}) });
+  } catch (error) {
+    process.stderr.write(`${ui.red(/** @type {Error} */ (error).message)}\n`);
+    return 1;
+  }
+  const body = opts.format === "json" ? `${JSON.stringify(r, null, 2)}\n` : renderCoverageMarkdown(r);
+  const out = opts.out ? resolve(opts.out) : join(paths.reportsDir, opts.format === "json" ? "coverage_gate.json" : "coverage_gate.md");
+  await mkdir(dirname(out), { recursive: true });
+  await writeFile(out, body, "utf8");
+  if (opts.format === "json") process.stdout.write(body);
+  else {
+    const pct = (/** @type {number | null} */ v) => (v === null ? "—" : `${Math.round(v * 1000) / 10}%`);
+    process.stdout.write(`${ui.bold("커버리지")}  ${r.verdict === "GO" ? ui.green("GO") : ui.yellow("HOLD")}\n  전체 ${pct(r.total.rate)} (${r.total.covered}/${r.total.lines})${r.diff ? ` · 바뀐 줄 ${pct(r.diff.rate)} (${r.diff.covered}/${r.diff.lines})` : ""}${r.min !== null ? ` · 기준 ${r.min}%` : ""}\n${ui.dim(`  ${out}`)}\n`);
+  }
+  return r.exitCode;
 }
 
 /* ---------- 현대화 레시피 ---------- */

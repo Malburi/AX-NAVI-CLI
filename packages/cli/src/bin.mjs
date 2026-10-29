@@ -7,7 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import { inspectProject, resolveProjectPaths } from "../../core/src/index.mjs";
-import { cmdAdr, cmdAgent, cmdDoc, cmdDoctor, cmdGate, cmdIndex, cmdInit, cmdMcp, cmdModernize, cmdReview, cmdScan, cmdSkill } from "./commands.mjs";
+import { cmdAdr, cmdAgent, cmdDoc, cmdDoctor, cmdGate, cmdIndex, cmdInit, cmdMcp, cmdModernize, cmdReview, cmdTest, cmdCoverage, cmdScan, cmdSkill } from "./commands.mjs";
 import { cmdKeys } from "./keys.mjs";
 import { autoPullOrg, cmdOrg } from "./org.mjs";
 import { executeAgent } from "./execute.mjs";
@@ -55,6 +55,11 @@ ${ui.bold("사용법")}
   axnavi adr list                 ADR 목록
   axnavi modernize <레시피> [경로...]  현대화 레시피 — java17 · java21 · jakarta · oracle-pg (LLM 불필요, 종료 코드 0/3/4)
       [--apply] [--force] [--verify "<빌드·테스트 명령>"] [--format md|json] [--out <파일>]
+  axnavi test plan --spec <명세.json> [--framework junit5|vitest]   PMS-X 구현 명세 → SR 테스트 계획
+  axnavi test scaffold <SR> [--out <파일>]  테스트 골격(케이스마다 @Disabled/it.todo — 있는 파일엔 없는 케이스만)
+  axnavi test status [SR] [--junit <폴더>]  테스트 결과로 진행 상태(작성 필요·실패·통과, 종료 코드 0/3/4)
+  axnavi coverage [--jacoco <xml>] [--lcov <info>] [--diff A..B|--staged] [--min <%>]
+                                  커버리지 — 전체와 바뀐 줄, 기준 미달이면 HOLD(3)
   axnavi gate <req|design|dev|test>  단계 게이트 GO/HOLD/STOP (LLM 불필요, 종료 코드 0/3/4)
       [--diff A..B] [--staged] [--skip-review] [--record] [--format md|json] [--out <파일>]
 
@@ -88,7 +93,7 @@ ${ui.bold("환경변수")}
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, continueLatest?: boolean, resumeId?: string, help?: boolean, version?: boolean, diff?: string, staged?: boolean, format?: string, out?: string, verify?: string, testsPassed?: boolean, failOn?: string, force?: boolean, record?: boolean, yes?: boolean, skipReview?: boolean, status?: string, apply?: boolean, rest: string[] }} */
+  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, continueLatest?: boolean, resumeId?: string, help?: boolean, version?: boolean, diff?: string, staged?: boolean, format?: string, out?: string, verify?: string, testsPassed?: boolean, failOn?: string, force?: boolean, record?: boolean, yes?: boolean, skipReview?: boolean, status?: string, apply?: boolean, spec?: string, framework?: string, junit?: string, jacoco?: string, lcov?: string, min?: number, rest: string[] }} */
   const out = { root: process.cwd(), rest: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -124,6 +129,16 @@ function parseArgs(argv) {
     else if (arg === "--yes" || arg === "-y") out.yes = true;
     else if (arg === "--skip-review") out.skipReview = true;
     else if (arg === "--apply") out.apply = true;
+    else if (arg === "--spec") out.spec = argv[++i];
+    else if (arg === "--framework") out.framework = argv[++i];
+    else if (arg === "--junit") out.junit = argv[++i];
+    else if (arg === "--jacoco") out.jacoco = argv[++i];
+    else if (arg === "--lcov") out.lcov = argv[++i];
+    else if (arg === "--min") {
+      const v = Number(argv[++i]);
+      if (!(v >= 0 && v <= 100)) throw new Error("--min 은 0~100 입니다.");
+      out.min = v;
+    }
     else if (arg === "--status") out.status = argv[++i];
     else if (arg === "-h" || arg === "--help") out.help = true;
     else if (arg === "-v" || arg === "--version") out.version = true;
@@ -210,6 +225,25 @@ async function main() {
         ...(args.format ? { format: args.format } : {}),
         ...(args.out ? { out: args.out } : {}),
         ...(args.indexDir ? { indexDir: args.indexDir } : {}),
+      });
+    case "test":
+      return cmdTest(args.root, rest[0] ?? "status", {
+        ...(rest[1] ? { sr: rest[1] } : {}),
+        ...(args.spec ? { spec: args.spec } : {}),
+        ...(args.framework ? { framework: args.framework } : {}),
+        ...(args.junit ? { junit: args.junit } : {}),
+        ...(args.out ? { out: args.out } : {}),
+        ...(args.format ? { format: args.format } : {}),
+      });
+    case "coverage":
+      return cmdCoverage(args.root, {
+        ...(args.jacoco ? { jacoco: args.jacoco } : {}),
+        ...(args.lcov ? { lcov: args.lcov } : {}),
+        ...(args.diff ? { range: args.diff } : {}),
+        ...(args.staged ? { staged: true } : {}),
+        ...(args.min !== undefined ? { min: args.min } : {}),
+        ...(args.format ? { format: args.format } : {}),
+        ...(args.out ? { out: args.out } : {}),
       });
     case "modernize":
       return cmdModernize(args.root, {

@@ -512,6 +512,12 @@ axnavi skill run <이름> <요청>   스킬 실행
 - 의도된 사용이면 그 줄이나 바로 윗줄에 `axnavi:allow <규칙ID> <사유>` 를 적어 억제합니다. 억제한 항목도 사유와 함께 리포트에 남습니다.
 - GitLab 머지 요청 템플릿: [`docs/ci/gitlab-axnavi-review.yml`](docs/ci/gitlab-axnavi-review.yml) — HOLD 는 경고, STOP 은 차단.
 
+**테스트 계획 · 커버리지** — AI 없이(`packages/core/src/testing/`).
+
+- `axnavi test plan --spec <PMS-X 구현 명세.json>` → `_workspace/tests/<SR>.plan.json`. `test scaffold <SR>` → JUnit 5(서버 소스 패키지에 `SR_0012Test`) 또는 Vitest 골격, 케이스마다 `@DisplayName("TC01 …")` + `@Disabled("작성 필요")`(it.todo). 다시 만들면 없는 케이스만 덧붙임
+- `axnavi test status [SR] [--junit <폴더>]` — surefire·Gradle·Vitest JUnit XML 로 케이스별 작성 필요·실패·통과, 종료 코드 0/3/4
+- `axnavi coverage [--jacoco] [--lcov] [--diff A..B|--staged] [--min %]` — 전체와 바뀐 줄 커버리지, 닿지 않은 줄 번호, 기준 미달 HOLD
+
 **현대화 레시피** — `axnavi modernize <java17|java21|jakarta|oracle-pg> [경로...] [--apply] [--force] [--verify "<명령>"]`. AI 없이 규칙으로 자동(기계적 치환)·수동(안내)을 나눕니다(`packages/core/src/modernize/`).
 
 - java17/21: 빌드 대상 1.8 → 17/21, 박싱 생성자 → valueOf(자동) · BASE64·javax.xml.bind·Nashorn·finalize·Thread.stop·SecurityManager·내부 API(수동)
