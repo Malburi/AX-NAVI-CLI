@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildProjectContext, installOrgBundle, loadUserMcpServers, orgRulesText, readOrgState, resolveProjectPaths } from "../src/index.mjs";
+import { buildProjectContext, installOrgBundle, loadUserMcpServers, mergeIdeModes, orgRulesText, readOrgState, resolveProjectPaths } from "../src/index.mjs";
 import { templateDirs } from "../src/sdlc/templates.mjs";
 import { loadAuthPolicy } from "../../cli/src/auth-policy.mjs";
 import { pullOrg } from "../../cli/src/org.mjs";
@@ -113,4 +113,48 @@ test("받기 — 꺼져 있으면 아무것도 안 하고, 304 면 그대로, 40
   const up = await pullOrg({ env, fetchFn: fake(200, { hash: "h3", profiles: [{ name: "team-a", version: 1 }], files: { "templates/srs.md": "x" } }) });
   assert.ok(up.status === "updated" && up.written === 1);
   assert.equal(readOrgState().hash, "h3");
+});
+
+test("IDE 사용자 정의 모드 — 사용자 모드는 두고, 지난번 조직 모드는 표시가 없어져도 slug 로 갈아 끼운다", () => {
+  const mode = { slug: "sr-fixer", name: "SR 처리", roleDefinition: "운영 개발자", groups: ["read", ["edit", { fileRegex: "\.java$" }]] };
+  // 빈 파일 → 표시 구간 안에 한 줄 JSON 으로
+  const a = mergeIdeModes(null, [mode], []);
+  assert.ok(!("error" in a));
+  if ("error" in a) return;
+  assert.match(a.text, /^customModes:\n {2}# axnavi-org:begin/);
+  assert.ok(a.text.includes(`  - ${JSON.stringify(mode)}`));
+  // 사용자 모드가 있는 IDE 형식 파일 — 들여쓰기 0 목록도 맞춘다
+  const user = "customModes:\n- slug: my-mode\n  name: 내 모드\n  roleDefinition: |-\n    여러 줄\n    역할\n  groups:\n  - read\n";
+  const b = mergeIdeModes(user, [mode], []);
+  assert.ok(!("error" in b) && b.installed[0] === "sr-fixer");
+  if ("error" in b) return;
+  assert.ok(b.text.includes(`- ${JSON.stringify(mode)}`) && b.text.includes("- slug: my-mode") && b.text.includes("    역할"));
+  // IDE 가 파일을 다시 써서 표시가 사라진 뒤 — 지난번 slug 로 찾아 지우고 새로
+  const rewritten = `customModes:\n  - slug: sr-fixer\n    name: 옛 이름\n    roleDefinition: 옛\n    groups:\n      - read\n  - slug: my-mode\n    name: 내 모드\n    roleDefinition: x\n    groups: []\n`;
+  const c = mergeIdeModes(rewritten, [{ ...mode, name: "SR 처리 v2" }], ["sr-fixer"]);
+  assert.ok(!("error" in c));
+  if ("error" in c) return;
+  assert.ok(!c.text.includes("옛 이름") && c.text.includes("SR 처리 v2") && c.text.includes("- slug: my-mode"));
+  // 사용자가 같은 slug 로 만든 모드는 덮지 않는다
+  const d = mergeIdeModes("customModes:\n  - slug: sr-fixer\n    name: 내가 만든\n    roleDefinition: x\n    groups: []\n", [mode], []);
+  assert.ok(!("error" in d) && d.kept[0] === "sr-fixer" && d.text.includes("내가 만든"));
+  // 조직 모드를 다 빼면 빈 목록으로
+  const e = mergeIdeModes(a.text, [], ["sr-fixer"]);
+  assert.ok(!("error" in e) && e.text === "customModes: []\n");
+  // 알아볼 수 없는 파일은 손대지 않는다
+  assert.ok("error" in mergeIdeModes("modes:\n  - x\n", [mode], []));
+});
+
+test("IDE 모드 배포 — 묶음의 modes/ 를 IDE 파일에 넣고, 빠지면 거둔다", () => {
+  const mode = { slug: "sr-fixer", name: "SR 처리", roleDefinition: "운영 개발자", groups: ["read"] };
+  const file = join(home, "roo", "custom_modes.yaml");
+  writeFileSync(file, "customModes:\n  - slug: my-mode\n    name: 내 모드\n    roleDefinition: x\n    groups: []\n");
+  const r = installOrgBundle({ hash: "m1", profiles: [], files: { "modes/sr-fixer.json": JSON.stringify(mode), "modes/broken.json": "{" } });
+  assert.equal(r.ideModes, 1);
+  assert.ok(r.modeNotes.some((n) => n.includes("broken")));
+  assert.ok(readFileSync(file, "utf8").includes('"slug":"sr-fixer"'));
+  assert.deepEqual(readOrgState().ideModes, ["sr-fixer"]);
+  installOrgBundle({ hash: "m2", profiles: [], files: {} });
+  const after = readFileSync(file, "utf8");
+  assert.ok(!after.includes("sr-fixer") && after.includes("my-mode"));
 });

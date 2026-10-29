@@ -8,18 +8,20 @@
  *   templates/    SDLC 양식 — 프로젝트 > AXNAVI_TEMPLATES_DIR > 조직 배포본 > 내장
  *   rules/        코딩 규칙 — 에이전트 지침의 <조직 규칙> 블록, IDE 전역 규칙(~/.roo/rules/axnavi-org-*.md)
  *   skills/       IDE 스킬(~/.roo/skills/<이름>) — CLI 스킬은 에이전트 묶음이라 아직 배포 대상이 아니다
+ *   modes/        IDE 사용자 정의 모드(<slug>.json) — IDE 전역 custom_modes.yaml 에 넣는다(ide-modes.mjs)
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, sep } from "node:path";
+import { installIdeModes } from "./ide-modes.mjs";
 
-const PATH_RE = /^(policy\.json|mcp\.json|templates\/[a-z0-9-]{1,40}\.md|rules\/[A-Za-z0-9가-힣_-]{1,60}\.md|skills\/[a-z0-9][a-z0-9-]{0,63}\/[A-Za-z0-9._-]{1,80}(\/[A-Za-z0-9._-]{1,80}){0,3})$/;
+const PATH_RE = /^(policy\.json|mcp\.json|templates\/[a-z0-9-]{1,40}\.md|rules\/[A-Za-z0-9가-힣_-]{1,60}\.md|skills\/[a-z0-9][a-z0-9-]{0,63}\/[A-Za-z0-9._-]{1,80}(\/[A-Za-z0-9._-]{1,80}){0,3}|modes\/[a-z0-9][a-z0-9-]{0,47}\.json)$/;
 const RULES_LIMIT = 24_000;
 const IDE_RULE_PREFIX = "axnavi-org-";
 
 /**
  * @typedef {{ hash: string, profiles: { name: string, version: number }[], files: Record<string, string> }} OrgBundle
- * @typedef {{ hash: string | null, profiles: { name: string, version: number }[], files: string[], ideRules: string[], ideSkills: string[], fetchedAt: string | null, server: string | null }} OrgState
+ * @typedef {{ hash: string | null, profiles: { name: string, version: number }[], files: string[], ideRules: string[], ideSkills: string[], ideModes: string[], fetchedAt: string | null, server: string | null }} OrgState
  */
 
 /** @param {NodeJS.ProcessEnv} [env] */
@@ -36,7 +38,7 @@ export function ideRooDir(env = process.env) {
 
 /** @param {NodeJS.ProcessEnv} [env] @returns {OrgState} */
 export function readOrgState(env = process.env) {
-  const empty = { hash: null, profiles: [], files: [], ideRules: [], ideSkills: [], fetchedAt: null, server: null };
+  const empty = { hash: null, profiles: [], files: [], ideRules: [], ideSkills: [], ideModes: [], fetchedAt: null, server: null };
   try {
     return { ...empty, ...JSON.parse(readFileSync(join(orgDir(env), ".state.json"), "utf8")) };
   } catch {
@@ -58,7 +60,7 @@ function under(base, rel) {
  * 배포본을 ~/.axnavi/org 에 깔고, IDE 전역 폴더에 규칙·스킬을 놓는다.
  * 지난번에 깔았던 것 중 이번에 없는 것은 지운다 — 우리가 깐 것만(목록은 .state.json).
  * @param {OrgBundle} bundle @param {{ env?: NodeJS.ProcessEnv, server?: string | null, now?: Date }} [opts]
- * @returns {{ written: number, removed: number, ideRules: number, ideSkills: number, skipped: string[] }}
+ * @returns {{ written: number, removed: number, ideRules: number, ideSkills: number, ideModes: number, modeNotes: string[], skipped: string[] }}
  */
 export function installOrgBundle(bundle, opts = {}) {
   const env = opts.env ?? process.env;
@@ -110,10 +112,23 @@ export function installOrgBundle(bundle, opts = {}) {
       }
     }
   }
+  // IDE 사용자 정의 모드 — 전역 custom_modes.yaml 에(사용자가 만든 같은 slug 가 있으면 그쪽을 둔다)
+  /** @type {string[]} */
+  let ideModes = prev.ideModes ?? [];
+  /** @type {string[]} */
+  const modeNotes = [];
+  const modeFiles = files.filter(([p]) => p.startsWith("modes/")).map(([p, body]) => ({ slug: p.slice("modes/".length, -".json".length), body }));
+  if (modeFiles.length || ideModes.length) {
+    const m = installIdeModes(modeFiles, ideModes, env);
+    if (m.error) modeNotes.push(m.error);
+    else if (m.file) ideModes = m.installed;
+    if (m.kept.length) modeNotes.push(`같은 이름의 사용자 모드가 있어 조직 모드를 넣지 않음: ${m.kept.join(", ")}`);
+    if (m.invalid.length) modeNotes.push(`형식이 맞지 않는 모드: ${m.invalid.join(", ")}`);
+  }
   /** @type {OrgState} */
-  const state = { hash: bundle.hash ?? null, profiles: bundle.profiles ?? [], files: [...now], ideRules, ideSkills, fetchedAt: (opts.now ?? new Date()).toISOString(), server: opts.server ?? null };
+  const state = { hash: bundle.hash ?? null, profiles: bundle.profiles ?? [], files: [...now], ideRules, ideSkills, ideModes, fetchedAt: (opts.now ?? new Date()).toISOString(), server: opts.server ?? null };
   writeFileSync(join(dir, ".state.json"), JSON.stringify(state, null, 2), "utf8");
-  return { written: files.length, removed, ideRules: ideRules.length, ideSkills: ideSkills.length, skipped };
+  return { written: files.length, removed, ideRules: ideRules.length, ideSkills: ideSkills.length, ideModes: ideModes.length, modeNotes, skipped };
 }
 
 /** 받은 시각만 새로 적는다(304 — 바뀐 것 없음) @param {NodeJS.ProcessEnv} [env] @param {Date} [now] */

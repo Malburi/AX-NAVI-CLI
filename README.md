@@ -517,12 +517,15 @@ axnavi skill run <이름> <요청>   스킬 실행
 - `axnavi test plan --spec <PMS-X 구현 명세.json>` → `_workspace/tests/<SR>.plan.json`. `test scaffold <SR>` → JUnit 5(서버 소스 패키지에 `SR_0012Test`) 또는 Vitest 골격, 케이스마다 `@DisplayName("TC01 …")` + `@Disabled("작성 필요")`(it.todo). 다시 만들면 없는 케이스만 덧붙임
 - `axnavi test status [SR] [--junit <폴더>]` — surefire·Gradle·Vitest JUnit XML 로 케이스별 작성 필요·실패·통과, 종료 코드 0/3/4
 - `axnavi coverage [--jacoco] [--lcov] [--diff A..B|--staged] [--min %]` — 전체와 바뀐 줄 커버리지, 닿지 않은 줄 번호, 기준 미달 HOLD
+- GitLab 머지 요청 템플릿: [`docs/ci/gitlab-axnavi-quality.yml`](docs/ci/gitlab-axnavi-quality.yml) — 빌드·테스트 → 테스트 계획 진행(`test status`) → 바뀐 줄 커버리지 게이트, 현대화 점검(수동 실행)
 
-**현대화 레시피** — `axnavi modernize <java17|java21|jakarta|oracle-pg> [경로...] [--apply] [--force] [--verify "<명령>"]`. AI 없이 규칙으로 자동(기계적 치환)·수동(안내)을 나눕니다(`packages/core/src/modernize/`).
+**현대화 레시피** — `axnavi modernize <java17|java21|jakarta|boot3|oracle-pg> [경로...] [--apply] [--force] [--verify "<명령>"]`. AI 없이 규칙으로 자동(기계적 치환)·수동(안내)을 나눕니다(`packages/core/src/modernize/`). 남은 수동 SQL 은 `--draft` 로 AI 초안을 받습니다.
 
 - java17/21: 빌드 대상 1.8 → 17/21, 박싱 생성자 → valueOf(자동) · BASE64·javax.xml.bind·Nashorn·finalize·Thread.stop·SecurityManager·내부 API(수동)
 - jakarta: EE 패키지 javax → jakarta, 배치 서술자 네임스페이스(자동) · 의존성 좌표(수동). JDK 에 남은 javax(crypto·sql·transaction.xa·annotation.processing …)는 그대로
-- oracle-pg: NVL·SYSDATE·FROM DUAL·NEXTVAL·MINUS·DDL 타입(자동) · ROWNUM·DECODE·(+)·CONNECT BY·MERGE·전용 함수·힌트·TO_DATE(수동). 매퍼 XML·SQL 파일·자바 문자열 SQL 만
+- boot3: Spring Boot 부모·플러그인 버전(`--boot 3.5.x`, 기본 3.5.0)·dependency-management 1.1.7, javax 의존성 좌표 → jakarta(Maven 블록·Gradle 문자열), 이름이 바뀐 설정 키(properties), Hibernate 버전별 방언 → 공통 방언(자동) · WebSecurityConfigurerAdapter·antMatchers·authorizeRequests·spring.factories·@Type·YAML 키(수동). jakarta 레시피를 함께 돈다
+- oracle-pg: NVL·SYSDATE·FROM DUAL·NEXTVAL·MINUS·DDL 타입, 한 줄에서 닫히는 DECODE → CASE·NVL2 → CASE·INSTR(두 인자) → strpos(자동) · 여러 줄 DECODE·ROWNUM·(+)·CONNECT BY·MERGE·전용 함수·힌트·TO_DATE(수동). 매퍼 XML·SQL 파일·자바 문자열 SQL 만. DECODE 는 찾는 값에 NULL·컬럼·바인드가 있으면 `IS NULL`·`IS NOT DISTINCT FROM` 으로 바꿔 NULL = NULL 뜻을 지킨다
+- `--draft [--draft-limit N]`(oracle-pg): 수동으로 남은 ROWNUM·(+)·CONNECT BY·MERGE·여러 줄 DECODE 를 문장 단위(매퍼는 `<select id>` 요소, SQL 파일은 `;` 사이, 자바는 문자열 묶음)로 잘라 AI 초안과 확인할 점을 `modernize_oracle-pg_drafts.md` 에 남깁니다. 소스는 고치지 않습니다. HNIX AX 게이트웨이(`AXNAVI_OPENAI_BASE_URL`)가 먼저, 없으면 본인 claude CLI(조직 정책이 구독을 허용할 때)
 - UTF-8 이 아닌 파일(EUC-KR)은 바이트를 보존하고 한글 없는 줄만 고칩니다. `--apply` 는 고칠 파일이 git 에서 깨끗할 때만. 종료 코드 0/3/4 — 검증 실패 STOP, 수동 남음 HOLD
 
 **SDLC 산출물 · 단계 게이트** — 요구 → 설계 → 개발 → 테스트. 산출물 양식과 게이트 판정은 AI 를 부르지 않습니다. 서술은 사람이 쓰거나 `sdlc-docs` 스킬("설계서 써줘")이 근거를 붙여 채웁니다.
@@ -578,6 +581,7 @@ axnavi skill run <이름> <요청>   스킬 실행
 
 - `~/.axnavi/org/`(`AXNAVI_ORG_DIR`)에 깔립니다. 규칙은 에이전트 지침의 `<조직 규칙>`, 양식은 `AXNAVI_TEMPLATES_DIR` 다음 자리, `mcp.json` 서버는 허용 없이 쓰고(같은 이름의 저장소 설정보다 우선), `policy.json` 은 허용 경로를 좁히기만 합니다(선호·게이트웨이는 PC 공용 정책이 비워 둔 경우에만).
 - AX-NAVI IDE 용으로 규칙은 `~/.roo/rules/axnavi-org-*.md`, 스킬은 `~/.roo/skills/<이름>/` 에도 놓습니다(`AXNAVI_ORG_IDE=0` 이면 안 함). 다음 배포본에서 빠진 것은 지우고, 직접 만든 규칙·스킬은 건드리지 않습니다.
+- 사용자 정의 모드(`modes/<slug>.json`)는 IDE 전역 `custom_modes.yaml`(`%APPDATA%\AX-NAVI IDE\User\globalStorage\hnix.axnavi\settings\`, `AXNAVI_IDE_MODES_FILE` 로 바꿈)에 표시 주석과 함께 넣습니다. 사용자가 같은 이름으로 만든 모드가 있으면 그쪽을 두고, IDE 가 파일을 다시 써 표시가 없어져도 지난번에 넣은 이름으로 찾아 갈아 끼웁니다.
 - 서버에 닿지 않으면 지난 배포본을 그대로 쓰고 실행을 막지 않습니다. 자동 받기를 끄려면 `AXNAVI_ORG_AUTO=0`.
 
 **조직 사용 현황(Insight)으로 보내기** — `HNIX_AX_SERVER`(예: `http://ax.hd.local:8700`)와 `HNIX_AX_KEY`(**ingest** 권한 키)를 설정하면 실행마다 요약(에이전트·소요 시간·결과·작업번호·세션 ID)을 보냅니다. 설정하지 않으면 아무것도 보내지 않습니다.

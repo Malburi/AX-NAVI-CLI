@@ -15,7 +15,7 @@ const AUTO_EVERY_MS = 10 * 60_000;
 
 /**
  * @param {{ env?: NodeJS.ProcessEnv, timeoutMs?: number, fetchFn?: typeof fetch, version?: string }} [opts]
- * @returns {Promise<{ status: "off" } | { status: "same", hash: string } | { status: "updated", hash: string, profiles: { name: string, version: number }[], written: number, removed: number, ideRules: number, ideSkills: number, skipped: string[] } | { status: "error", message: string }>}
+ * @returns {Promise<{ status: "off" } | { status: "same", hash: string } | { status: "updated", hash: string, profiles: { name: string, version: number }[], written: number, removed: number, ideRules: number, ideSkills: number, ideModes: number, modeNotes: string[], skipped: string[] } | { status: "error", message: string }>}
  */
 export async function pullOrg(opts = {}) {
   const env = opts.env ?? process.env;
@@ -65,7 +65,8 @@ export async function cmdOrg(sub = "status", opts = {}) {
       process.stdout.write(`바뀐 것이 없습니다 (${r.hash.slice(0, 10)})\n`);
       return 0;
     }
-    process.stdout.write(`받았습니다 — ${r.profiles.map((p) => `${p.name} v${p.version}`).join(", ") || "해당 묶음 없음"} · 파일 ${r.written}개${r.removed ? ` · 지움 ${r.removed}` : ""}${r.ideRules || r.ideSkills ? ` · IDE 규칙 ${r.ideRules}·스킬 ${r.ideSkills}` : ""}\n`);
+    process.stdout.write(`받았습니다 — ${r.profiles.map((p) => `${p.name} v${p.version}`).join(", ") || "해당 묶음 없음"} · 파일 ${r.written}개${r.removed ? ` · 지움 ${r.removed}` : ""}${r.ideRules || r.ideSkills || r.ideModes ? ` · IDE 규칙 ${r.ideRules}·스킬 ${r.ideSkills}·모드 ${r.ideModes}` : ""}\n`);
+    for (const n of r.modeNotes) process.stdout.write(`  · IDE 모드: ${n}\n`);
     if (r.skipped.length) process.stdout.write(`${ui.yellow("넣을 수 없는 경로라 건너뜀")}: ${r.skipped.join(", ")}\n`);
     return 0;
   }
@@ -80,7 +81,7 @@ export async function cmdOrg(sub = "status", opts = {}) {
         `배포본 ${s.hash.slice(0, 10)} · ${s.server ?? ""} · 받은 시각 ${s.fetchedAt ?? "-"}`,
         `묶음: ${s.profiles.map((p) => `${p.name} v${p.version}`).join(", ") || "없음"}`,
         `파일: ${s.files.join(", ") || "없음"}`,
-        ...(s.ideRules.length || s.ideSkills.length ? [`IDE: 규칙 ${s.ideRules.join(", ") || "-"} · 스킬 ${s.ideSkills.join(", ") || "-"}`] : []),
+        ...(s.ideRules.length || s.ideSkills.length || s.ideModes.length ? [`IDE: 규칙 ${s.ideRules.join(", ") || "-"} · 스킬 ${s.ideSkills.join(", ") || "-"} · 모드 ${s.ideModes.join(", ") || "-"}`] : []),
       ].join("\n") + "\n",
     );
     return 0;

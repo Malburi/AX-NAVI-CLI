@@ -8,7 +8,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { pythonInfo } from "../../../agents/lib/python-bin.mjs";
 import {
   buildCoverageReport,
@@ -65,6 +65,8 @@ import { renderSkillHeader } from "./transcript.mjs";
 import { compareVersions, readVersion, resolveLatestTag, runUpgrade } from "./upgrade.mjs";
 import { insightTarget } from "./insight.mjs";
 import { openAiConfig } from "../../provider-openai/src/index.mjs";
+import { probeClaudeCli } from "../../provider-claude-cli/src/index.mjs";
+import { DRAFT_SYSTEM, collectDraftTargets, draftPrompt, parseDraft, renderDraftsMarkdown } from "../../core/src/modernize/drafts.mjs";
 
 const NEWLINE = String.fromCharCode(10);
 
@@ -610,7 +612,7 @@ export async function cmdCoverage(root, opts) {
 
 /**
  * @param {string} root
- * @param {{ recipe: string, paths?: string[], apply?: boolean, force?: boolean, verify?: string, format?: string, out?: string }} opts
+ * @param {{ recipe: string, paths?: string[], apply?: boolean, force?: boolean, verify?: string, format?: string, out?: string, draft?: boolean, draftLimit?: number, boot?: string }} opts
  */
 export async function cmdModernize(root, opts) {
   if (!opts.recipe || !(opts.recipe in MODERNIZE_RECIPES)) {
@@ -618,7 +620,7 @@ export async function cmdModernize(root, opts) {
     return 2;
   }
   const paths = resolveProjectPaths(root);
-  const r = runModernize({ root: paths.root, recipe: opts.recipe, ...(opts.paths?.length ? { paths: opts.paths } : {}), apply: Boolean(opts.apply), force: Boolean(opts.force), verify: opts.verify ?? null });
+  const r = runModernize({ root: paths.root, recipe: opts.recipe, ...(opts.paths?.length ? { paths: opts.paths } : {}), apply: Boolean(opts.apply), force: Boolean(opts.force), verify: opts.verify ?? null, ...(opts.boot ? { boot: opts.boot } : {}) });
   const body = opts.format === "json" ? `${JSON.stringify(r, null, 2)}\n` : renderModernizeMarkdown(r);
   const out = opts.out ? resolve(opts.out) : join(paths.reportsDir, `modernize_${opts.recipe}.${opts.format === "json" ? "json" : "md"}`);
   await mkdir(dirname(out), { recursive: true });
@@ -634,7 +636,76 @@ export async function cmdModernize(root, opts) {
         ui.dim(`  ${out}\n`),
     );
   }
+  if (opts.draft) {
+    if (opts.recipe !== "oracle-pg") process.stderr.write(ui.yellow("--draft 는 oracle-pg 레시피에서만 씁니다.\n"));
+    else await writeModernizeDrafts(r, paths, opts);
+  }
   return r.exitCode;
+}
+
+/**
+ * 수동 항목 문장마다 AI 초안 — 게이트웨이(OpenAI 호환, 사내 모델)가 먼저, 없으면 본인 claude CLI(조직 정책이 구독을 허용할 때).
+ * @param {ReturnType<typeof runModernize>} r @param {ReturnType<typeof resolveProjectPaths>} paths @param {{ draftLimit?: number, out?: string }} opts
+ */
+async function writeModernizeDrafts(r, paths, opts) {
+  const { targets, skipped } = collectDraftTargets(r, { limit: opts.draftLimit ?? 20 });
+  if (!targets.length) {
+    process.stdout.write(ui.dim("  AI 초안: 초안이 필요한 수동 문장이 없습니다.\n"));
+    return;
+  }
+  const asker = draftAsker(paths.root);
+  if (!asker) {
+    process.stderr.write(`${ui.yellow("AI 초안을 만들 경로가 없습니다")} — AXNAVI_OPENAI_BASE_URL(HNIX AX 게이트웨이)을 설정하거나 claude CLI 에 로그인하세요.\n`);
+    return;
+  }
+  /** @type {{ target: import("../../core/src/modernize/drafts.mjs").DraftTarget, code: string | null, notes: string[], error?: string }[]} */
+  const drafts = [];
+  for (const [i, t] of targets.entries()) {
+    process.stdout.write(ui.dim(`  AI 초안 ${i + 1}/${targets.length} ${t.file}:${t.start}\n`));
+    try {
+      drafts.push({ target: t, ...parseDraft(await asker.ask(draftPrompt(t))) });
+    } catch (e) {
+      drafts.push({ target: t, code: null, notes: [], error: /** @type {Error} */ (e).message.slice(0, 300) });
+    }
+  }
+  const out = opts.out ? resolve(opts.out).replace(/(\.\w+)?$/, "_drafts.md") : join(paths.reportsDir, `modernize_${r.recipe}_drafts.md`);
+  await writeFile(out, renderDraftsMarkdown(r, drafts, { via: asker.label, skipped }), "utf8");
+  process.stdout.write(`  AI 초안 ${drafts.filter((d) => d.code).length}/${drafts.length}건 (${asker.label})\n${ui.dim(`  ${out}\n`)}`);
+}
+
+/** @param {string} root @returns {{ label: string, ask: (prompt: string) => Promise<string> } | null} */
+function draftAsker(root) {
+  const oai = openAiConfig();
+  if (oai) {
+    return {
+      label: `게이트웨이 ${oai.baseUrl} · ${oai.models.standard}`,
+      ask: async (prompt) => {
+        const res = await fetch(`${oai.baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...(oai.apiKey ? { authorization: `Bearer ${oai.apiKey}` } : {}) },
+          body: JSON.stringify({ model: oai.models.standard, temperature: 0, messages: [{ role: "system", content: DRAFT_SYSTEM }, { role: "user", content: prompt }] }),
+          signal: AbortSignal.timeout(300_000),
+        });
+        if (!res.ok) throw new Error(`게이트웨이 ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        const j = /** @type {{ choices?: { message?: { content?: string } }[] }} */ (await res.json());
+        return j.choices?.[0]?.message?.content ?? "";
+      },
+    };
+  }
+  const policy = loadAuthPolicy({ root });
+  if ("policy" in policy && !policy.policy.allowedRoutes.includes("subscription")) return null;
+  const cli = probeClaudeCli();
+  if (!cli.ok || !cli.bin) return null;
+  const bin = cli.bin;
+  return {
+    label: `claude CLI ${cli.version ?? ""}`.trim(),
+    ask: async (prompt) => {
+      // 저장소 밖(임시 폴더)에서 — 초안만 받고 파일은 건드리지 않게
+      const r = spawnSync(bin, ["-p", "--output-format", "text"], { input: `${DRAFT_SYSTEM}\n\n${prompt}`, cwd: tmpdir(), encoding: "utf8", timeout: 300_000, maxBuffer: 16 * 1024 * 1024 });
+      if (r.status !== 0) throw new Error(`claude CLI 종료 코드 ${r.status}: ${(r.stderr || "").slice(0, 200)}`);
+      return r.stdout ?? "";
+    },
+  };
 }
 
 /* ---------- SDLC 산출물 · ADR · 단계 게이트 ---------- */

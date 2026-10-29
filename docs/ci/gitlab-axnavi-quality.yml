@@ -1,0 +1,103 @@
+# AX-NAVI 테스트·커버리지·현대화 게이트 — GitLab 머지 요청 파이프라인
+#
+# 사용법: 프로젝트 .gitlab-ci.yml 에서 include 한다. 변경 리뷰(gitlab-axnavi-review.yml)와 함께 쓴다.
+#   include:
+#     - local: docs/ci/gitlab-axnavi-review.yml
+#     - local: docs/ci/gitlab-axnavi-quality.yml
+#
+# 흐름
+#   build-test          빌드·테스트(JUnit XML·JaCoCo XML 을 남김) — 프로젝트에 맞게 명령만 바꾼다
+#   axnavi-test-status  SR 테스트 계획(axnavi test plan 으로 만든 _workspace/tests/*.plan.json — 저장소에 커밋) 대비 진행 — 작성 필요 HOLD·실패 STOP
+#   axnavi-coverage     바뀐 줄 커버리지 게이트 — 기준(AXNAVI_COVERAGE_MIN)보다 낮으면 HOLD
+#   axnavi-modernize    (선택·수동 실행) 현대화 레시피 점검 리포트 — 고치지 않고 남은 일만 센다
+#
+# 종료 코드: 0 GO · 3 HOLD(경고로 통과) · 4 STOP(실패). LLM·API 키·외부 네트워크를 쓰지 않는다.
+
+stages:
+  - test
+  - review
+
+variables:
+  AXNAVI_PACKAGE: "axnavi"
+  GIT_DEPTH: "0"
+  # 바뀐 줄 커버리지 기준(%) — 처음에는 낮게 두고 올린다
+  AXNAVI_COVERAGE_MIN: "60"
+  # 빌드 도구별 결과 위치
+  JUNIT_DIR: "target/surefire-reports"
+  JACOCO_XML: "target/site/jacoco/jacoco.xml"
+  # Gradle 이면: JUNIT_DIR: "build/test-results/test", JACOCO_XML: "build/reports/jacoco/test/jacocoTestReport.xml"
+
+build-test:
+  stage: test
+  image: maven:3.9-eclipse-temurin-17
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    # JaCoCo 플러그인(prepare-agent·report)이 pom 에 있어야 jacoco.xml 이 나온다
+    - mvn -q -B verify
+  artifacts:
+    when: always
+    reports:
+      junit: $JUNIT_DIR/*.xml
+    paths: [$JUNIT_DIR, $JACOCO_XML]
+    expire_in: 7 days
+
+.axnavi:
+  image: node:22-bookworm-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git > /dev/null
+    - npm install -g ${AXNAVI_TGZ:-$AXNAVI_PACKAGE} --no-audit --no-fund
+
+axnavi-test-status:
+  extends: .axnavi
+  stage: review
+  needs: ["build-test"]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      exists: ["_workspace/tests/*.plan.json"]
+  script:
+    - axnavi test status --junit "$JUNIT_DIR" || CODE=$?
+    - exit ${CODE:-0}
+  allow_failure:
+    exit_codes: [3]
+  artifacts:
+    when: always
+    paths: ["_workspace/reports/tests_*.md"]
+    expire_in: 30 days
+
+axnavi-coverage:
+  extends: .axnavi
+  stage: review
+  needs: ["build-test"]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - git fetch -q origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - axnavi coverage --jacoco "$JACOCO_XML" --diff "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD" --min "$AXNAVI_COVERAGE_MIN" --format md --out axnavi-coverage.md || CODE=$?
+    - cat axnavi-coverage.md
+    - exit ${CODE:-0}
+  allow_failure:
+    exit_codes: [3]
+  coverage: '/전체 (\d+(?:\.\d+)?)%/'
+  artifacts:
+    when: always
+    expose_as: "AX-NAVI coverage"
+    paths: [axnavi-coverage.md]
+    expire_in: 30 days
+
+# 현대화 점검(선택) — 파이프라인 화면에서 직접 실행. 레시피는 AXNAVI_RECIPE(java17·java21·jakarta·boot3·oracle-pg).
+axnavi-modernize:
+  extends: .axnavi
+  stage: review
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "schedule"
+  variables:
+    AXNAVI_RECIPE: "java17"
+  script:
+    - axnavi modernize "$AXNAVI_RECIPE" --out "modernize_$AXNAVI_RECIPE.md" || CODE=$?
+    - echo "현대화 판정 종료 코드 ${CODE:-0} (HOLD = 남은 일이 있음)"
+  allow_failure: true
+  artifacts:
+    when: always
+    paths: ["modernize_*.md"]
+    expire_in: 90 days

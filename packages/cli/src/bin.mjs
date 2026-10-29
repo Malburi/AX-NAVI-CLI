@@ -53,8 +53,9 @@ ${ui.bold("사용법")}
   axnavi doc list                 산출물 현황 (필수 절 작성·승인 상태)
   axnavi adr new "<제목>"          아키텍처 결정 기록 (docs/adr/NNNN-제목.md) [--status 제안|채택|폐기|대체됨]
   axnavi adr list                 ADR 목록
-  axnavi modernize <레시피> [경로...]  현대화 레시피 — java17 · java21 · jakarta · oracle-pg (LLM 불필요, 종료 코드 0/3/4)
-      [--apply] [--force] [--verify "<빌드·테스트 명령>"] [--format md|json] [--out <파일>]
+  axnavi modernize <레시피> [경로...]  현대화 레시피 — java17 · java21 · jakarta · boot3 · oracle-pg (LLM 불필요, 종료 코드 0/3/4)
+      [--apply] [--force] [--verify "<빌드·테스트 명령>"] [--format md|json] [--out <파일>] [--boot 3.5.x]
+      [--draft [--draft-limit N]]  oracle-pg 수동 항목(ROWNUM·(+)·CONNECT BY·MERGE·여러 줄 DECODE)의 AI 초안 — 소스엔 쓰지 않음
   axnavi test plan --spec <명세.json> [--framework junit5|vitest]   PMS-X 구현 명세 → SR 테스트 계획
   axnavi test scaffold <SR> [--out <파일>]  테스트 골격(케이스마다 @Disabled/it.todo — 있는 파일엔 없는 케이스만)
   axnavi test status [SR] [--junit <폴더>]  테스트 결과로 진행 상태(작성 필요·실패·통과, 종료 코드 0/3/4)
@@ -93,7 +94,7 @@ ${ui.bold("환경변수")}
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, continueLatest?: boolean, resumeId?: string, help?: boolean, version?: boolean, diff?: string, staged?: boolean, format?: string, out?: string, verify?: string, testsPassed?: boolean, failOn?: string, force?: boolean, record?: boolean, yes?: boolean, skipReview?: boolean, status?: string, apply?: boolean, spec?: string, framework?: string, junit?: string, jacoco?: string, lcov?: string, min?: number, rest: string[] }} */
+  /** @type {{ root: string, indexDir?: string, tier?: string, provider?: import("./provider.mjs").ProviderName, continueLatest?: boolean, resumeId?: string, help?: boolean, version?: boolean, diff?: string, staged?: boolean, format?: string, out?: string, verify?: string, testsPassed?: boolean, failOn?: string, force?: boolean, record?: boolean, yes?: boolean, skipReview?: boolean, status?: string, apply?: boolean, spec?: string, framework?: string, junit?: string, jacoco?: string, lcov?: string, min?: number, draft?: boolean, draftLimit?: number, boot?: string, rest: string[] }} */
   const out = { root: process.cwd(), rest: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -140,6 +141,18 @@ function parseArgs(argv) {
       out.min = v;
     }
     else if (arg === "--status") out.status = argv[++i];
+    // modernize 전용
+    else if (arg === "--draft") out.draft = true;
+    else if (arg === "--draft-limit") {
+      const v = Number(argv[++i]);
+      if (!(Number.isInteger(v) && v >= 1 && v <= 200)) throw new Error("--draft-limit 은 1~200 입니다.");
+      out.draftLimit = v;
+    }
+    else if (arg === "--boot") {
+      const v = argv[++i] ?? "";
+      if (!/^3\.\d+\.\d+$/.test(v)) throw new Error("--boot 은 3.x.y 형식입니다(예: 3.5.0).");
+      out.boot = v;
+    }
     else if (arg === "-h" || arg === "--help") out.help = true;
     else if (arg === "-v" || arg === "--version") out.version = true;
     else if (arg !== undefined && arg.startsWith("--")) throw new Error(`알 수 없는 옵션: ${arg}`);
@@ -254,6 +267,9 @@ async function main() {
         ...(args.verify ? { verify: args.verify } : {}),
         ...(args.format ? { format: args.format } : {}),
         ...(args.out ? { out: args.out } : {}),
+        ...(args.draft ? { draft: true } : {}),
+        ...(args.draftLimit ? { draftLimit: args.draftLimit } : {}),
+        ...(args.boot ? { boot: args.boot } : {}),
       });
     case "org":
       return cmdOrg(rest[0] ?? "status", { version: VERSION });

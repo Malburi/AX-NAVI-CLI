@@ -6,6 +6,7 @@
  * UTF-8 이 아닌 파일(EUC-KR 레거시 등)은 바이트 그대로 다룬다 — 한글이 없는 순수 ASCII 줄만 고치고, 한글이 섞인 줄은 수동으로 남긴다
  * (치환은 ASCII 끼리라 인코딩이 바뀌지 않는다).
  * --verify "<명령>" 은 고친 뒤 빌드·테스트를 돌려 단계 게이트로 판정한다: 실패 STOP, 수동 남음 HOLD, 아니면 GO.
+ * 여러 줄을 함께 봐야 하는 규칙(fileFix — Maven 의존성 블록 등)은 줄 단위 규칙보다 먼저, 줄 수를 그대로 둔 채 고친다.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
@@ -41,12 +42,13 @@ function dirtyFiles(/** @type {string} */ root, /** @type {string[]} */ files) {
 }
 
 /**
- * @param {{ root: string, recipe: string, paths?: string[], apply?: boolean, force?: boolean, verify?: string | null }} opts
+ * @param {{ root: string, recipe: string, paths?: string[], apply?: boolean, force?: boolean, verify?: string | null, boot?: string }} opts
  */
 export function runModernize(opts) {
   const recipe = RECIPES[/** @type {keyof typeof RECIPES} */ (opts.recipe)];
   if (!recipe) throw new Error(`알 수 없는 레시피: ${opts.recipe} (${Object.keys(RECIPES).join(" | ")})`);
   const rules = RULES.filter((r) => recipe.rules.includes(r.recipe));
+  const boot = opts.boot && /^3\.\d+\.\d+$/.test(opts.boot) ? opts.boot : "3.5.0";
   const files = opts.paths?.length
     ? opts.paths.flatMap((p) => {
         try {
@@ -80,19 +82,30 @@ export function runModernize(opts) {
     // 비 UTF-8 은 latin1 로 바이트 1:1 — 쓸 때도 latin1 로 돌려 바이트를 보존한다
     const raw = text ?? buf.toString("latin1");
     const lines = raw.split("\n");
+    const ctx = { target: recipe.target, file, boot };
     let changed = false;
+    // 여러 줄 규칙 — 정규식이 ASCII 만 바꾸므로 latin1 로 읽은 비 UTF-8 파일도 바이트가 보존된다
+    for (const r of targets) {
+      if (!r.fileFix || !lines.some((l) => r.pattern.test(l))) continue;
+      for (const c of r.fileFix(lines, ctx)) {
+        findings.push({ rule: r.id, title: r.title, file, line: c.line, kind: "auto", before: clip(c.before.trim()), after: clip(c.after.trim()), guide: r.guide });
+        changed = true;
+      }
+    }
     lines.forEach((orig, i) => {
       let line = orig;
       for (const r of targets) {
-        if (!r.pattern.test(line)) continue;
+        if (r.fileFix || !r.pattern.test(line)) continue;
         if (r.sqlOnly && !looksLikeSqlLine(file, line)) continue;
         const fixable = text !== null || !/[\x80-\xff]/.test(line);
-        const after = r.fix && fixable ? r.fix(line, { target: recipe.target }) : undefined;
+        const after = r.fix && fixable ? r.fix(line, ctx) : undefined;
         const auto = after !== undefined && after !== line;
         findings.push({ rule: r.id, title: r.title, file, line: i + 1, kind: auto ? "auto" : "manual", before: clip(line.trim()), ...(auto ? { after: clip(after.trim()) } : {}), guide: r.fix && !fixable ? `${r.guide} (UTF-8 이 아닌 파일의 한글 섞인 줄이라 자동 수정에서 뺐다)` : r.guide });
         if (auto) {
           line = after;
           changed = true;
+          // 같은 줄에 바꾸지 못한 호출(여러 줄에 걸치거나 모양이 복잡한 것)이 남았으면 수동으로도 남긴다
+          if (r.partial && r.pattern.test(line)) findings.push({ rule: r.id, title: r.title, file, line: i + 1, kind: "manual", before: clip(line.trim()), guide: `${r.guide} (같은 줄에 자동으로 바꾸지 못한 호출이 남음)` });
         }
       }
       lines[i] = line;
@@ -165,7 +178,7 @@ export function renderModernizeMarkdown(r, { limit = 400 } = {}) {
     for (const f of auto.slice(0, limit)) lines.push(`- \`${f.file}:${f.line}\` ${f.rule}: \`${f.before.replace(/`/g, "'")}\` → \`${(f.after ?? "").replace(/`/g, "'")}\``);
     if (auto.length > limit) lines.push(`- … 외 ${auto.length - limit}건`);
   }
-  lines.push("", "## 권장 순서", "", "1. `java17`(또는 `java21`) — 빌드 대상과 JDK 제거 API", "2. `jakarta` — Spring Boot 3·Tomcat 10.1+ 로 올릴 때 함께", "3. `oracle-pg` — DB 전환. 매퍼 XML·SQL 파일·자바 문자열 SQL", "", "단계마다 `--apply --verify \"<빌드·테스트 명령>\"` 으로 고치고, `axnavi review` 로 변경을 다시 판정한 뒤 다음 단계로 간다.", "");
+  lines.push("", "## 권장 순서", "", "1. `java17`(또는 `java21`) — 빌드 대상과 JDK 제거 API", "2. `boot3` — Spring Boot 3·Spring Security 6·Hibernate 6 (javax → jakarta 포함, `--boot 3.5.x`). Boot 를 안 쓰면 `jakarta` 만", "3. `oracle-pg` — DB 전환. 매퍼 XML·SQL 파일·자바 문자열 SQL. 여러 줄 DECODE·ROWNUM·(+)·CONNECT BY·MERGE 는 `--draft` 로 AI 초안", "", "단계마다 `--apply --verify \"<빌드·테스트 명령>\"` 으로 고치고, `axnavi review` 로 변경을 다시 판정한 뒤 다음 단계로 간다.", "");
   return lines.join("\n");
 }
 
