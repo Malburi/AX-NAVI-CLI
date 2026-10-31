@@ -539,7 +539,7 @@ export async function cmdTest(root, sub, opts) {
     }
     if (sub === "scaffold") {
       if (!opts.sr) {
-        process.stderr.write("사용법: axnavi test scaffold <SR 번호> [--out <파일>]\n");
+        process.stderr.write("사용법: axnavi test scaffold <요청 번호> [--out <파일>]\n");
         return 2;
       }
       const { file, plan } = load(opts.sr);

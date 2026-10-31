@@ -56,9 +56,9 @@ ${ui.bold("사용법")}
   axnavi modernize <레시피> [경로...]  현대화 레시피 — java17 · java21 · jakarta · boot3 · oracle-pg (LLM 불필요, 종료 코드 0/3/4)
       [--apply] [--force] [--verify "<빌드·테스트 명령>"] [--format md|json] [--out <파일>] [--boot 3.5.x]
       [--draft [--draft-limit N]]  oracle-pg 수동 항목(ROWNUM·(+)·CONNECT BY·MERGE·여러 줄 DECODE)의 AI 초안 — 소스엔 쓰지 않음
-  axnavi test plan --spec <명세.json> [--framework junit5|vitest]   PMS-X 구현 명세 → SR 테스트 계획
-  axnavi test scaffold <SR> [--out <파일>]  테스트 골격(케이스마다 @Disabled/it.todo — 있는 파일엔 없는 케이스만)
-  axnavi test status [SR] [--junit <폴더>]  테스트 결과로 진행 상태(작성 필요·실패·통과, 종료 코드 0/3/4)
+  axnavi test plan --spec <명세.json> [--framework junit5|vitest]   PMS-X 구현 명세 → 요청별 테스트 계획
+  axnavi test scaffold <요청 번호> [--out <파일>]  테스트 골격(케이스마다 @Disabled/it.todo — 있는 파일엔 없는 케이스만)
+  axnavi test status [요청 번호] [--junit <폴더>]  테스트 결과로 진행 상태(작성 필요·실패·통과, 종료 코드 0/3/4)
   axnavi coverage [--jacoco <xml>] [--lcov <info>] [--diff A..B|--staged] [--min <%>]
                                   커버리지 — 전체와 바뀐 줄, 기준 미달이면 HOLD(3)
   axnavi gate <req|design|dev|test>  단계 게이트 GO/HOLD/STOP (LLM 불필요, 종료 코드 0/3/4)
